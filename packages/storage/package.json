@@ -22,6 +22,7 @@
   "dependencies": {},
   "devDependencies": {
     "@sync-your-cookie/tsconfig": "workspace:*",
+    "@sync-your-cookie/protobuf": "workspace:*",
     "tsup": "8.0.2"
   }
 }
