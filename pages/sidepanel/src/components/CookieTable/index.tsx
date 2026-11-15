@@ -114,8 +114,8 @@ const CookieTable = () => {
       sourceUrl: config?.sourceUrl,
       favIconUrl: config?.favIconUrl,
       list: value.cookies,
-      autoPush: config?.autoPush ?? false,
-      autoPull: config?.autoPull ?? false,
+      autoPush: config?.autoPush ?? true,
+      autoPull: config?.autoPull ?? true,
       createTime: value.createTime,
     });
   }

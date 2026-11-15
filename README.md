@@ -14,35 +14,33 @@
 
 Cookie 失效、服务器撤销会话或设备风控仍可能要求重新登录；不保证免扫码。三个目标网站的测试使用虚拟数据，未使用真实账号。
 
+## 下载安装包
+
+打开 [GitHub Actions](https://github.com/Xioaruan912/CookieSync/actions/workflows/build-zip.yml)，选择最新成功构建，下载 **CookieSync-chrome** 产物。解压后在 `chrome://extensions` 开启开发者模式并加载包含 `manifest.json` 的目录。
+
+GitHub 的“Code → Download ZIP”是源码，不是可安装扩展。更新时覆盖原安装目录并重新加载，不要先卸载，以保留本机配置。正式包没有开发重载服务。
+
 ## 构建与加载
 
 需要 Node.js 20.12+ 和 pnpm 9.1.1；项目声明的 Node 版本见 `.nvmrc`。
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm build
+node scripts/workspace.mjs verify
 ```
 
-在 Chrome 打开 `chrome://extensions`，开启开发者模式，选择“加载已解压的扩展程序”，加载根目录 `dist/`。
+该命令自动在系统临时缓存中安装依赖、构建并运行检查；源码目录始终没有依赖或构建缓存。安装 ZIP 和解压目录位于源码旁边的 `CookieSync-release/`。对已验证源码仅打包可运行 `node scripts/workspace.mjs build`。也可用 `--cache`、`--output` 指定源码外的路径。
 
-两台电脑分别配置相同的 WebDAV 目的地。首次在已登录电脑推送，在另一台拉取；之后可使用自动同步。详细步骤和限制见 [WebDAV 使用说明](docs/WEBDAV.md)。原有 Cloudflare 配置步骤可参考 [上游说明](https://github.com/jackluson/sync-your-cookie/blob/main/how-to-use.md)。
+两台电脑配置相同的 WebDAV 目的地。小红书、抖音、115 及已登记网站默认自动推送和自动拉取，保留用户明确关闭的设置。建议首次手动推送／拉取确认。详细步骤和限制见 [WebDAV 使用说明](docs/WEBDAV.md)。Cloudflare 配置可参考 [上游说明](https://github.com/jackluson/sync-your-cookie/blob/main/how-to-use.md)。
+
+## 内容比对
+
+使用浏览器原生 **SHA-256** 摘要实现类似 MD5 的内容比对，无新增摘要依赖。比较解密后的 Cookie / LocalStorage，统一顺序并排除更新时间、设备存储编号等无关信息。同内容跳过远程上传和浏览器重复写入；编码或加密策略改变时仍会重写。
+
+后台默认每 2 分钟处理变化并检查远端。本机变化上传，远端变化恢复；两端相对上次基线均变化时保留本机队列并停止覆盖，需手动确认。摘要用于变化检测，不代替加密和 WebDAV 冲突保护。
 
 ## 验证
 
-```sh
-pnpm type-check
-pnpm test
-```
-
-可选浏览器测试：
-
-```sh
-python -m pip install -r tests/requirements-browser.txt
-python -m playwright install chromium
-python tests/browser-smoke.py
-```
-
-浏览器测试使用独立临时资料、本机 WebDAV 和虚拟页面。GitHub Actions 执行构建、类型检查、单元测试并提供扩展产物。
+`verify` 会执行完整构建、类型检查及单元测试。可选的浏览器测试使用独立临时资料和虚拟页面，运行方法见 [使用说明](docs/WEBDAV.md)。GitHub Actions 自动提供可下载的生产安装包，不需要开发热重载。
 
 ## 项目结构
 
@@ -55,7 +53,7 @@ python tests/browser-smoke.py
 | `docs/` | 配置方法、行为边界与验证说明 |
 | `.github/` | CI、依赖更新及问题模板 |
 
-依赖、构建产物、缓存、浏览器资料和本机配置均不提交。首次检出或清理后执行 `pnpm install --frozen-lockfile` 恢复开发环境。
+依赖、构建产物、缓存、浏览器资料和本机配置均不提交。后续统一在本仓库修改源码，再运行源码外构建命令；不在复制的安装目录中修改实现。
 
 ## 安全与隐私
 

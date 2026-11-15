@@ -125,7 +125,7 @@ const Popup = () => {
                 disabled={!activeTabUrl}
                 onChange={() => toggleAutoPushState(domain)}
                 id="autoPush"
-                value={!!domainItemConfig.autoPush}
+                value={domainItemConfig.autoPush !== false}
               />
             </div>
 
@@ -146,7 +146,7 @@ const Popup = () => {
                 disabled={!activeTabUrl}
                 onChange={() => toggleAutoPullState(domain)}
                 id="autoPull"
-                value={!!domainItemConfig.autoPull}
+                value={domainItemConfig.autoPull !== false}
               />
             </div>
 

@@ -166,12 +166,13 @@ test('remote write suppression is scoped to one site and ends after restoration'
   const { pullAndSetCookies, isApplyingRemoteState } = await import('../lib/cookie/withStorage.ts');
   chrome.runtime = {};
   chrome.tabs = { query: async () => [] };
-  chrome.cookies = { set: (details, callback) => setTimeout(() => callback(details), 50) };
+  chrome.cookies = { getAll: async () => [], set: (details, callback) => setTimeout(() => callback(details), 50) };
   const restoring = pullAndSetCookies('https://www.douyin.com/', 'douyin.com', false, {
     domainCookieMap: {
       'douyin.com': { cookies: [{ name: 'session', value: 'dummy', domain: '.douyin.com', session: true, path: '/' }] },
     },
   });
+  await new Promise(resolve => setTimeout(resolve, 10));
   assert.ok(isApplyingRemoteState('douyin.com'));
   assert.ok(isApplyingRemoteState('www.douyin.com'));
   assert.ok(!isApplyingRemoteState('115.com'));
@@ -223,11 +224,122 @@ test('manual push and background push serialize and retain both domains', async 
     ]);
     assert.ok(results.every(result => result.success));
     assert.deepEqual(Object.keys(data.domainCookieMap).sort(), ['115.com', 'xiaohongshu.com']);
+    const before = version;
+    await pushCookies(
+      'xiaohongshu.com',
+      [{ name: 'session', value: 'A', domain: '.xiaohongshu.com', session: true }],
+      [],
+    );
+    assert.equal(version, before, 'same plaintext content must not PUT again');
+    const { domainContentHash } = await import('../lib/cookie/fingerprint.ts');
+    const baseHash = await domainContentHash(data.domainCookieMap['xiaohongshu.com']);
+    data.domainCookieMap['xiaohongshu.com'].cookies[0].value = 'REMOTE';
+    version++;
+    await assert.rejects(
+      pushMultipleDomainCookies([
+        {
+          domain: 'xiaohongshu.com',
+          cookies: [{ name: 'session', value: 'LOCAL', domain: '.xiaohongshu.com', session: true }],
+          localStorageItems: [],
+          baseHash,
+        },
+      ]),
+      /两端数据均已变化/,
+    );
+    assert.equal(data.domainCookieMap['xiaohongshu.com'].cookies[0].value, 'REMOTE');
+    let fresh = await sync.readCookiesMap({ selectedProvider: 'webdav' });
+    const oldCookie = { ...fresh.domainCookieMap['xiaohongshu.com'].cookies[0] };
+    await sync.editAndWriteCookies({ selectedProvider: 'webdav' }, 'xiaohongshu.com', fresh, oldCookie, {
+      ...oldCookie,
+      value: 'EDITED',
+    });
+    assert.equal(
+      data.domainCookieMap['xiaohongshu.com'].cookies[0].value,
+      'EDITED',
+      'single-cookie edit must not become a false no-op',
+    );
+    fresh = await sync.readCookiesMap({ selectedProvider: 'webdav' });
+    await sync.removeAndWriteCookies(
+      { selectedProvider: 'webdav' },
+      'xiaohongshu.com',
+      fresh,
+      '.xiaohongshu.com_session',
+    );
+    assert.equal(data.domainCookieMap['xiaohongshu.com'].cookies.length, 0);
+
     data = {};
     const { pullCookies } = await import('../lib/cookie/withStorage.ts');
     const refreshed = await pullCookies();
-    assert.equal(Object.keys(refreshed.domainCookieMap || {}).length, 0, 'an empty remote must replace stale manager entries');
+    assert.equal(
+      Object.keys(refreshed.domainCookieMap || {}).length,
+      0,
+      'an empty remote must replace stale manager entries',
+    );
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('unchanged restored content does not set cookies, write localStorage or reload tabs', async () => {
+  const { pullAndSetCookies } = await import('../lib/cookie/withStorage.ts');
+  let writes = 0,
+    reloads = 0;
+  const cookie = { name: 'sid', value: 'same', domain: '.115.com', session: true, path: '/' };
+  chrome.runtime = {};
+  chrome.cookies = {
+    getAll: async () => [{ ...cookie, storeId: '0' }],
+    set: (_details, callback) => {
+      writes++;
+      callback({});
+    },
+  };
+  chrome.tabs = {
+    query: async () => [{ id: 7, url: 'https://www.115.com/' }],
+    sendMessage: async (_id, message) => {
+      if (message.type === 'GetLocalStorage') return { isOk: true, result: [{ key: 'token', value: 'same' }] };
+      writes++;
+      return { isOk: true };
+    },
+    reload: () => {
+      reloads++;
+    },
+  };
+  await settingsStorage.update({ includeLocalStorage: true });
+  await pullAndSetCookies('https://www.115.com/', '115.com', true, {
+    domainCookieMap: {
+      '115.com': { cookies: [cookie], localStorageItems: [{ key: 'token', value: 'same' }], updateTime: 999 },
+    },
+  });
+  assert.equal(writes, 0);
+  assert.equal(reloads, 0);
+});
+
+test('site auto defaults are enabled and explicit user switches remain respected', async () => {
+  const { domainConfigStorage } = await import('@sync-your-cookie/storage/lib/domainConfigStorage');
+  await domainConfigStorage.ensureDefaults();
+  for (const host of ['xiaohongshu.com', 'douyin.com', '115.com']) {
+    const item = (await domainConfigStorage.get()).domainMap[host];
+    assert.equal(item.autoPush, true);
+    assert.equal(item.autoPull, true);
+  }
+  await domainConfigStorage.toggleAutoPushState('115.com');
+  assert.equal((await domainConfigStorage.get()).domainMap['115.com'].autoPush, false);
+  await domainConfigStorage.ensureDefaults();
+  assert.equal((await domainConfigStorage.get()).domainMap['115.com'].autoPush, false);
+});
+
+test('manual confirmation clears only the original pending revision and preserves later changes', async () => {
+  const { syncDestinationKey, editSyncJobs, getPendingRevision, settleManualSync } = await import(
+    '../lib/cookie/syncIdentity.ts'
+  );
+  const key = await syncDestinationKey();
+  await editSyncJobs(key, () => ({ '115.com': { domain: '115.com', revision: 'old', baseHash: 'A' } }));
+  const revision = await getPendingRevision('115.com');
+  await editSyncJobs(key, () => ({ '115.com': { domain: '115.com', revision: 'new', baseHash: 'A' } }));
+  await settleManualSync('115.com', revision, 'B');
+  const retained = chrome.storage.local.data[key]['115.com'];
+  assert.equal(retained.revision, 'new');
+  assert.equal(retained.baseHash, 'B');
+  await settleManualSync('115.com', 'new', 'C');
+  assert.equal(await getPendingRevision('115.com'), undefined);
 });

@@ -19,7 +19,8 @@ const checkLocalChanges = async () => {
     const host = location.host;
     const enabled = Object.entries(config?.domainMap || {}).some(
       ([domain, item]) =>
-        (item as { autoPush?: boolean }).autoPush && (host === domain || host.replace(/^www\./, '') === domain),
+        (item as { autoPush?: boolean }).autoPush !== false &&
+        (host === domain || host.replace(/^www\./, '') === domain),
     );
     automaticEnabled = enabled;
     if (!enabled) return;

@@ -30,3 +30,11 @@ test('closed tab fallback retains the newest queued localStorage, including expl
   assert.equal(pickAutomaticLocalItems(undefined, pending, cached)[0].value, 'new');
   assert.deepEqual(pickAutomaticLocalItems([], pending, cached), []);
 });
+
+test('successful upload rebases newer retained revisions to the just-written snapshot', () => {
+  const sent = { '115.com': { domain: '115.com', revision: 'B', baseHash: 'A' } };
+  const newer = { '115.com': { domain: '115.com', revision: 'C', baseHash: 'A' } };
+  assert.deepEqual(acknowledgeJobs(newer, sent, { '115.com': 'B-hash' }), {
+    '115.com': { domain: '115.com', revision: 'C', baseHash: 'B-hash' },
+  });
+});

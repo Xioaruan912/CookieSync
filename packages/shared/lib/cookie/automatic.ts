@@ -6,10 +6,19 @@ export interface PendingSyncJob {
   localStorageItems: ILocalStorageItem[];
   userAgent: string;
   revision: string;
+  baseHash?: string;
 }
 
-export function acknowledgeJobs(current: Record<string, PendingSyncJob>, sent: Record<string, PendingSyncJob>) {
-  return Object.fromEntries(Object.entries(current).filter(([domain, job]) => job.revision !== sent[domain]?.revision));
+export function acknowledgeJobs(
+  current: Record<string, PendingSyncJob>,
+  sent: Record<string, PendingSyncJob>,
+  writtenHashes: Record<string, string> = {},
+) {
+  return Object.fromEntries(
+    Object.entries(current)
+      .filter(([domain, job]) => job.revision !== sent[domain]?.revision)
+      .map(([domain, job]) => [domain, writtenHashes[domain] ? { ...job, baseHash: writtenHashes[domain] } : job]),
+  );
 }
 
 export function canRestoreAtStartup(

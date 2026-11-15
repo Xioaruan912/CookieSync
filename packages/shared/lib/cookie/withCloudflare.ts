@@ -1,3 +1,4 @@
+import { cookiesMapContentHash, domainContentHash } from './fingerprint';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { buildWebdavUrl, readWebdav, writeWebdav, type WebdavSnapshot } from '../webdav/api';
 
@@ -22,6 +23,8 @@ import {
   isBase64Encrypted,
 } from '@sync-your-cookie/protobuf';
 
+const remoteDigests = new WeakMap<ICookiesMap, Promise<string>>();
+const remotePayloads = new WeakMap<ICookiesMap, string>();
 const webdavSnapshots = new WeakMap<ICookiesMap, { url: string; snapshot: WebdavSnapshot }>();
 
 export const check = async (accountInfo?: AccountInfo) => {
@@ -72,6 +75,8 @@ export const readCookiesMap = async (accountInfo: AccountInfo): Promise<ICookies
   }
 
   const remember = (map: ICookiesMap) => {
+    remotePayloads.set(map, content);
+    remoteDigests.set(map, cookiesMapContentHash(map));
     if (webdavRead) webdavSnapshots.set(map, webdavRead);
     return map;
   };
@@ -139,6 +144,15 @@ export const writeCookiesMap = async (
   if (encryptionEnabled && (!protobufEncoding || !encryptionPassword)) {
     throw new Error('已启用加密：请开启 Protobuf 编码并设置加密密码，拒绝明文上传');
   }
+  const raw = remotePayloads.get(previousMap);
+  const remoteEncrypted = !!raw && !raw.startsWith('{') && isBase64Encrypted(raw);
+  const formatMatches =
+    !!raw && (protobufEncoding ? !raw.startsWith('{') && remoteEncrypted === !!encryptionEnabled : raw.startsWith('{'));
+  if (formatMatches && (await cookiesMapContentHash(cookiesMap)) === (await remoteDigests.get(previousMap))) {
+    if (accountInfo.selectedProvider === 'github')
+      return { status: 200, headers: {}, url: '', data: {} } as RestEndpointMethodTypes['gists']['update']['response'];
+    return { success: true, errors: [], unchanged: true };
+  }
   let encodingStr = '';
   if (protobufEncoding) {
     const buffered = await encodeCookiesMap(cookiesMap);
@@ -205,11 +219,25 @@ export const mergeAndWriteCookies = async (
 
 export const mergeAndWriteMultipleDomainCookies = async (
   cloudflareAccountInfo: AccountInfo,
-  domainCookies: { domain: string; cookies: ICookie[]; localStorageItems: ILocalStorageItem[]; userAgent?: string }[],
+  domainCookies: {
+    domain: string;
+    cookies: ICookie[];
+    localStorageItems: ILocalStorageItem[];
+    userAgent?: string;
+    baseHash?: string;
+  }[],
   oldCookieMap: ICookiesMap = {},
 ): Promise<[WriteResponse, ICookiesMap]> => {
   await check(cloudflareAccountInfo);
 
+  for (const item of domainCookies) {
+    if (!item.baseHash) continue;
+    const remoteHash = await domainContentHash(oldCookieMap.domainCookieMap?.[item.domain]);
+    const localHash = await domainContentHash(item);
+    if (remoteHash !== item.baseHash && remoteHash !== localHash) {
+      throw new Error(`两端数据均已变化（${item.domain}），已保留本机队列并停止覆盖，请确认后手动推送或拉取`);
+    }
+  }
   const newDomainCookieMap = {
     ...(oldCookieMap.domainCookieMap || {}),
   };

@@ -38,10 +38,24 @@ const storage = initStorage();
 
 export const domainConfigStorage = {
   ...storage,
+  ensureDefaults: async () => {
+    const config = await storage.get();
+    const domainMap = { ...config.domainMap };
+    let changed = false;
+    for (const host of new Set(['xiaohongshu.com', 'douyin.com', '115.com', ...Object.keys(domainMap)])) {
+      const old = domainMap[host];
+      if (old?.autoPush !== undefined && old?.autoPull !== undefined) continue;
+      domainMap[host] = { ...old, autoPush: old?.autoPush ?? true, autoPull: old?.autoPull ?? true };
+      changed = true;
+    }
+    if (changed) await storage.set({ ...config, domainMap });
+  },
   updateItem: async (host: string, updateConf: DomainItemConfig) => {
     return await storage.set(currentInfo => {
       const domainMap = currentInfo?.domainMap || {};
       domainMap[host] = {
+        autoPush: true,
+        autoPull: true,
         ...domainMap[host],
         ...updateConf,
       };
@@ -66,7 +80,8 @@ export const domainConfigStorage = {
       const domainMap = currentInfo?.domainMap || {};
       domainMap[domain] = {
         ...domainMap[domain],
-        autoPull: checked ?? !domainMap[domain]?.autoPull,
+        autoPull: checked ?? !(domainMap[domain]?.autoPull ?? true),
+        autoPush: domainMap[domain]?.autoPush ?? true,
       };
       return { ...(currentInfo || {}), domainMap };
     });
@@ -77,7 +92,8 @@ export const domainConfigStorage = {
       const domainMap = currentInfo?.domainMap || {};
       domainMap[domain] = {
         ...domainMap[domain],
-        autoPush: checked ?? !domainMap[domain]?.autoPush,
+        autoPush: checked ?? !(domainMap[domain]?.autoPush ?? true),
+        autoPull: domainMap[domain]?.autoPull ?? true,
       };
       return { ...(currentInfo || {}), domainMap };
     });

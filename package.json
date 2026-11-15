@@ -1,11 +1,11 @@
 {
   "name": "sync-your-cookie",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "sync your cookie extension monorepo",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jackluson/sync-your-cookie.git"
+    "url": "https://github.com/Xioaruan912/CookieSync.git"
   },
   "scripts": {
     "clean": "rimraf dist && rimraf .turbo && turbo clean",
@@ -16,11 +16,13 @@
     "dev": "cross-env __DEV__=true turbo run dev --concurrency 25",
     "dev:firefox": "cross-env __DEV__=true __FIREFOX__=true turbo dev --concurrency 20",
     "zip": "pnpm build && pnpm -F zipper zip",
-    "test": "turbo test",
+    "test": "turbo test && node --test scripts/workspace.test.mjs",
     "type-check": "turbo type-check",
     "lint": "turbo lint",
     "lint:fix": "turbo lint:fix",
-    "prettier": "turbo prettier"
+    "prettier": "turbo prettier",
+    "build:clean": "node scripts/workspace.mjs build",
+    "verify:clean": "node scripts/workspace.mjs verify"
   },
   "type": "module",
   "dependencies": {

@@ -1,3 +1,5 @@
+import { cookieContentHash, domainContentHash, localStorageContentHash } from './fingerprint';
+import { setSyncBaseline, getPendingRevision, settleManualSync } from './syncIdentity';
 import { cookieSetDetails, syncCookieDomain } from './restore';
 import { ICookie, ICookiesMap, ILocalStorageItem } from '@sync-your-cookie/protobuf';
 import { Cookie, cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
@@ -85,19 +87,33 @@ export const applyLocalStorageToTabs = async (host: string, value: ILocalStorage
     return hostname === host || hostname.replace(/^www\./, '') === host;
   });
   const results = await Promise.allSettled(
-    matching.map(tab =>
-      chrome.tabs
+    matching.map(async tab => {
+      try {
+        const current = await chrome.tabs.sendMessage(tab.id!, {
+          type: MessageType.GetLocalStorage,
+          payload: { domain: host },
+        });
+        const keys = new Set(value.map(item => item.key));
+        const relevant = (current?.result || []).filter((item: ILocalStorageItem) => keys.has(item.key));
+        if (current?.isOk && (await localStorageContentHash(relevant)) === (await localStorageContentHash(value)))
+          return false;
+      } catch {
+        /* No current snapshot: apply normally. */
+      }
+      return chrome.tabs
         .sendMessage(tab.id!, {
           type: MessageType.SetLocalStorage,
           payload: { domain: host, value },
         })
         .then(result => {
           if (!result?.isOk) throw new Error('LocalStorage 写入失败');
-        }),
-    ),
+          return true;
+        });
+    }),
   );
   if (results.some(result => result.status === 'rejected'))
     throw new Error('部分页面的 LocalStorage 未恢复，请刷新该网站后重试');
+  return results.some(result => result.status === 'fulfilled' && result.value);
 };
 
 export const pullAndSetCookies = async (
@@ -107,12 +123,17 @@ export const pullAndSetCookies = async (
   providedMap?: Cookie,
   targetTabId?: number,
 ): Promise<Cookie> => {
+  const pendingRevision = await getPendingRevision(host);
   // Network reads do not suppress local changes. Only writes to this site's scope do.
   const cookieMap = providedMap || (await pullCookies());
   const scope = syncCookieDomain(host);
   applyingRemoteHosts.set(scope, (applyingRemoteHosts.get(scope) || 0) + 1);
   try {
-    return await restoreCookieMap(activeTabUrl, host, isReload, cookieMap, targetTabId);
+    const result = await restoreCookieMap(activeTabUrl, host, isReload, cookieMap, targetTabId);
+    const digest = await domainContentHash(cookieMap.domainCookieMap?.[host]);
+    await setSyncBaseline(host, digest);
+    await settleManualSync(host, pendingRevision, digest);
+    return result;
   } finally {
     const remaining = (applyingRemoteHosts.get(scope) || 1) - 1;
     if (remaining) applyingRemoteHosts.set(scope, remaining);
@@ -134,7 +155,12 @@ const restoreCookieMap = async (
     throw new Error('远程没有该网站的登录数据，请先在已登录电脑推送');
   } else {
     const cookiesPromiseList: Promise<unknown>[] = [];
-    for (const cookie of cookieDetails) {
+    const actual = await chrome.cookies.getAll({ domain: syncCookieDomain(new URL(activeTabUrl).hostname) });
+    const eligible = cookieDetails.filter(cookie => !!cookieSetDetails(cookie, activeTabUrl));
+    const wanted = new Set(eligible.map(cookie => `${cookie.domain}|${cookie.path || '/'}|${cookie.name}`));
+    const relevant = actual.filter(cookie => wanted.has(`${cookie.domain}|${cookie.path || '/'}|${cookie.name}`));
+    const cookiesChanged = (await cookieContentHash(relevant)) !== (await cookieContentHash(eligible));
+    for (const cookie of cookiesChanged ? eligible : []) {
       const cookieDetail = cookieSetDetails(cookie, activeTabUrl);
       if (cookieDetail) {
         const promise = new Promise((resolve, reject) => {
@@ -154,14 +180,15 @@ const restoreCookieMap = async (
 
     // Cookie writes complete before page-local state is applied or a tab is refreshed.
     await Promise.all(cookiesPromiseList);
-    if ((await settingsStorage.get()).includeLocalStorage !== false && localStorageItems.length) {
-      await applyLocalStorageToTabs(host, localStorageItems, targetTabId);
-    }
+    const storageChanged =
+      (await settingsStorage.get()).includeLocalStorage !== false && localStorageItems.length > 0
+        ? await applyLocalStorageToTabs(host, localStorageItems, targetTabId)
+        : false;
 
-    if (cookiesPromiseList.length === 0 && localStorageItems.length === 0) {
+    if (!eligible.length && !localStorageItems.length) {
       throw new Error('没有匹配且未过期的 Cookie，请在已登录电脑重新推送');
     }
-    if (isReload) {
+    if (isReload && (cookiesChanged || storageChanged)) {
       chrome.tabs.query({}, function (tabs) {
         tabs.forEach(function (tab) {
           // 使用字符串匹配
@@ -203,6 +230,7 @@ const pushCookiesImpl = async (
   userAgent = '',
 ): Promise<PushCookiesResponse> => {
   const accountInfo = await accountStorage.get();
+  const pendingRevision = await getPendingRevision(domain);
   try {
     const domainStatus = await domainStatusStorage.get();
     if (domainStatus.pushing) return Promise.reject('the cookie is pushing');
@@ -220,6 +248,11 @@ const pushCookiesImpl = async (
     );
 
     await checkSuccessAndUpdate(accountInfo, res, cookieMap);
+    if ('success' in res ? res.success : String(res.status).startsWith('2')) {
+      const digest = await domainContentHash(cookieMap.domainCookieMap?.[domain]);
+      await setSyncBaseline(domain, digest);
+      await settleManualSync(domain, pendingRevision, digest);
+    }
     await domainStatusStorage.update({
       pushing: false,
     });
@@ -233,7 +266,13 @@ const pushCookiesImpl = async (
 };
 
 const pushMultipleDomainCookiesImpl = async (
-  domainCookies: { domain: string; cookies: ICookie[]; localStorageItems: ILocalStorageItem[]; userAgent?: string }[],
+  domainCookies: {
+    domain: string;
+    cookies: ICookie[];
+    localStorageItems: ILocalStorageItem[];
+    userAgent?: string;
+    baseHash?: string;
+  }[],
 ): Promise<WriteResponse> => {
   const accountInfo = await accountStorage.get();
   try {
@@ -248,6 +287,10 @@ const pushMultipleDomainCookiesImpl = async (
       pushing: false,
     });
     await checkSuccessAndUpdate(accountInfo, res, cookieMap);
+    if ('success' in res ? res.success : String((res as unknown as GistUpdateResponse).status).startsWith('2')) {
+      for (const item of domainCookies)
+        await setSyncBaseline(item.domain, await domainContentHash(cookieMap.domainCookieMap?.[item.domain]));
+    }
     return res;
   } catch (e) {
     await domainStatusStorage.update({
