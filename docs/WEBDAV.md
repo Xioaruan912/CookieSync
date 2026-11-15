@@ -12,7 +12,7 @@ node scripts/workspace.mjs verify
 
 依赖、构建与检查均在系统缓存中运行；源码文件夹不产生 node_modules、dist 或 .turbo。默认输出到源码旁的 `CookieSync-release/`，ZIP 为正式安装包，`unpacked/` 可直接加载。可用 `build` 代替 `verify` 对已验证源码打包；`--cache` / `--output` 只接受源码外路径。修改源码后重新打包，用户下载并手动重新加载扩展；没有开发自动重载服务。
 
-也可从仓库 GitHub Actions 最新成功构建下载 **CookieSync-chrome**，下载后解压加载。Code → Download ZIP 是源码。
+也可从仓库 [最新 Releases](https://github.com/Xioaruan912/CookieSync/releases/latest) 的 Assets 下载 **CookieSync-chrome-版本号.zip**，下载后解压加载。Code → Download ZIP 和 Release 中的 Source code 是源码，不是安装包。
 
 ## 配置
 
@@ -85,7 +85,7 @@ WebDAV 密码与数据加密密码用途不同；丢失加密密码无法恢复�
 
 本机还使用独立 Chromium 资料验证扩展加载、实际 WebDAV 配置、推送、恢复 Cookie/LocalStorage 和后台进程重启，并使用拦截页面的虚拟数据验证三个目标域的子域 Cookie 和加密会话 Cookie。未使用真实小红书、抖音、115 账号或生产 WebDAV 凭据，不能据此承诺真实账号免扫码成功率。
 
-本分支清理了上游作者专用的自动指派、欢迎评论和第三方 AI 工作流；GitHub Actions 仅保留构建、类型检查、测试和扩展产物生成。
+本分支清理了上游作者专用的自动指派、欢迎评论和第三方 AI 工作流；GitHub Actions 执行构建、类型检查、测试和扩展产物生成，`main` 验证通过后自动发布安装包到 Releases。发布任务单独授予 contents: write 权限；PR 不执行发布。
 
 可选浏览器冒烟测试（使用独立临时资料、虚拟账号和本机 WebDAV，不访问真实网站登录页）：
 
