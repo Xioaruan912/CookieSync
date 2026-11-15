@@ -12,6 +12,8 @@ EXT = Path(__file__).resolve().parents[1] / 'dist'
 files = {}
 version = 0
 requests = []
+reject_conditions = False
+reject_reads = False
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
@@ -23,6 +25,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         requests.append(('GET', self.path))
         if self.path.startswith('/dav/'):
+            if reject_reads: self.reply(403); return
             item = files.get(self.path)
             if item: self.reply(200, item[0], item[1])
             else: self.reply(404)
@@ -32,6 +35,7 @@ class Handler(BaseHTTPRequestHandler):
         global version
         requests.append(('PUT', self.path))
         existing = files.get(self.path)
+        if reject_conditions and (self.headers.get('If-Match') or self.headers.get('If-None-Match')): return self.reply(412)
         if self.headers.get('If-None-Match') == '*' and existing: return self.reply(412)
         if self.headers.get('If-Match') and (not existing or self.headers['If-Match'] != existing[1]): return self.reply(412)
         body = self.rfile.read(int(self.headers.get('Content-Length', '0')))
@@ -60,7 +64,7 @@ with sync_playwright() as p:
     options.locator('#webdav-password').fill('dummy-app-password')
     options.locator('#webdav-path').fill('cookies.txt')
     options.get_by_role('button', name='测试连接', exact=True).click()
-    options.get_by_text('连接测试成功：已验证临时文件的写入、读取和删除', exact=True).wait_for()
+    options.get_by_text('连接测试成功：已验证临时文件的创建、覆盖、读取和删除', exact=True).wait_for()
     assert not files, 'probe must be removed'
     options.get_by_role('button', name='保存并使用 WebDAV', exact=True).click()
     options.get_by_text('当前后端：WebDAV', exact=True).wait_for()
@@ -79,6 +83,31 @@ with sync_playwright() as p:
     entry = remote['domainCookieMap'][f'127.0.0.1:{server.server_port}']
     assert any(c['name']=='session_test' for c in entry['cookies'])
     assert any(v['key']=='test_token' for v in entry['localStorageItems'])
+    # Conditional-PUT gateways must fail visibly, then work only after explicit opt-in.
+    reject_conditions = True
+    site.bring_to_front()
+    failed = options.evaluate('(message) => chrome.runtime.sendMessage(message)', payload)
+    assert not failed['isOk'] and '412' in failed['msg'], failed
+    manager = context.new_page(); manager.goto(f'chrome-extension://{extension_id}/sidepanel/index.html')
+    manager.get_by_role('alert').filter(has_text='最近一次推送未成功').wait_for()
+    manager.get_by_role('button', name='刷新远程列表', exact=True).wait_for()
+    options.locator('label').filter(has_text='AList / OpenList').get_by_role('checkbox').check()
+    options.get_by_role('button', name='保存并使用 WebDAV', exact=True).click()
+    options.get_by_text('WebDAV 配置已保存，已切换同步后端', exact=True).wait_for()
+    site.bring_to_front()
+    recovered = options.evaluate('(message) => chrome.runtime.sendMessage(message)', payload)
+    assert recovered['isOk'], recovered
+    manager.get_by_role('button',name='刷新远程列表',exact=True).click()
+    manager.get_by_text('最近一次推送未成功',exact=False).wait_for(state='hidden')
+    assert manager.locator('tbody tr').count() == 1
+    reject_reads = True
+    manager.get_by_role('button',name='刷新远程列表',exact=True).click()
+    manager.get_by_role('alert').filter(has_text='远程列表未加载').wait_for()
+    reject_reads = False
+    manager.get_by_role('button',name='刷新远程列表',exact=True).click()
+    manager.get_by_role('alert').filter(has_text='远程列表未加载').wait_for(state='hidden')
+    manager.close(); reject_conditions = False
+    print('conditional_gateway_recovery_and_manager_feedback_passed')
     context.clear_cookies()
     site.evaluate('localStorage.clear()')
     pulled = options.evaluate('(message) => chrome.runtime.sendMessage(message)', {'type': 'PullCookie', 'payload': {'domain': f'127.0.0.1:{server.server_port}', 'activeTabUrl': base + '/site', 'reload': False}})

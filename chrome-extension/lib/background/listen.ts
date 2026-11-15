@@ -1,3 +1,4 @@
+import { syncFeedbackStorage } from '@sync-your-cookie/storage/lib/syncFeedbackStorage';
 import {
   check,
   syncCookieDomain,
@@ -8,6 +9,7 @@ import {
   Message,
   MessageType,
   pullAndSetCookies,
+  pullCookies,
   PushCookieMessagePayload,
   pushCookies,
   removeCookieItem,
@@ -26,6 +28,12 @@ type HandleCallback = (response?: SendResponse) => void;
 const handlePush = async (payload: PushCookieMessagePayload, callback: HandleCallback) => {
   const { sourceUrl, host, favIconUrl } = payload || {};
   const userAgent = navigator?.userAgent || '';
+  const reply: HandleCallback = response => {
+    void syncFeedbackStorage
+      .update({ lastPush: { ok: !!response?.isOk, host, message: response?.msg || '推送未完成', at: Date.now() } })
+      .catch(() => {})
+      .finally(() => callback(response));
+  };
   try {
     await check();
     const previousConfig = (await domainConfigStorage.get()).domainMap[host];
@@ -59,13 +67,13 @@ const handlePush = async (payload: PushCookieMessagePayload, callback: HandleCal
 
     if (cookies?.length || localStorageItems.length) {
       const res = await pushCookies(host, cookies, localStorageItems, userAgent);
-      checkResponseAndCallback(res, 'push', callback);
+      checkResponseAndCallback(res, 'push', reply);
     } else {
-      callback({ isOk: false, msg: '未找到 Cookie 或 LocalStorage，请先确认已登录', result: cookies });
+      reply({ isOk: false, msg: '未找到 Cookie 或 LocalStorage，请先确认已登录', result: cookies });
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (err: any) {
-    checkResponseAndCallback(err, 'push', callback);
+    checkResponseAndCallback(err, 'push', reply);
   } finally {
     await domainStatusStorage.togglePushingState(host, false);
   }
@@ -133,6 +141,15 @@ function handleMessage(
 ) {
   const type = message.type;
   switch (type) {
+    case MessageType.RefreshCookies:
+      if (!sender.url?.startsWith(chrome.runtime.getURL(''))) {
+        callback({ isOk: false, msg: '仅扩展管理页可刷新列表' });
+        break;
+      }
+      void pullCookies()
+        .then(() => callback({ isOk: true, msg: '远程列表已刷新' }))
+        .catch(error => callback({ isOk: false, msg: error?.message || '远程列表读取失败，请检查同步设置' }));
+      break;
     case MessageType.PushCookie:
       handlePush(message.payload, callback);
       break;

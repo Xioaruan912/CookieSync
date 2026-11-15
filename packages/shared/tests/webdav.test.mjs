@@ -108,3 +108,40 @@ test('blocks unsafe overwrite without strong ETag unless explicitly allowed', as
     await assert.rejects(writeWebdav(config, 'data', { content: '', exists: true, etag }), /ETag/);
   }
 });
+
+test('explicit compatibility mode omits rejected conditions and still detects changed content', async () => {
+  let content = 'old';
+  let writes = 0;
+  const server = createServer(async (req, res) => {
+    if (req.method === 'GET') {
+      res.writeHead(200, { ETag: '"gateway-etag"' }).end(content);
+      return;
+    }
+    if (req.headers['if-match'] || req.headers['if-none-match']) {
+      res.writeHead(412).end();
+      return;
+    }
+    writes++;
+    content = '';
+    for await (const chunk of req) content += chunk;
+    res.writeHead(204).end();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const config = {
+    url: `http://127.0.0.1:${server.address().port}/dav/`,
+    username: 'test',
+    password: 'test',
+    path: 'cookies.txt',
+  };
+  try {
+    const previous = await readWebdav(config);
+    await assert.rejects(writeWebdav(config, 'new', previous), /412/);
+    await writeWebdav({ ...config, allowUnsafeWrites: true }, 'new', previous);
+    assert.equal(content, 'new');
+    assert.equal(writes, 1);
+    await assert.rejects(writeWebdav({ ...config, allowUnsafeWrites: true }, 'stale', previous), /冲突/);
+    assert.equal(writes, 1);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});

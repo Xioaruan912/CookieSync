@@ -18,6 +18,14 @@ import {
   removeAndWriteCookies,
 } from './withCloudflare';
 
+// One queue per extension context keeps background reads and writes from racing.
+let cookieOperations: Promise<unknown> = Promise.resolve();
+function withCookieOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const result = cookieOperations.then(operation, operation);
+  cookieOperations = result.catch(() => {});
+  return result;
+}
+
 export const readCookiesMapWithStatus = async (cloudflareInfo: AccountInfo) => {
   // WebDAV mutations must read the current remote state, not a stale UI cache.
   if (cloudflareInfo.selectedProvider === 'webdav') return readCookiesMap(cloudflareInfo);
@@ -32,7 +40,7 @@ export const readCookiesMapWithStatus = async (cloudflareInfo: AccountInfo) => {
   return await readCookiesMap(cloudflareInfo);
 };
 
-export const pullCookies = async (isInit = false): Promise<Cookie> => {
+const pullCookiesImpl = async (isInit = false): Promise<Cookie> => {
   const cloudflareInfo = await accountStorage.get();
   if (
     isInit &&
@@ -54,7 +62,7 @@ export const pullCookies = async (isInit = false): Promise<Cookie> => {
       pulling: true,
     });
     const cookieMap = await readCookiesMapWithStatus(cloudflareInfo);
-    const res = await cookieStorage.update(cookieMap, isInit);
+    const res = await cookieStorage.update(cookieMap, true);
     await domainStatusStorage.update({
       pulling: false,
     });
@@ -188,7 +196,7 @@ const checkSuccessAndUpdate = async (
   }
 };
 
-export const pushCookies = async (
+const pushCookiesImpl = async (
   domain: string,
   cookies: ICookie[],
   localStorageItems: ILocalStorageItem[] = [],
@@ -224,7 +232,7 @@ export const pushCookies = async (
   }
 };
 
-export const pushMultipleDomainCookies = async (
+const pushMultipleDomainCookiesImpl = async (
   domainCookies: { domain: string; cookies: ICookie[]; localStorageItems: ILocalStorageItem[]; userAgent?: string }[],
 ): Promise<WriteResponse> => {
   const accountInfo = await accountStorage.get();
@@ -249,7 +257,7 @@ export const pushMultipleDomainCookies = async (
   }
 };
 
-export const removeCookies = async (domain: string): Promise<WriteResponse> => {
+const removeCookiesImpl = async (domain: string): Promise<WriteResponse> => {
   const accountInfo = await accountStorage.get();
   try {
     const domainStatus = await domainStatusStorage.get();
@@ -273,7 +281,7 @@ export const removeCookies = async (domain: string): Promise<WriteResponse> => {
   }
 };
 
-export const removeCookieItem = async (domain: string, id: string): Promise<WriteResponse> => {
+const removeCookieItemImpl = async (domain: string, id: string): Promise<WriteResponse> => {
   const accountInfo = await accountStorage.get();
   try {
     const domainStatus = await domainStatusStorage.get();
@@ -297,7 +305,7 @@ export const removeCookieItem = async (domain: string, id: string): Promise<Writ
   }
 };
 
-export const editCookieItem = async (domain: string, name: string): Promise<WriteResponse> => {
+const editCookieItemImpl = async (domain: string, name: string): Promise<WriteResponse> => {
   const accountInfo = await accountStorage.get();
   try {
     const domainStatus = await domainStatusStorage.get();
@@ -335,7 +343,11 @@ export class CookieOperator {
     });
   }
 
-  static async editCookieItem(host: string, oldItem: ICookie, newItem: ICookie) {
+  static editCookieItem(host: string, oldItem: ICookie, newItem: ICookie) {
+    return withCookieOperation(() => this.editCookieItemImpl(host, oldItem, newItem));
+  }
+
+  private static async editCookieItemImpl(host: string, oldItem: ICookie, newItem: ICookie) {
     try {
       const { cloudflareInfo } = await this.prepare();
       await this.setPushing(true);
@@ -352,3 +364,24 @@ export class CookieOperator {
     }
   }
 }
+
+export const pullCookies = (...args: Parameters<typeof pullCookiesImpl>): ReturnType<typeof pullCookiesImpl> =>
+  withCookieOperation(() => pullCookiesImpl(...args));
+
+export const pushCookies = (...args: Parameters<typeof pushCookiesImpl>): ReturnType<typeof pushCookiesImpl> =>
+  withCookieOperation(() => pushCookiesImpl(...args));
+
+export const pushMultipleDomainCookies = (
+  ...args: Parameters<typeof pushMultipleDomainCookiesImpl>
+): ReturnType<typeof pushMultipleDomainCookiesImpl> =>
+  withCookieOperation(() => pushMultipleDomainCookiesImpl(...args));
+
+export const removeCookies = (...args: Parameters<typeof removeCookiesImpl>): ReturnType<typeof removeCookiesImpl> =>
+  withCookieOperation(() => removeCookiesImpl(...args));
+
+export const removeCookieItem = (
+  ...args: Parameters<typeof removeCookieItemImpl>
+): ReturnType<typeof removeCookieItemImpl> => withCookieOperation(() => removeCookieItemImpl(...args));
+
+export const editCookieItem = (...args: Parameters<typeof editCookieItemImpl>): ReturnType<typeof editCookieItemImpl> =>
+  withCookieOperation(() => editCookieItemImpl(...args));
