@@ -265,4 +265,30 @@ with sync_playwright() as p:
         assert any(c['name']=='session_fixture' and c['domain']==f'www.{domain}' for c in restored), domain
     print('separate_profile_startup_restore_passed')
     receiver.close()
+    # First connection with an empty destination must seed without a manual push or second alarm.
+    seed_path = tempfile.mkdtemp(prefix='first-seed-profile-', dir=ROOT)
+    seed = p.chromium.launch_persistent_context(seed_path, channel='chromium', headless=True,
+        args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'])
+    sw = seed.service_workers[0] if seed.service_workers else seed.wait_for_event('serviceworker')
+    sid = sw.url.split('/')[2]
+    seed.add_cookies([{'name':'auto_seed_session','value':'synthetic-seed','domain':'www.115.com','path':'/','secure':True,'httpOnly':True,'sameSite':'Lax'}])
+    so = seed.new_page(); so.goto(f'chrome-extension://{sid}/options/index.html')
+    so.get_by_role('button',name='WebDAV',exact=True).click()
+    so.locator('#webdav-url').fill(base+'/dav/'); so.locator('#webdav-username').fill('local-test')
+    so.locator('#webdav-password').fill('dummy-app-password'); so.locator('#webdav-path').fill('automatic-first-seed.txt')
+    so.get_by_role('button',name='保存并使用 WebDAV',exact=True).click()
+    deadline=time.monotonic()+20
+    while time.monotonic()<deadline and '/dav/automatic-first-seed.txt' not in files: time.sleep(.1)
+    assert '/dav/automatic-first-seed.txt' in files, 'first connect never uploaded existing site cookie'
+    seeded=json.loads(files['/dav/automatic-first-seed.txt'][0])
+    assert any(c['value']=='synthetic-seed' for c in seeded['domainCookieMap']['115.com']['cookies'])
+    wait_extension(so, 'async () => { const s=(await chrome.storage.local.get("cookiesync-auto-status"))["cookiesync-auto-status"]; return s?.phase === "idle" && s?.lastSuccess && s?.pendingCount === 0; }')
+    seed_version=version
+    seed_check=so.evaluate('async () => (await chrome.storage.local.get("cookiesync-auto-status"))["cookiesync-auto-status"].lastCheck')
+    so.get_by_role('button',name='立即检查并同步',exact=True).click()
+    wait_extension(so, f'async () => {{ const s=(await chrome.storage.local.get("cookiesync-auto-status"))["cookiesync-auto-status"]; return s?.lastCheck > {seed_check} && s?.phase === "idle"; }}')
+    assert version == seed_version, 'manual check uploaded unchanged content'
+    assert so.get_by_text('最近上传成功：',exact=False).is_visible()
+    print('first_connection_automatic_seed_and_status_hash_skip_passed')
+    seed.close()
 server.shutdown()

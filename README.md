@@ -11,6 +11,7 @@
 - Google Drive 隐藏应用目录后端，官方安装包已预置 OAuth 客户端，用户点击 Google 登录即可发起授权，令牌由 Chrome 管理。项目处于 Google 测试状态时仅测试用户可授权；维护者配置方法见 [Google 同步说明](docs/GOOGLE.md)。
 - 手动推送、拉取并应用、按网站合并；保留 Cloudflare KV 与 GitHub Gist 后端。
 - 启动自动拉取，后台默认每 2 分钟合并改动，可调整为 1～60 分钟；离线队列保留并重试，无关闭钩子。
+- 连接后主动检查；云端没有对应网站数据时，自动为已开启推送且本机有数据的网站建立备份。设置页可查看检查／上传时间、待同步数量及错误，也可立即检查。
 - 简体中文界面，支持 Protobuf 编码及可选 AES-256-GCM 加密。
 - 小红书、抖音、115 主域及子域 Cookie 优先处理，修复会话 Cookie 恢复时误设过期时间的问题。
 
@@ -21,6 +22,8 @@ Cookie 失效、服务器撤销会话或设备风控仍可能要求重新登录�
 打开 [最新 Releases](https://github.com/Xioaruan912/CookieSync/releases/latest)，在 Assets 下载 **CookieSync-chrome-版本号.zip**。解压后在 `chrome://extensions` 开启开发者模式并加载包含 `manifest.json` 的目录。`SHA256SUMS.txt` 可用于校验安装包。
 
 GitHub 的“Code → Download ZIP”是源码，不是可安装扩展。更新时覆盖原安装目录并重新加载，不要先卸载，以保留本机配置。正式包没有开发重载服务。
+
+计划中的商店分发与自动更新、上架文案、权限用途及当前待处理项见 [商店准备说明](docs/STORE.md)。目前尚未提交 Chrome 商店审核，GitHub 解压版仍需用户手动更新。
 
 **1.6.x 首次升级至 1.7.0 请先记录配置和加密密码。** 新版为跨电脑同步固定扩展 ID，旧身份的配置需迁移一次，随后开启配置同步；后续不再变更 ID。详见 [一次迁移说明](docs/GOOGLE.md#170-固定扩展-id一次迁移)。
 
