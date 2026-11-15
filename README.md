@@ -16,7 +16,7 @@ Cookie 失效、服务器撤销会话或设备风控仍可能要求重新登录�
 
 ## 下载安装包
 
-打开 [GitHub Actions](https://github.com/Xioaruan912/CookieSync/actions/workflows/build-zip.yml)，选择最新成功构建，下载 **CookieSync-chrome** 产物。解压后在 `chrome://extensions` 开启开发者模式并加载包含 `manifest.json` 的目录。
+打开 [最新 Releases](https://github.com/Xioaruan912/CookieSync/releases/latest)，在 Assets 下载 **CookieSync-chrome-版本号.zip**。解压后在 `chrome://extensions` 开启开发者模式并加载包含 `manifest.json` 的目录。`SHA256SUMS.txt` 可用于校验安装包。
 
 GitHub 的“Code → Download ZIP”是源码，不是可安装扩展。更新时覆盖原安装目录并重新加载，不要先卸载，以保留本机配置。正式包没有开发重载服务。
 
@@ -40,7 +40,7 @@ node scripts/workspace.mjs verify
 
 ## 验证
 
-`verify` 会执行完整构建、类型检查及单元测试。可选的浏览器测试使用独立临时资料和虚拟页面，运行方法见 [使用说明](docs/WEBDAV.md)。GitHub Actions 自动提供可下载的生产安装包，不需要开发热重载。
+`verify` 会执行完整构建、类型检查及单元测试。可选的浏览器测试使用独立临时资料和虚拟页面，运行方法见 [使用说明](docs/WEBDAV.md)。每次推送到 `main`，GitHub Actions 验证成功后自动发布安装 ZIP 和 SHA-256 校验文件到 Releases，标签为 `v版本号-build.构建号`，保留历史安装包；PR 仅构建验证，不发布。也可在 `main` 手动运行工作流。不需要开发热重载。
 
 ## 项目结构
 
