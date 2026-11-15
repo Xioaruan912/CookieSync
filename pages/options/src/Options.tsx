@@ -1,5 +1,6 @@
 import { WebdavSettings } from './components/WebdavSettings';
 import { DriveSettings } from './components/DriveSettings';
+import { AutoSyncStatus } from './components/AutoSyncStatus';
 import {
   useStorageSuspense,
   useTheme,
@@ -327,6 +328,7 @@ const Options = () => {
             ) : (
               renderAccount()
             )}
+            <AutoSyncStatus />
           </Card>
         </div>
       </div>

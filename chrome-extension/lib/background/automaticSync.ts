@@ -23,6 +23,8 @@ import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
 import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
+import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage';
+import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
 
 type ILocalStorageItem = PendingSyncJob['localStorageItems'][number];
 
@@ -34,6 +36,13 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 const captures = new Map<string, Promise<void>>();
 let backgroundReady: Promise<unknown> = Promise.resolve();
 let sessionStartup: Promise<void> | undefined;
+let connectionTimer: ReturnType<typeof setTimeout> | undefined;
+const errorMessage = (error: unknown) =>
+  error instanceof Error
+    ? error.message
+    : typeof error === 'object' && error && 'message' in error
+      ? String(error.message)
+      : '自动同步失败，请检查连接和加密设置';
 
 export function setAutomaticSyncReady(ready: Promise<unknown>) {
   backgroundReady = ready;
@@ -77,15 +86,17 @@ async function localItems(host: string) {
   return undefined;
 }
 
-export function captureAutomaticSync(host: string, observed?: ILocalStorageItem[]): Promise<void> {
-  const next = (captures.get(host) || Promise.resolve()).catch(() => {}).then(() => captureNow(host, observed));
+export function captureAutomaticSync(host: string, observed?: ILocalStorageItem[], skipEmpty = false): Promise<void> {
+  const next = (captures.get(host) || Promise.resolve())
+    .catch(() => {})
+    .then(() => captureNow(host, observed, skipEmpty));
   captures.set(host, next);
   return next.finally(() => {
     if (captures.get(host) === next) captures.delete(host);
   });
 }
 
-async function captureNow(host: string, observed?: ILocalStorageItem[]) {
+async function captureNow(host: string, observed?: ILocalStorageItem[], skipEmpty = false) {
   const settings = await settingsStorage.get();
   if (isApplyingRemoteState(host) || settings.backgroundSync === false) return;
   const config = (await domainConfigStorage.get()).domainMap[host];
@@ -96,11 +107,21 @@ async function captureNow(host: string, observed?: ILocalStorageItem[]) {
   const url = config.sourceUrl || `https://${host}`;
   const cookies = await chrome.cookies.getAll({ domain: syncCookieDomain(new URL(url).hostname) });
   const pending = (await getJobs(key))[host];
-  const cached = (await cookieStorage.get()).domainCookieMap?.[host]?.localStorageItems || [];
+  const previous = (await cookieStorage.get()).domainCookieMap?.[host];
+  const cached = previous?.localStorageItems || [];
   const items =
     settings.includeLocalStorage === false
       ? cached
       : pickAutomaticLocalItems(observed ?? (await localItems(host)), pending, cached);
+  if (skipEmpty && !cookies.length && !items.length) return;
+  if (skipEmpty) {
+    // Passive discovery cannot distinguish browser session-cookie cleanup from logout.
+    // Actual onChanged/pagehide captures use skipEmpty=false and keep explicit deletions.
+    const identity = (cookie: { domain?: string | null; name?: string | null; path?: string | null }) =>
+      `${cookie.domain || ''}\0${cookie.path || '/'}\0${cookie.name || ''}`;
+    const localIds = new Set(cookies.map(identity));
+    if (previous?.cookies?.some(cookie => cookie.session && !localIds.has(identity(cookie)))) return;
+  }
   const job: PendingSyncJob = {
     domain: host,
     cookies,
@@ -124,6 +145,7 @@ async function captureNow(host: string, observed?: ILocalStorageItem[]) {
     ...jobs,
     [host]: { ...job, baseHash: jobs[host]?.baseHash || (await getSyncBaseline(host)) || job.baseHash },
   }));
+  await autoSyncStatusStorage.update({ pendingCount: Object.keys(await getJobs(key)).length });
   if (!timer)
     timer = setTimeout(
       () => {
@@ -149,6 +171,7 @@ export async function flushAutomaticSync(force = false): Promise<void> {
     await chrome.storage.local.set({ [rateKey]: Date.now() });
     try {
       if (key !== (await queueKey())) return;
+      await autoSyncStatusStorage.update({ phase: 'uploading', lastAttempt: Date.now() });
       const result = await pushMultipleDomainCookies(Object.values(sent));
       if (!('success' in result ? result.success : (result as unknown as { status?: number }).status === 200)) {
         throw new Error('自动同步上传失败');
@@ -157,13 +180,18 @@ export async function flushAutomaticSync(force = false): Promise<void> {
         await Promise.all(Object.entries(sent).map(async ([host, job]) => [host, await domainContentHash(job)])),
       );
       await editJobs(key, jobs => acknowledgeJobs(jobs, sent, writtenHashes));
-      await chrome.storage.local.set({ 'cookiesync-auto-status': { lastSuccess: Date.now(), error: '' } });
+      await autoSyncStatusStorage.update({
+        phase: 'idle',
+        lastSuccess: Date.now(),
+        error: '',
+        pendingCount: Object.keys(await getJobs(key)).length,
+      });
     } catch (error) {
-      await chrome.storage.local.set({
-        'cookiesync-auto-status': {
-          lastAttempt: Date.now(),
-          error: error instanceof Error ? error.message : '自动同步失败，请检查连接和加密设置',
-        },
+      await autoSyncStatusStorage.update({
+        phase: 'idle',
+        lastAttempt: Date.now(),
+        error: errorMessage(error),
+        pendingCount: Object.keys(await getJobs(key)).length,
       });
       // Durable jobs remain for the next alarm, cookie change or browser startup.
     }
@@ -173,21 +201,33 @@ export async function flushAutomaticSync(force = false): Promise<void> {
   return upload;
 }
 
-export async function restoreAtStartup(periodic = false): Promise<void> {
-  if (startup) return startup;
+export async function restoreAtStartup(periodic = false, force = false): Promise<void> {
+  if (startup) {
+    await startup;
+    // An explicit check must run after an in-flight cycle, not just acknowledge it.
+    if (force) return restoreAtStartup(periodic, true);
+    return;
+  }
   startup = (async () => {
     const settings = await settingsStorage.get();
     if (periodic ? settings.backgroundSync === false : settings.startupPull === false) return;
     await domainConfigStorage.ensureDefaults();
-    await flushAutomaticSync(!periodic);
+    await autoSyncStatusStorage.update({ phase: 'checking', lastCheck: Date.now(), error: '' });
     try {
+      // Capture against the last applied local cache before pullCookies replaces it.
+      // A periodic scan also catches cookies that changed while the MV3 worker was asleep.
+      const beforeRead = await domainConfigStorage.get();
+      for (const [domain, item] of Object.entries(beforeRead.domainMap)) {
+        if (item.autoPush !== false && (await getSyncBaseline(domain)))
+          await captureAutomaticSync(domain, undefined, true);
+      }
       const remote = await pullCookies();
       const config = await domainConfigStorage.get();
       for (const domain of new Set([...Object.keys(remote.domainCookieMap || {}), ...Object.keys(config.domainMap)])) {
         const item = config.domainMap[domain];
         await captures.get(domain)?.catch(() => {});
         const pending = await getJobs(await queueKey());
-        if (!canRestoreAtStartup(domain, item?.autoPull, pending)) continue;
+        if (pending[domain]) continue;
         await domainConfigStorage.updateItem(domain, {
           autoPull: item?.autoPull ?? true,
           autoPush: item?.autoPush ?? true,
@@ -195,17 +235,31 @@ export async function restoreAtStartup(periodic = false): Promise<void> {
         try {
           if (!remote.domainCookieMap?.[domain]) {
             await setSyncBaseline(domain, await domainContentHash());
-            await captureAutomaticSync(domain);
+            await captureAutomaticSync(domain, undefined, true);
+            continue;
+          }
+          if (!canRestoreAtStartup(domain, item?.autoPull, pending)) {
+            // Send-only devices still need a remote baseline before their first push.
+            if (item?.autoPush !== false && !(await getSyncBaseline(domain))) {
+              await setSyncBaseline(domain, await domainContentHash(remote.domainCookieMap[domain]));
+              await captureAutomaticSync(domain, undefined, true);
+            }
             continue;
           }
           await pullAndSetCookies(item?.sourceUrl || `https://${domain}`, domain, false, remote);
           await chrome.storage.session.set({ [`cookiesync-pulled-${domain}`]: Date.now() });
-        } catch {
-          /* Continue restoring other domains. */
+        } catch (error) {
+          await autoSyncStatusStorage.update({ error: errorMessage(error) });
         }
       }
-    } catch {
-      // Opening the browser stays quiet even when offline or not configured yet.
+      // Upload newly discovered data in this cycle, rather than waiting for a second alarm.
+      if (settings.backgroundSync !== false) await flushAutomaticSync(force || !periodic);
+      await autoSyncStatusStorage.update({
+        phase: 'idle',
+        pendingCount: Object.keys(await getJobs(await queueKey())).length,
+      });
+    } catch (error) {
+      await autoSyncStatusStorage.update({ phase: 'idle', error: errorMessage(error) });
     }
   })().finally(() => {
     startup = undefined;
@@ -214,6 +268,24 @@ export async function restoreAtStartup(periodic = false): Promise<void> {
 }
 
 export function initAutomaticSync() {
+  const reconcileConnection = () => {
+    if (connectionTimer) clearTimeout(connectionTimer);
+    connectionTimer = setTimeout(() => {
+      connectionTimer = undefined;
+      void backgroundReady.then(() => restoreAtStartup(true));
+    }, 1000);
+  };
+  accountStorage.subscribe(reconcileConnection);
+  webdavStorage.subscribe(() => {
+    if (accountStorage.getSnapshot()?.selectedProvider === 'webdav') reconcileConnection();
+  });
+  driveAccountStorage.subscribe(() => {
+    if (
+      accountStorage.getSnapshot()?.selectedProvider === 'google-drive' &&
+      driveAccountStorage.getSnapshot()?.connected
+    )
+      reconcileConnection();
+  });
   const configureAlarm = async () => {
     const interval = automaticIntervalMs((await settingsStorage.get()).syncIntervalMinutes) / 60000;
     const existing = await chrome.alarms.get(alarmName);
@@ -222,8 +294,12 @@ export function initAutomaticSync() {
   };
   void domainConfigStorage.ensureDefaults();
   void configureAlarm();
+  let wasEnabled = settingsStorage.getSnapshot()?.backgroundSync !== false;
   settingsStorage.subscribe(() => {
     void configureAlarm();
+    const enabled = settingsStorage.getSnapshot()?.backgroundSync !== false;
+    if (enabled && wasEnabled === false) reconcileConnection();
+    wasEnabled = enabled;
   });
   chrome.alarms.onAlarm.addListener(alarm => {
     if (alarm.name === alarmName) void restoreAtStartup(true);
@@ -239,6 +315,17 @@ export function initAutomaticSync() {
     }
   });
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
+    if (
+      message?.type === 'CookieSyncRunAutomaticSync' &&
+      sender.id === chrome.runtime.id &&
+      sender.url?.startsWith(chrome.runtime.getURL(''))
+    ) {
+      void backgroundReady
+        .then(() => restoreAtStartup(true, true))
+        .then(() => reply({ isOk: true }))
+        .catch(() => reply({ isOk: false }));
+      return true;
+    }
     if (
       !['CookieSyncLocalStorageChanged', 'CookieSyncPageReady'].includes(message?.type) ||
       !sender.tab?.url?.startsWith('http')
