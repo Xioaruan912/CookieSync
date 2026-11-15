@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
+// Keep mutable dependency singletons in one loader graph on Node 20 and newer.
+const require = createRequire(import.meta.url);
 
 function storageArea() {
   const data = {};
@@ -21,12 +24,12 @@ function storageArea() {
 }
 globalThis.chrome = { storage: { sync: storageArea(), local: storageArea(), session: storageArea() } };
 
-const { accountStorage } = await import('@sync-your-cookie/storage/lib/accountStorage');
-const { webdavStorage } = await import('@sync-your-cookie/storage/lib/webdavStorage');
-const { settingsStorage } = await import('@sync-your-cookie/storage/lib/settingsStorage');
-const sync = await import('../lib/cookie/withCloudflare.ts');
-const { GithubApi } = await import('../lib/github/api.ts');
-const { isBase64Encrypted } = await import('@sync-your-cookie/protobuf');
+const { accountStorage } = require('@sync-your-cookie/storage/lib/accountStorage');
+const { webdavStorage } = require('@sync-your-cookie/storage/lib/webdavStorage');
+const { settingsStorage } = require('@sync-your-cookie/storage/lib/settingsStorage');
+const sync = require('../lib/cookie/withCloudflare.ts');
+const { GithubApi } = require('../lib/github/api.ts');
+const { isBase64Encrypted } = require('@sync-your-cookie/protobuf');
 
 test('provider integration: domain merge, batch auto-push, encryption, malformed data, delete and backend routing', async () => {
   let content = '';
@@ -163,7 +166,7 @@ test('provider integration: domain merge, batch auto-push, encryption, malformed
 });
 
 test('remote write suppression is scoped to one site and ends after restoration', async () => {
-  const { pullAndSetCookies, isApplyingRemoteState } = await import('../lib/cookie/withStorage.ts');
+  const { pullAndSetCookies, isApplyingRemoteState } = require('../lib/cookie/withStorage.ts');
   chrome.runtime = {};
   chrome.tabs = { query: async () => [] };
   chrome.cookies = { getAll: async () => [], set: (details, callback) => setTimeout(() => callback(details), 50) };
@@ -181,8 +184,8 @@ test('remote write suppression is scoped to one site and ends after restoration'
 });
 
 test('manual push and background push serialize and retain both domains', async () => {
-  const { pushCookies, pushMultipleDomainCookies } = await import('../lib/cookie/withStorage.ts');
-  const { domainStatusStorage } = await import('@sync-your-cookie/storage/lib/domainStatusStorage');
+  const { pushCookies, pushMultipleDomainCookies } = require('../lib/cookie/withStorage.ts');
+  const { domainStatusStorage } = require('@sync-your-cookie/storage/lib/domainStatusStorage');
   await domainStatusStorage.resetState();
   await settingsStorage.update({ protobufEncoding: false, encryptionEnabled: false });
   let data = { domainCookieMap: {} };
@@ -231,7 +234,7 @@ test('manual push and background push serialize and retain both domains', async 
       [],
     );
     assert.equal(version, before, 'same plaintext content must not PUT again');
-    const { domainContentHash } = await import('../lib/cookie/fingerprint.ts');
+    const { domainContentHash } = require('../lib/cookie/fingerprint.ts');
     const baseHash = await domainContentHash(data.domainCookieMap['xiaohongshu.com']);
     data.domainCookieMap['xiaohongshu.com'].cookies[0].value = 'REMOTE';
     version++;
@@ -268,7 +271,7 @@ test('manual push and background push serialize and retain both domains', async 
     assert.equal(data.domainCookieMap['xiaohongshu.com'].cookies.length, 0);
 
     data = {};
-    const { pullCookies } = await import('../lib/cookie/withStorage.ts');
+    const { pullCookies } = require('../lib/cookie/withStorage.ts');
     const refreshed = await pullCookies();
     assert.equal(
       Object.keys(refreshed.domainCookieMap || {}).length,
@@ -281,7 +284,7 @@ test('manual push and background push serialize and retain both domains', async 
 });
 
 test('unchanged restored content does not set cookies, write localStorage or reload tabs', async () => {
-  const { pullAndSetCookies } = await import('../lib/cookie/withStorage.ts');
+  const { pullAndSetCookies } = require('../lib/cookie/withStorage.ts');
   let writes = 0,
     reloads = 0;
   const cookie = { name: 'sid', value: 'same', domain: '.115.com', session: true, path: '/' };
@@ -315,7 +318,7 @@ test('unchanged restored content does not set cookies, write localStorage or rel
 });
 
 test('site auto defaults are enabled and explicit user switches remain respected', async () => {
-  const { domainConfigStorage } = await import('@sync-your-cookie/storage/lib/domainConfigStorage');
+  const { domainConfigStorage } = require('@sync-your-cookie/storage/lib/domainConfigStorage');
   await domainConfigStorage.ensureDefaults();
   for (const host of ['xiaohongshu.com', 'douyin.com', '115.com']) {
     const item = (await domainConfigStorage.get()).domainMap[host];
@@ -329,9 +332,12 @@ test('site auto defaults are enabled and explicit user switches remain respected
 });
 
 test('manual confirmation clears only the original pending revision and preserves later changes', async () => {
-  const { syncDestinationKey, editSyncJobs, getPendingRevision, settleManualSync } = await import(
-    '../lib/cookie/syncIdentity.ts'
-  );
+  const {
+    syncDestinationKey,
+    editSyncJobs,
+    getPendingRevision,
+    settleManualSync,
+  } = require('../lib/cookie/syncIdentity.ts');
   const key = await syncDestinationKey();
   await editSyncJobs(key, () => ({ '115.com': { domain: '115.com', revision: 'old', baseHash: 'A' } }));
   const revision = await getPendingRevision('115.com');
