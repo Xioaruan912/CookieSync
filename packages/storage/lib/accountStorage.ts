@@ -4,7 +4,7 @@ export interface AccountInfo {
   accountId?: string;
   namespaceId?: string;
   token?: string;
-  selectedProvider?: 'cloudflare' | 'github' | 'webdav';
+  selectedProvider?: 'cloudflare' | 'github' | 'webdav' | 'google-drive';
   githubAccessToken?: string;
   avatarUrl?: string;
   name?: string | null;

@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 
 const packageJson = JSON.parse(fs.readFileSync('../package.json', 'utf8'));
+const google = JSON.parse(fs.readFileSync('./google-config.json', 'utf8'));
+const googleClientId = (process.env.GOOGLE_CLIENT_ID || google.clientId || '').trim();
+if (googleClientId && !/^[\w-]+\.apps\.googleusercontent\.com$/.test(googleClientId))
+  throw new Error('Invalid GOOGLE_CLIENT_ID');
 
 const isFirefox = process.env.__FIREFOX__ === 'true';
 
@@ -18,6 +22,10 @@ const sidePanelConfig = {
 const manifest = Object.assign(
   {
     manifest_version: 3,
+    key: google.publicKey,
+    ...(googleClientId && {
+      oauth2: { client_id: googleClientId, scopes: ['https://www.googleapis.com/auth/drive.appdata'] },
+    }),
     default_locale: 'zh_CN',
     /**
      * if you want to support multiple languages, you can use the following reference
@@ -25,7 +33,7 @@ const manifest = Object.assign(
      */
     name: 'CookieSync · 登录状态同步',
     version: packageJson.version,
-    description: '通过 WebDAV、Cloudflare KV 或 GitHub Gist 同步 Cookie 与 LocalStorage。',
+    description: '通过 Google Drive、WebDAV、Cloudflare KV 或 GitHub Gist 同步 Cookie 与 LocalStorage。',
     permissions: ['cookies', 'activeTab', 'tabs', 'storage', 'identity', 'alarms'].concat(sidePanelConfig.permissions),
     host_permissions: ['<all_urls>'],
     options_page: 'options/index.html',
