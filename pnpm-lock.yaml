@@ -229,6 +229,9 @@ importers:
       tsup:
         specifier: 8.0.2
         version: 8.0.2(@swc/core@1.13.0)(postcss@8.4.39)(ts-node@10.9.2(@swc/core@1.13.0)(@types/node@20.14.9)(typescript@5.2.2))(typescript@5.2.2)
+      tsx:
+        specifier: ^4.19.1
+        version: 4.19.1
 
   packages/storage:
     devDependencies:
@@ -5958,9 +5961,9 @@ snapshots:
 
   '@xtuc/long@4.2.2': {}
 
-  acorn-import-attributes@1.9.5(acorn@8.12.0):
+  acorn-import-attributes@1.9.5(acorn@8.15.0):
     dependencies:
-      acorn: 8.12.0
+      acorn: 8.15.0
 
   acorn-jsx@5.3.2(acorn@8.12.0):
     dependencies:
@@ -7986,7 +7989,7 @@ snapshots:
   terser@5.31.1:
     dependencies:
       '@jridgewell/source-map': 0.3.6
-      acorn: 8.12.0
+      acorn: 8.15.0
       commander: 2.20.3
       source-map-support: 0.5.21
 
@@ -8325,8 +8328,8 @@ snapshots:
       '@webassemblyjs/ast': 1.12.1
       '@webassemblyjs/wasm-edit': 1.12.1
       '@webassemblyjs/wasm-parser': 1.12.1
-      acorn: 8.12.0
-      acorn-import-attributes: 1.9.5(acorn@8.12.0)
+      acorn: 8.15.0
+      acorn-import-attributes: 1.9.5(acorn@8.15.0)
       browserslist: 4.23.1
       chrome-trace-event: 1.0.4
       enhanced-resolve: 5.17.0

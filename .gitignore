@@ -20,3 +20,11 @@
 
 # compiled
 apps/chrome-extension/public/manifest.json
+
+# Local credentials, browser profiles and release archives
+**/.env.*
+**/*.local.json
+**/browser-profile/
+*.zip
+
+**/__pycache__/

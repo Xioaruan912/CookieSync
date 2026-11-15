@@ -1,10 +1,12 @@
+import { cookieSetDetails, syncCookieDomain } from './restore';
 import { ICookie, ICookiesMap, ILocalStorageItem } from '@sync-your-cookie/protobuf';
 import { Cookie, cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
 import { domainStatusStorage } from '@sync-your-cookie/storage/lib/domainStatusStorage';
 
 import { AccountInfo, accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
 
-import { MessageType, sendMessage } from '@lib/message';
+import { MessageType } from '@lib/message';
+import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { RestEndpointMethodTypes } from '@octokit/rest';
 import { OctokitResponse } from '@octokit/types';
 import { WriteResponse } from '../cloudflare';
@@ -17,6 +19,8 @@ import {
 } from './withCloudflare';
 
 export const readCookiesMapWithStatus = async (cloudflareInfo: AccountInfo) => {
+  // WebDAV mutations must read the current remote state, not a stale UI cache.
+  if (cloudflareInfo.selectedProvider === 'webdav') return readCookiesMap(cloudflareInfo);
   let cookieMap: Cookie | null = null;
   const domainStatus = await domainStatusStorage.get();
   if (domainStatus.pushing) {
@@ -30,7 +34,12 @@ export const readCookiesMapWithStatus = async (cloudflareInfo: AccountInfo) => {
 
 export const pullCookies = async (isInit = false): Promise<Cookie> => {
   const cloudflareInfo = await accountStorage.get();
-  if (isInit && (!cloudflareInfo.accountId || !cloudflareInfo.namespaceId || !cloudflareInfo.token)) {
+  if (
+    isInit &&
+    cloudflareInfo.selectedProvider !== 'github' &&
+    cloudflareInfo.selectedProvider !== 'webdav' &&
+    (!cloudflareInfo.accountId || !cloudflareInfo.namespaceId || !cloudflareInfo.token)
+  ) {
     return {};
   }
   try {
@@ -51,60 +60,83 @@ export const pullCookies = async (isInit = false): Promise<Cookie> => {
     });
     return res;
   } catch (e) {
-    console.error('pullCookies fail', e);
     await domainStatusStorage.update({
       pulling: false,
     });
     return Promise.reject(e);
   }
 };
-function extractPortRegex(host: string) {
-  const match = host.match(/:(\d+)$/);
-  return match ? match[1] : null;
-}
-export const pullAndSetCookies = async (activeTabUrl: string, host: string, isReload = true): Promise<Cookie> => {
-  const cookieMap = await pullCookies();
+const applyingRemoteHosts = new Map<string, number>();
+export const isApplyingRemoteState = (host: string) => (applyingRemoteHosts.get(syncCookieDomain(host)) || 0) > 0;
+
+export const applyLocalStorageToTabs = async (host: string, value: ILocalStorageItem[], targetTabId?: number) => {
+  const tabs = await chrome.tabs.query({});
+  const matching = tabs.filter(tab => {
+    if (!tab.id || (targetTabId !== undefined && tab.id !== targetTabId) || !tab.url?.startsWith('http')) return false;
+    const hostname = new URL(tab.url).host;
+    return hostname === host || hostname.replace(/^www\./, '') === host;
+  });
+  const results = await Promise.allSettled(
+    matching.map(tab =>
+      chrome.tabs
+        .sendMessage(tab.id!, {
+          type: MessageType.SetLocalStorage,
+          payload: { domain: host, value },
+        })
+        .then(result => {
+          if (!result?.isOk) throw new Error('LocalStorage 写入失败');
+        }),
+    ),
+  );
+  if (results.some(result => result.status === 'rejected'))
+    throw new Error('部分页面的 LocalStorage 未恢复，请刷新该网站后重试');
+};
+
+export const pullAndSetCookies = async (
+  activeTabUrl: string,
+  host: string,
+  isReload = true,
+  providedMap?: Cookie,
+  targetTabId?: number,
+): Promise<Cookie> => {
+  // Network reads do not suppress local changes. Only writes to this site's scope do.
+  const cookieMap = providedMap || (await pullCookies());
+  const scope = syncCookieDomain(host);
+  applyingRemoteHosts.set(scope, (applyingRemoteHosts.get(scope) || 0) + 1);
+  try {
+    return await restoreCookieMap(activeTabUrl, host, isReload, cookieMap, targetTabId);
+  } finally {
+    const remaining = (applyingRemoteHosts.get(scope) || 1) - 1;
+    if (remaining) applyingRemoteHosts.set(scope, remaining);
+    else applyingRemoteHosts.delete(scope);
+  }
+};
+
+const restoreCookieMap = async (
+  activeTabUrl: string,
+  host: string,
+  isReload: boolean,
+  providedMap?: Cookie,
+  targetTabId?: number,
+): Promise<Cookie> => {
+  const cookieMap = providedMap || (await pullCookies());
   const cookieDetails = cookieMap?.domainCookieMap?.[host]?.cookies || [];
   const localStorageItems = cookieMap?.domainCookieMap?.[host]?.localStorageItems || [];
   if (cookieDetails.length === 0 && localStorageItems.length === 0) {
-    console.warn('no cookies to pull, push first please', host, cookieMap);
-    throw new Error('No cookies to pull, push first please');
+    throw new Error('远程没有该网站的登录数据，请先在已登录电脑推送');
   } else {
     const cookiesPromiseList: Promise<unknown>[] = [];
     for (const cookie of cookieDetails) {
-      let removeWWWHost = host.replace('www.', '');
-      const port = extractPortRegex(removeWWWHost);
-      if (port) {
-        removeWWWHost = removeWWWHost.replace(':' + port, '');
-      }
-
-      if (cookie.domain?.includes(removeWWWHost)) {
-        let url = activeTabUrl;
-        if (cookie.domain) {
-          const urlObj = new URL(activeTabUrl);
-          const protocol = activeTabUrl ? urlObj.protocol : 'http:';
-          const itemHost = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
-          url = `${protocol}//${itemHost}`;
-        }
-        const cookieDetail: chrome.cookies.SetDetails = {
-          domain: cookie.domain.startsWith('.') || !url ? cookie.domain : undefined,
-          name: cookie.name ?? undefined,
-          url: url,
-          storeId: cookie.storeId ?? undefined,
-          value: cookie.value ?? undefined,
-          expirationDate: cookie.expirationDate ?? undefined,
-          path: cookie.path ?? undefined,
-          httpOnly: cookie.httpOnly ?? undefined,
-          secure: cookie.secure ?? undefined,
-          sameSite: (cookie.sameSite ?? undefined) as chrome.cookies.SameSiteStatus,
-        };
+      const cookieDetail = cookieSetDetails(cookie, activeTabUrl);
+      if (cookieDetail) {
         const promise = new Promise((resolve, reject) => {
           try {
             chrome.cookies.set(cookieDetail, res => {
-              resolve(res);
+              if (chrome.runtime.lastError || !res)
+                reject(new Error(chrome.runtime.lastError?.message || 'Cookie 写入失败'));
+              else resolve(res);
             });
           } catch (error) {
-            console.error('cookie set error', cookieDetail, error);
             reject(error);
           }
         });
@@ -112,38 +144,20 @@ export const pullAndSetCookies = async (activeTabUrl: string, host: string, isRe
       }
     }
 
-    // reload window after set cookies
-    // await new Promise(resolve => {
-    //   setTimeout(resolve, 5000);
-    // });
-    await sendMessage(
-      {
-        type: MessageType.SetLocalStorage,
-        payload: {
-          domain: host,
-          value: localStorageItems,
-        },
-      },
-      true,
-    )
-      .then(res => {
-        console.log('set local storage', res);
-      })
-      .catch(err => {
-        console.error('set local storage error', err);
-      });
+    // Cookie writes complete before page-local state is applied or a tab is refreshed.
+    await Promise.all(cookiesPromiseList);
+    if ((await settingsStorage.get()).includeLocalStorage !== false && localStorageItems.length) {
+      await applyLocalStorageToTabs(host, localStorageItems, targetTabId);
+    }
 
     if (cookiesPromiseList.length === 0 && localStorageItems.length === 0) {
-      console.warn('no matched cookies and localStorageItems to pull, push first please', host, cookieMap);
-      throw new Error('No matched cookies and localStorageItems to pull, push first please');
+      throw new Error('没有匹配且未过期的 Cookie，请在已登录电脑重新推送');
     }
-    await Promise.allSettled(cookiesPromiseList);
     if (isReload) {
       chrome.tabs.query({}, function (tabs) {
         tabs.forEach(function (tab) {
           // 使用字符串匹配
           if (tab.url && tab.url.includes(host) && tab.id) {
-            console.log('tab', tab);
             chrome.tabs.reload(tab.id);
           }
         });
@@ -196,14 +210,13 @@ export const pushCookies = async (
       userAgent,
       oldCookie,
     );
-    console.log('res->pushCookies', res);
+
     await checkSuccessAndUpdate(accountInfo, res, cookieMap);
     await domainStatusStorage.update({
       pushing: false,
     });
     return res;
   } catch (e) {
-    console.error('pushCookies fail err', e);
     await domainStatusStorage.update({
       pushing: false,
     });
@@ -229,7 +242,6 @@ export const pushMultipleDomainCookies = async (
     await checkSuccessAndUpdate(accountInfo, res, cookieMap);
     return res;
   } catch (e) {
-    console.error('pushMultipleDomainCookies fail err', e);
     await domainStatusStorage.update({
       pushing: false,
     });
@@ -254,7 +266,6 @@ export const removeCookies = async (domain: string): Promise<WriteResponse> => {
     await checkSuccessAndUpdate(accountInfo, res, cookieMap);
     return res;
   } catch (e) {
-    console.error('removeCookies fail err', e);
     await domainStatusStorage.update({
       pushing: false,
     });
@@ -279,7 +290,6 @@ export const removeCookieItem = async (domain: string, id: string): Promise<Writ
     await checkSuccessAndUpdate(accountInfo, res, cookieMap);
     return res;
   } catch (e) {
-    console.error('removeCookieItem fail err', e);
     await domainStatusStorage.update({
       pushing: false,
     });
@@ -304,7 +314,6 @@ export const editCookieItem = async (domain: string, name: string): Promise<Writ
     await checkSuccessAndUpdate(accountInfo, res, cookieMap);
     return res;
   } catch (e) {
-    console.error('removeCookieItem fail err', e);
     await domainStatusStorage.update({
       pushing: false,
     });
@@ -338,7 +347,6 @@ export class CookieOperator {
 
       return res;
     } catch (e) {
-      console.error('removeCookieItem fail err', e);
       await this.setPushing(false);
       return Promise.reject(e);
     }

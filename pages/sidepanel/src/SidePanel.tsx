@@ -36,4 +36,4 @@ const SidePanel = () => {
   );
 };
 
-export default withErrorBoundary(withSuspense(SidePanel, <div> Loading ... </div>), <div> Error Occur </div>);
+export default withErrorBoundary(withSuspense(SidePanel, <div> 加载中… </div>), <div> 页面加载失败，请重新打开 </div>);

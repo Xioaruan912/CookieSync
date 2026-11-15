@@ -18,15 +18,15 @@ const sidePanelConfig = {
 const manifest = Object.assign(
   {
     manifest_version: 3,
-    default_locale: 'en',
+    default_locale: 'zh_CN',
     /**
      * if you want to support multiple languages, you can use the following reference
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Internationalization
      */
-    name: 'Sync Your Cookie',
+    name: 'CookieSync · 登录状态同步',
     version: packageJson.version,
-    description: 'A browser extension for syncing cookies and localStorage to Cloudflare KV or GitHub Gist',
-    permissions: ['cookies', 'activeTab', 'tabs', 'storage', 'identity'].concat(sidePanelConfig.permissions),
+    description: '通过 WebDAV、Cloudflare KV 或 GitHub Gist 同步 Cookie 与 LocalStorage。',
+    permissions: ['cookies', 'activeTab', 'tabs', 'storage', 'identity', 'alarms'].concat(sidePanelConfig.permissions),
     host_permissions: ['<all_urls>'],
     options_page: 'options/index.html',
     background: {

@@ -1,3 +1,28 @@
+# CookieSync · WebDAV 与简体中文分支
+
+基于 [jackluson/sync-your-cookie](https://github.com/jackluson/sync-your-cookie) 的 MIT 二次开发版本。新增 WebDAV 同步配置、连接测试和后端，汉化设置、弹窗与管理侧栏，保留 Cloudflare KV 与 GitHub Gist。
+
+- WebDAV URL、用户名、密码／应用密码、远程文件路径；凭据仅保存本机。
+- 手动推送、拉取并应用、按网站合并；增加浏览器启动自动拉取、后台增量同步与本机离线队列（默认每 2 分钟合并，无关闭钩子）。
+- HTTPS、超时、防重定向、ETag 条件写；连接测试使用独立临时文件。
+- 继续支持原有 Protobuf 编码、LocalStorage 和可选 AES-256-GCM 加密。
+- 小红书、抖音、115 主域及子域 Cookie 优先处理，修复会话 Cookie 误设过期时间。
+
+安装、配置、合并规则、自动同步限制与安全风险见 **[WebDAV 使用说明](docs/WEBDAV.md)**。
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+pnpm type-check
+pnpm test
+```
+
+Chrome 开发者模式中加载根目录 `dist/`。不要将依赖、构建目录、浏览器资料或真实 Cookie / 密码提交到 GitHub。Cookie 同步不能保证绕过小红书、抖音等网站的设备风控或重新验证。
+
+以下保留原项目说明及作者信息。
+
+---
+
 <div align="center">
 <img src="chrome-extension/public/icon-128.png" alt="logo"/>
 <h1> Sync your cookie to Your Cloudflare or Github Gist</h1>

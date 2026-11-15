@@ -19,13 +19,11 @@ export const useGithub = () => {
     setLoading(true);
     try {
       chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true }, async redirectUrl => {
-        console.log('redirectUrl', redirectUrl);
         const code = redirectUrl ? new URL(redirectUrl).searchParams.get('code') : '';
         if (code) {
           try {
-            console.log('code', code);
             const accessToken = await GithubApi.instance.fetchAccessToken(code);
-            console.log('accessToken', accessToken);
+
             setLoading(false);
             const user = await GithubApi.instance.fetchUser();
             accountStorage.update({
@@ -37,20 +35,19 @@ export const useGithub = () => {
               email: user.email,
             });
             GithubApi.instance.reload();
-            console.log('user', user);
-            toast.success('GitHub Authorization Success');
+
+            toast.success('GitHub 授权成功');
           } catch (error) {
-            toast.error('GitHub Authorization Failed');
+            toast.error('GitHub 授权失败');
             setLoading(false);
           }
         } else {
           setLoading(false);
-          toast.error('GitHub Authorization Failed');
+          toast.error('GitHub 授权失败');
         }
       });
     } catch (error) {
-      console.error('Auth error', error);
-      toast.error('GitHub Authorization Failed');
+      toast.error('GitHub 授权失败');
       setLoading(false);
     }
   };

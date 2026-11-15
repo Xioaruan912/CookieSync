@@ -12,7 +12,7 @@ import { useStorageSuspense } from './index';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const catchHandler = (err: any, scene: 'push' | 'pull' | 'remove' | 'delete' | 'edit', toast: typeof Toast) => {
-  const defaultMsg = `${scene} fail`;
+  const defaultMsg = '同步操作失败，请重试';
   const code = err?.code;
   const settingErrors = [
     MessageErrorCode.AccountCheck,
@@ -21,18 +21,17 @@ export const catchHandler = (err: any, scene: 'push' | 'pull' | 'remove' | 'dele
     MessageErrorCode.DecryptFailed,
   ];
   if (settingErrors.includes(code)) {
-    toast.error(err?.msg || err?.result?.message || defaultMsg, {
+    toast.error(err?.msg || err?.message || err?.result?.message || defaultMsg, {
       action: {
-        label: 'go to settings',
+        label: '前往设置',
         onClick: () => {
           chrome.runtime.openOptionsPage();
         },
       },
     });
   } else {
-    toast.error(err?.msg || defaultMsg);
+    toast.error(err?.msg || err?.message || defaultMsg);
   }
-  console.log('err', err);
 };
 
 export const useCookieAction = (host: string, toast: typeof Toast) => {
@@ -47,11 +46,10 @@ export const useCookieAction = (host: string, toast: typeof Toast) => {
     })
       .then(res => {
         if (res.isOk) {
-          toast.success('Pushed success');
+          toast.success('推送成功');
         } else {
-          toast.error(res.msg || 'Pushed fail');
+          toast.error(res.msg || '推送失败');
         }
-        console.log('res', res);
       })
       .catch(err => {
         catchHandler(err, 'push', toast);
@@ -65,11 +63,10 @@ export const useCookieAction = (host: string, toast: typeof Toast) => {
       reload,
     })
       .then(res => {
-        console.log('res', res);
         if (res.isOk) {
-          toast.success('Pull success');
+          toast.success('拉取成功');
         } else {
-          toast.error(res.msg || 'Pull fail');
+          toast.error(res.msg || '拉取失败');
         }
       })
       .catch(err => {
@@ -82,14 +79,12 @@ export const useCookieAction = (host: string, toast: typeof Toast) => {
       domain: selectedDomain,
     })
       .then(async res => {
-        console.log('res', res);
         if (res.isOk) {
           toast.success(res.msg || 'success');
           await domainConfigStorage.removeItem(host);
         } else {
-          toast.error(res.msg || 'Removed fail');
+          toast.error(res.msg || '移除失败');
         }
-        console.log('res', res);
       })
       .catch(err => {
         catchHandler(err, 'remove', toast);

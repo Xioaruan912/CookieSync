@@ -18,7 +18,13 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
 
   const handleCheckChange = (
     checked: boolean,
-    checkedKey: 'protobufEncoding' | 'includeLocalStorage' | 'contextMenu' | 'encryptionEnabled',
+    checkedKey:
+      | 'protobufEncoding'
+      | 'includeLocalStorage'
+      | 'contextMenu'
+      | 'encryptionEnabled'
+      | 'startupPull'
+      | 'backgroundSync',
   ) => {
     settingsStorage.update({
       [checkedKey]: checked,
@@ -40,8 +46,11 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
   const reset = async () => {
     await domainStatusStorage.resetState();
     await cookieStorage.reset();
-    await pullCookies();
-    console.log('reset finished');
+    try {
+      await pullCookies();
+    } catch {
+      /* Configuration may not be complete yet. */
+    }
   };
 
   useEffect(() => {
@@ -62,7 +71,6 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
   };
 
   const handleSelectOpenChange = (open: boolean) => {
-    console.log('select open', open);
     setSelectOpen(open);
   };
 
@@ -91,17 +99,54 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
   return (
     <Popover onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align="start" className="w-[328px]">
+      <PopoverContent align="start" className="w-[360px] max-h-[80vh] overflow-y-auto">
         <div className="grid gap-4">
           <div className="space-y-2">
-            <h3 className="leading-none font-medium text-base">Save Settings</h3>
-            <p className="text-muted-foreground text-sm">Set the save format. </p>
+            <h3 className="leading-none font-medium text-base">高级设置</h3>
+            <p className="text-muted-foreground text-sm">设置存储格式、数据范围与加密。 </p>
           </div>
           <div className="gap-2">
+            <div className="mb-4 space-y-3 border-b pb-4">
+              <p className="text-sm">无感同步：首次手动推送后，默认开启该网站的自动收发，可在弹窗单独关闭。</p>
+              {(
+                [
+                  ['startupPull', '浏览器启动时自动拉取'],
+                  ['backgroundSync', '运行期间后台增量同步'],
+                ] as const
+              ).map(([key, label]) => (
+                <div key={key} className="flex items-center justify-between gap-2">
+                  <Label htmlFor={key}>{label}</Label>
+                  <Switch
+                    id={key}
+                    checked={settingsInfo[key] !== false}
+                    onCheckedChange={checked => handleCheckChange(checked, key)}
+                  />
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="sync-interval">后台同步间隔（分钟）</Label>
+                <Input
+                  id="sync-interval"
+                  className="w-20 h-8"
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={settingsInfo.syncIntervalMinutes ?? 2}
+                  onChange={event => {
+                    const value = Number(event.target.value);
+                    if (Number.isFinite(value) && value >= 1 && value <= 60)
+                      void settingsStorage.update({ syncIntervalMinutes: value });
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                默认每 2 分钟合并改动，启动时立即拉取；不依赖关闭事件，也不弹同步通知。
+              </p>
+            </div>
             <div className="flex items-center gap-4 mb-4">
               <Label className="w-[136px] block text-right" htmlFor="storage-key">
                 <div className="flex gap-2 justify-end">
-                  Storage Key
+                  存储键
                   {settingsInfo.gistHtmlUrl ? (
                     <a href={settingsInfo.gistHtmlUrl} target="_blank" rel="noreferrer">
                       <SquareArrowOutUpRight size={16} />
@@ -128,7 +173,7 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
             </div>
             <div className="flex items-center gap-4 mb-4">
               <Label className="whitespace-nowrap block w-[136px] justify-end text-right" htmlFor="encoding">
-                Protobuf Encoding
+                Protobuf 编码
               </Label>
               <Switch
                 onCheckedChange={checked => handleCheckChange(checked, 'protobufEncoding')}
@@ -141,7 +186,7 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
               <Label
                 className="items-center  whitespace-nowrap flex w-[136px] justify-end text-right"
                 htmlFor="include">
-                Include LocalStorage
+                包含 LocalStorage
               </Label>
               <div className="flex items-center gap-1">
                 <Switch
@@ -149,7 +194,7 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
                   checked={settingsInfo.includeLocalStorage}
                   id="include"
                 />
-                <SyncTooltip title="Note: LocalStorage cannot supports Auto Push & If the retrieval fails, the page will be reloaded once to try again.">
+                <SyncTooltip title="开启后台同步后，已启用网站会定期检测 LocalStorage 变化；首次手动读取失败时可能刷新页面重试。">
                   <Info className="mx-2" size={18} />
                 </SyncTooltip>
               </div>
@@ -159,7 +204,7 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
               <Label
                 className="items-center whitespace-nowrap flex w-[136px] justify-end text-right"
                 htmlFor="contextMenu">
-                Show ContextMenu
+                显示右键菜单
               </Label>
               <div className="flex items-center gap-1">
                 <Switch
@@ -176,7 +221,7 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
                   className="items-center whitespace-nowrap flex w-[136px] justify-end text-right"
                   htmlFor="encryption">
                   <Lock size={14} className="mr-1" />
-                  E2E Encryption
+                  端到端加密
                 </Label>
                 <div className="flex items-center gap-1">
                   <Switch
@@ -185,7 +230,7 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
                     disabled={!settingsInfo.protobufEncoding}
                     id="encryption"
                   />
-                  <SyncTooltip title="End-to-end encryption requires Protobuf Encoding to be enabled. Your data will be encrypted with AES-256-GCM before being sent to the cloud.">
+                  <SyncTooltip title="需开启 Protobuf 编码。上传前使用 AES-256-GCM 加密，两台电脑须设置相同的加密密码。">
                     <Info className="mx-2" size={18} />
                   </SyncTooltip>
                 </div>
@@ -196,7 +241,7 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
                   <Label
                     className="items-center mr-2 whitespace-nowrap flex w-[136px] justify-end text-right"
                     htmlFor="encryptionPassword">
-                    Password
+                    密码
                   </Label>
                   <Input
                     type={openEye ? 'text' : 'password'}
@@ -204,7 +249,7 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
                     value={settingsInfo.encryptionPassword || ''}
                     onChange={handlePasswordChange}
                     className="h-8 flex-1"
-                    placeholder="Enter encryption password"
+                    placeholder="输入加密密码"
                   />
                   <span
                     role="button"

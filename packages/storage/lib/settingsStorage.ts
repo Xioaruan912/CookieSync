@@ -17,6 +17,9 @@ export interface ISettings {
   contextMenu?: boolean;
   encryptionEnabled?: boolean;
   encryptionPassword?: string;
+  startupPull?: boolean;
+  backgroundSync?: boolean;
+  syncIntervalMinutes?: number;
 }
 const key = 'settings-storage-key';
 const cacheStorageMap = new Map();
@@ -34,6 +37,9 @@ const initStorage = (): BaseStorage<ISettings> => {
       protobufEncoding: false,
       includeLocalStorage: true,
       contextMenu: false,
+      startupPull: true,
+      backgroundSync: true,
+      syncIntervalMinutes: 2,
     },
     {
       storageType: StorageType.Sync,

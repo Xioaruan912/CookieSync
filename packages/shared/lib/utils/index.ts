@@ -16,11 +16,11 @@ export function debounce<T = unknown>(func: (...args: T[]) => void, timeout = 30
 }
 
 const successSceneMap = {
-  push: 'Pushed',
-  pull: 'Pulled',
-  remove: 'Removed',
-  delete: 'Deleted',
-  edit: 'Edited',
+  push: '推送',
+  pull: '拉取',
+  remove: '移除',
+  delete: '删除',
+  edit: '编辑',
 };
 
 export function checkResponseAndCallback(
@@ -33,17 +33,17 @@ export function checkResponseAndCallback(
   if (accountInfo?.selectedProvider === 'github') {
     const statusCode = res?.status;
     if (statusCode === 200 || statusCode === 201 || statusCode === 204) {
-      callback({ isOk: true, msg: `${successSceneMap[scene]} success` });
+      callback({ isOk: true, msg: `${successSceneMap[scene]}成功` });
     } else {
       const defaultErrMsg =
         res?.message?.toLowerCase().includes?.(scene) || ((statusCode || res.code) && res?.message)
           ? res?.message
-          : `${scene} fail (status:${statusCode || res.code}), please try again.`;
+          : `${successSceneMap[scene]}失败（状态：${statusCode || res.code}），请重试`;
       callback({ isOk: false, code: res?.code, msg: defaultErrMsg, result: res });
     }
   } else {
     if ((res as WriteResponse)?.success) {
-      callback({ isOk: true, msg: `${successSceneMap[scene]} success` });
+      callback({ isOk: true, msg: `${successSceneMap[scene]}成功` });
     } else {
       const cloudFlareErrors = [ErrorCode.NotFoundRoute, ErrorCode.NamespaceIdError, ErrorCode.AuthenicationError];
       const isAccountError = res?.errors?.length && cloudFlareErrors.includes(res.errors[0].code);
@@ -52,16 +52,13 @@ export function checkResponseAndCallback(
           isOk: false,
           msg:
             res.errors[0].code === ErrorCode.NamespaceIdError
-              ? 'cloudflare namespace Id info is incorrect.'
-              : 'cloudflare account info is incorrect.',
+              ? 'Cloudflare 命名空间 ID 不正确'
+              : 'Cloudflare 账号配置不正确',
           code: MessageErrorCode.CloudflareNotFoundRoute,
           result: res,
         });
       } else {
-        const defaultErrMsg =
-          res?.message?.toLowerCase().includes?.(scene) || (res?.code && res?.message)
-            ? res?.message
-            : `${scene} fail, please try again.`;
+        const defaultErrMsg = res?.message ? res?.message : `${successSceneMap[scene]}失败，请重试`;
         callback({ isOk: false, code: res?.code, msg: defaultErrMsg, result: res });
       }
     }
@@ -104,7 +101,6 @@ export async function extractDomainAndPort(url: string, isRemoveWWW = true): Pro
           url,
         },
         async cookies => {
-          console.log('cookies', cookies);
           if (cookies) {
             const hasHostCookie = cookies.find(item => item.domain.includes(hostname));
             if (hasHostCookie) {
@@ -124,7 +120,6 @@ export async function extractDomainAndPort(url: string, isRemoveWWW = true): Pro
         },
       );
     } catch (error) {
-      console.error('error', error);
       resolve([hostname, port, hostname]);
     }
   });

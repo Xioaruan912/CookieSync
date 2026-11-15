@@ -125,7 +125,7 @@ const CookieTable = () => {
   const columns: ColumnDef<CookieItem>[] = [
     {
       accessorKey: 'host',
-      header: 'Host',
+      header: '网站',
       cell: ({ row, getValue }) => {
         const value = getValue<string>() || '';
         const sourceUrl = row.original.sourceUrl;
@@ -176,7 +176,7 @@ const CookieTable = () => {
     },
     {
       accessorKey: 'autoPush',
-      header: 'AutoPush',
+      header: '自动推送',
       id: 'autoPush',
       cell: record => {
         return (
@@ -197,7 +197,7 @@ const CookieTable = () => {
     },
     {
       accessorKey: 'autoPull',
-      header: 'AutoPull',
+      header: '自动拉取',
       id: 'autoPull',
       cell: record => {
         return (
@@ -230,12 +230,12 @@ const CookieTable = () => {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="h-8 w-8 p-0">
-                <span className="sr-only">Open menu</span>
+                <span className="sr-only">打开菜单</span>
                 <Ellipsis className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Cookie Actions</DropdownMenuLabel>
+              <DropdownMenuLabel>Cookie 操作</DropdownMenuLabel>
               {/* <DropdownMenuItem onClick={() => navigator.clipboard.writeText(.id)}>
                 Copy payment ID
               </DropdownMenuItem> */}
@@ -252,14 +252,13 @@ const CookieTable = () => {
                 ) : (
                   <CloudUpload size={16} className="mr-2 h-4 w-4" />
                 )}
-                Push
+                推送
                 <SyncTooltip
                   align="start"
                   alignOffset={80}
                   title={
                     <p>
-                      <p>If 'Include LocalStorage' is enabled and no 'host' tab is present,</p>a 'host' tab will
-                      automatically open.
+                      <p>If '包含 LocalStorage' is enabled and no 'host' tab is present,</p>将自动打开该网站 页面。
                     </p>
                   }>
                   <p className="text-base flex items-center font-medium">
@@ -278,7 +277,7 @@ const CookieTable = () => {
                 ) : (
                   <CloudDownload size={16} className="mr-2 h-4 w-4" />
                 )}
-                Pull
+                拉取
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -287,7 +286,7 @@ const CookieTable = () => {
                   handleViewCookies(row.original.host);
                 }}>
                 <TableIcon size={16} className="mr-2 h-4 w-4" />
-                View
+                查看
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="cursor-pointer"
@@ -295,7 +294,7 @@ const CookieTable = () => {
                   handleCopy(row.original.host);
                 }}>
                 <Copy size={16} className="mr-2 h-4 w-4" />
-                Copy
+                复制
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="cursor-pointer"
@@ -303,7 +302,7 @@ const CookieTable = () => {
                   handleCopy(row.original.host, true);
                 }}>
                 <ClipboardList size={16} className="mr-2 h-4 w-4" />
-                Copy With JSON
+                复制为 JSON
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -315,7 +314,7 @@ const CookieTable = () => {
                 ) : (
                   <Trash size={16} className="mr-2 h-4 w-4" />
                 )}
-                Delete
+                删除
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -343,7 +342,7 @@ const CookieTable = () => {
                 handleBack();
               }}>
               <ChevronLeft className="h-4 w-4" />
-              <span className="sr-only">Back</span>
+              <span className="sr-only">返回</span>
             </Button>
             <a
               href={href}
@@ -355,7 +354,7 @@ const CookieTable = () => {
             </a>
           </div>
           {hasLocalStorage ? (
-            <SyncTooltip title="Toggle LocalStorage View">
+            <SyncTooltip title="切换 LocalStorage 视图">
               <Toggle pressed={localStorageMode} onPressedChange={handlePressChange} className="ml-6" variant="outline">
                 <Database size={16} className="h-4 w-4" />
               </Toggle>
@@ -379,10 +378,8 @@ const CookieTable = () => {
     <div className="h-screen flex flex-col">
       <div className="space-y-4 p-4 ">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">Welcome back!</h2>
-          <p className="text-muted-foreground text-sm">
-            Here&apos;s a list of your pushed {localStorageMode ? 'localStorage items' : 'cookies'}{' '}
-          </p>
+          <h2 className="text-xl font-bold tracking-tight">同步管理</h2>
+          <p className="text-muted-foreground text-sm">已推送的 {localStorageMode ? 'LocalStorage 数据' : 'Cookie'} </p>
         </div>
       </div>
       <div className="h-0 flex-1 overflow-auto">
@@ -395,16 +392,16 @@ const CookieTable = () => {
                 <div className=" mx-4 w-1/3 min-w-[328px] bg-primary/10 mb-4 rounded-xl border text-card-foreground shadow">
                   <div className="p-3">
                     <div className="flex flex-row items-center justify-between">
-                      <p className="tracking-tight text-sm font-normal">Total Cookie and LocalStorage</p>
+                      <p className="tracking-tight text-sm font-normal">Cookie 与 LocalStorage 总计</p>
                     </div>
                     <div className="">
                       <p className="text-2xl font-bold">
-                        {domainList.length} <span className="text-xl">sites</span>
+                        {domainList.length} <span className="text-xl">个网站</span>
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        <span>{totalCookieItem} cookie items</span>
+                        <span>{totalCookieItem} 条 Cookie</span>
                         <span className="mx-1">&</span>
-                        <span>{totalLocalStorageItem} localStorage items</span>
+                        <span>{totalLocalStorageItem} 条 LocalStorage</span>
                       </p>
                     </div>
                   </div>

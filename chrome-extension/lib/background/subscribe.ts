@@ -26,7 +26,6 @@ export const initSubscribe = async () => {
     await domainStatusStorage.resetState();
     await cookieStorage.reset();
     await pullCookies();
-    console.log('reset finished');
   });
 
   let previousContextMenu: boolean | undefined = undefined;
