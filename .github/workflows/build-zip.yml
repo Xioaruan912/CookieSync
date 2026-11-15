@@ -1,38 +1,27 @@
-name: Build And Upload Extension Zip Via Artifact
+name: Build Chrome extension
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: ".nvmrc"
-
-      - uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.OS }}-build-${{ hashFiles('**/pnpm-lock.yaml') }}
-
       - uses: pnpm/action-setup@v4
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm build
-
-      - run: pnpm type-check
-
-      - run: pnpm test
-
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Build and verify outside the source checkout
+        run: node scripts/workspace.mjs verify --cache "$RUNNER_TEMP/cookiesync-cache" --output "$RUNNER_TEMP/cookiesync-release"
       - uses: actions/upload-artifact@v4
         with:
-          path: dist/*
+          name: CookieSync-chrome
+          path: ${{ runner.temp }}/cookiesync-release/unpacked/*
+          if-no-files-found: error

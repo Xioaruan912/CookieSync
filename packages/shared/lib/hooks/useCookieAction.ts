@@ -95,10 +95,10 @@ export const useCookieAction = (host: string, toast: typeof Toast) => {
     // domainConfig: domainConfig as typeof domainConfig,
     pulling: domainStatus.pulling,
     pushing: domainStatus.pushing,
-    domainItemConfig: domainConfig.domainMap[host] || {},
+    domainItemConfig: { autoPush: true, autoPull: true, ...domainConfig.domainMap[host] },
     domainItemStatus: domainStatus.domainMap[host] || {},
     getDomainItemConfig: (selectedDomain: string) => {
-      return domainConfig.domainMap[selectedDomain] || {};
+      return { autoPush: true, autoPull: true, ...domainConfig.domainMap[selectedDomain] };
     },
     getDomainItemStatus: (selectedDomain: string) => {
       return domainStatus.domainMap[selectedDomain] || {};

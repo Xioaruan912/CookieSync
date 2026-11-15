@@ -83,7 +83,12 @@ with sync_playwright() as p:
     entry = remote['domainCookieMap'][f'127.0.0.1:{server.server_port}']
     assert any(c['name']=='session_test' for c in entry['cookies'])
     assert any(v['key']=='test_token' for v in entry['localStorageItems'])
+    before_repeat = version
+    repeated = options.evaluate('(message) => chrome.runtime.sendMessage(message)', payload)
+    assert repeated['isOk'] and version == before_repeat, 'unchanged push must skip remote PUT'
+    print('semantic_digest_skips_unchanged_push_passed')
     # Conditional-PUT gateways must fail visibly, then work only after explicit opt-in.
+    context.add_cookies([{'name':'session_test','value':'changed_login','url':base,'httpOnly':True,'sameSite':'Lax'}])
     reject_conditions = True
     site.bring_to_front()
     failed = options.evaluate('(message) => chrome.runtime.sendMessage(message)', payload)
@@ -113,7 +118,7 @@ with sync_playwright() as p:
     pulled = options.evaluate('(message) => chrome.runtime.sendMessage(message)', {'type': 'PullCookie', 'payload': {'domain': f'127.0.0.1:{server.server_port}', 'activeTabUrl': base + '/site', 'reload': False}})
     print('pull_result', json.dumps({k:v for k,v in pulled.items() if k!='result'}, ensure_ascii=False))
     assert pulled['isOk'], pulled
-    assert any(c['name']=='session_test' and c['value']=='dummy_login' for c in context.cookies(base))
+    assert any(c['name']=='session_test' and c['value']=='changed_login' for c in context.cookies(base))
     assert site.evaluate('localStorage.getItem("test_token")') == 'dummy_local_token'
     print('real_browser_webdav_push_pull_localstorage_passed')
     # Stop and restart worker, then verify the message handler still responds.
