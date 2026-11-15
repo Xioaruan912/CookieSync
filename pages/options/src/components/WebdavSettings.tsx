@@ -1,17 +1,29 @@
 import { buildWebdavUrl, testWebdavConnection, useStorageSuspense } from '@sync-your-cookie/shared';
 import { accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
 import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
-import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
+import { webdavStorage, webdavCloudStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { Button, CardContent, Input, Label } from '@sync-your-cookie/ui';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 export function WebdavSettings() {
   const saved = useStorageSuspense(webdavStorage);
+  const cloud = useStorageSuspense(webdavCloudStorage);
+  const [syncConfig, setSyncConfig] = useState(cloud.enabled);
   const [config, setConfig] = useState(saved);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (!dirty) {
+      setConfig(saved);
+      setSyncConfig(cloud.enabled);
+    }
+  }, [saved, cloud.enabled, dirty]);
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const update = (key: keyof typeof config, value: string) => setConfig(current => ({ ...current, [key]: value }));
+  const update = (key: keyof typeof config, value: string) => {
+    setDirty(true);
+    setConfig(current => ({ ...current, [key]: value }));
+  };
 
   const run = async (save: boolean) => {
     setBusy(true);
@@ -24,7 +36,8 @@ export function WebdavSettings() {
       };
       buildWebdavUrl(normalized);
       if (save) {
-        await webdavStorage.update(normalized);
+        await webdavStorage.update(normalized, syncConfig);
+        setDirty(false);
         await cookieStorage.reset();
         await accountStorage.update({ selectedProvider: 'webdav' });
         toast.success('WebDAV 配置已保存，已切换同步后端');
@@ -98,13 +111,29 @@ export function WebdavSettings() {
       <label className="text-xs flex gap-2 items-start">
         <input
           type="checkbox"
+          checked={syncConfig}
+          onChange={e => {
+            setDirty(true);
+            setSyncConfig(e.target.checked);
+          }}
+        />
+        使用 Chrome / Google 账号同步此 WebDAV 配置（包含应用密码）。两台电脑需登录同一 Chrome
+        账号并开启同步；此配置不会额外加密，不同步 Cookie 内容。
+      </label>
+      <label className="text-xs flex gap-2 items-start">
+        <input
+          type="checkbox"
           checked={!!config.allowUnsafeWrites}
-          onChange={e => setConfig(current => ({ ...current, allowUnsafeWrites: e.target.checked }))}
+          onChange={e => {
+            setDirty(true);
+            setConfig(current => ({ ...current, allowUnsafeWrites: e.target.checked }));
+          }}
         />
         AList / OpenList 等网关兼容模式（停用条件写入；上传前检查内容，但无法防止并发覆盖，请勿两台电脑同时推送）
       </label>
       <p className="text-xs text-muted-foreground">
-        凭据仅保存在本机扩展存储。Cookie 可代表登录身份，请使用私人目录和专用应用密码；建议在高级设置开启 Protobuf
+        未开启配置同步时，凭据仅保存在本机。关闭后会移除云端配置记录，保留各电脑已保存的本机副本。Cookie
+        可代表登录身份，请使用私人目录和专用应用密码；建议在高级设置开启 Protobuf
         与端到端加密，并在两台电脑设置相同的加密密码。
       </p>
     </CardContent>

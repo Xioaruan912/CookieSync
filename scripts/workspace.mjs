@@ -170,6 +170,8 @@ async function build(current, verify) {
   }
   await fs.copyFile(path.join(source, 'LICENSE'), path.join(dist, 'LICENSE'));
   await fs.copyFile(path.join(source, 'docs/WEBDAV.md'), path.join(dist, '使用说明.md'));
+  await fs.copyFile(path.join(source, 'docs/GOOGLE.md'), path.join(dist, 'Google同步说明.md'));
+  await fs.copyFile(path.join(source, 'PRIVACY.md'), path.join(dist, '隐私说明.md'));
   const files = await publish(dist, path.join(output, 'unpacked'));
   const require = createRequire(path.join(staging, 'packages/zipper/package.json'));
   const { zipSync } = require('fflate');

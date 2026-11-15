@@ -30,7 +30,8 @@ function withCookieOperation<T>(operation: () => Promise<T>): Promise<T> {
 
 export const readCookiesMapWithStatus = async (cloudflareInfo: AccountInfo) => {
   // WebDAV mutations must read the current remote state, not a stale UI cache.
-  if (cloudflareInfo.selectedProvider === 'webdav') return readCookiesMap(cloudflareInfo);
+  if (cloudflareInfo.selectedProvider === 'webdav' || cloudflareInfo.selectedProvider === 'google-drive')
+    return readCookiesMap(cloudflareInfo);
   let cookieMap: Cookie | null = null;
   const domainStatus = await domainStatusStorage.get();
   if (domainStatus.pushing) {
@@ -48,6 +49,7 @@ const pullCookiesImpl = async (isInit = false): Promise<Cookie> => {
     isInit &&
     cloudflareInfo.selectedProvider !== 'github' &&
     cloudflareInfo.selectedProvider !== 'webdav' &&
+    cloudflareInfo.selectedProvider !== 'google-drive' &&
     (!cloudflareInfo.accountId || !cloudflareInfo.namespaceId || !cloudflareInfo.token)
   ) {
     return {};

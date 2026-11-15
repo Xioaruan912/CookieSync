@@ -1,4 +1,5 @@
 import { WebdavSettings } from './components/WebdavSettings';
+import { DriveSettings } from './components/DriveSettings';
 import {
   useStorageSuspense,
   useTheme,
@@ -33,7 +34,13 @@ const Options = () => {
   const [accountId, setAccountId] = useState(accountInfo.accountId);
   const [namespaceId, setNamespaceId] = useState(accountInfo.namespaceId);
   const [openEye, setOpenEye] = useState(false);
-  const [providerTab, setProviderTab] = useState(accountInfo.selectedProvider === 'webdav' ? 'webdav' : 'legacy');
+  const [providerTab, setProviderTab] = useState(
+    accountInfo.selectedProvider === 'google-drive'
+      ? 'google-drive'
+      : accountInfo.selectedProvider === 'webdav'
+        ? 'webdav'
+        : 'legacy',
+  );
   const { loading, handleLaunchAuth } = useGithub();
   const [loadingSave, setLoadingSave] = useState(false);
 
@@ -288,6 +295,11 @@ const Options = () => {
             </CardHeader>
             <div className="px-6 pb-4 flex gap-2">
               <Button
+                variant={providerTab === 'google-drive' ? 'default' : 'outline'}
+                onClick={() => setProviderTab('google-drive')}>
+                Google Drive
+              </Button>
+              <Button
                 variant={providerTab === 'webdav' ? 'default' : 'outline'}
                 onClick={() => setProviderTab('webdav')}>
                 WebDAV
@@ -302,11 +314,19 @@ const Options = () => {
               当前后端：
               {accountInfo.selectedProvider === 'webdav'
                 ? 'WebDAV'
-                : accountInfo.selectedProvider === 'github'
-                  ? 'GitHub Gist'
-                  : 'Cloudflare KV'}
+                : accountInfo.selectedProvider === 'google-drive'
+                  ? 'Google Drive'
+                  : accountInfo.selectedProvider === 'github'
+                    ? 'GitHub Gist'
+                    : 'Cloudflare KV'}
             </p>
-            {providerTab === 'webdav' ? <WebdavSettings /> : renderAccount()}
+            {providerTab === 'webdav' ? (
+              <WebdavSettings />
+            ) : providerTab === 'google-drive' ? (
+              <DriveSettings />
+            ) : (
+              renderAccount()
+            )}
           </Card>
         </div>
       </div>

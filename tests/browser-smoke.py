@@ -15,6 +15,14 @@ requests = []
 reject_conditions = False
 reject_reads = False
 
+def wait_extension(page, predicate):
+    # wait_for_function uses eval, which extension pages correctly block via CSP.
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if page.evaluate(predicate): return
+        time.sleep(0.1)
+    raise AssertionError('Timed out waiting for extension storage/UI')
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
     def reply(self, code, data=b'', etag=None):
@@ -56,8 +64,16 @@ with sync_playwright() as p:
     worker = context.service_workers[0] if context.service_workers else context.wait_for_event('serviceworker', timeout=20000)
     extension_id = worker.url.split('/')[2]
     print('extension_loaded', bool(extension_id))
+    assert extension_id == 'mlgghgdchflafjaegkneinnockfeboei', 'Extension ID must stay identical across computers'
     options = context.new_page(); options.on('pageerror', lambda error: errors.append(str(error)))
     options.goto(f'chrome-extension://{extension_id}/options/index.html')
+    options.get_by_role('button', name='Google Drive', exact=True).click()
+    if not options.evaluate('!!chrome.runtime.getManifest().oauth2?.client_id'):
+        assert options.get_by_role('button', name='使用 Google 登录', exact=True).is_disabled()
+        options.get_by_role('status').filter(has_text='尚未由维护者开通').wait_for()
+        print('google_oauth_unconfigured_state_is_explicit')
+    else:
+        assert options.get_by_role('button', name='使用 Google 登录', exact=True).is_enabled()
     options.get_by_role('button', name='WebDAV', exact=True).click()
     options.locator('#webdav-url').fill(base + '/dav/')
     options.locator('#webdav-username').fill('local-test')
@@ -70,6 +86,18 @@ with sync_playwright() as p:
     options.get_by_text('当前后端：WebDAV', exact=True).wait_for()
     assert options.evaluate('async () => (await chrome.storage.local.get("webdav-local-settings"))["webdav-local-settings"].password') == 'dummy-app-password'
     assert not options.evaluate('async () => (await chrome.storage.sync.get("webdav-local-settings"))["webdav-local-settings"] || null')
+    cloud_toggle = options.locator('label').filter(has_text='使用 Chrome / Google 账号同步').get_by_role('checkbox')
+    cloud_toggle.check()
+    options.get_by_role('button', name='保存并使用 WebDAV', exact=True).click()
+    wait_extension(options, 'async () => (await chrome.storage.sync.get("webdav-cloud-settings-v1"))["webdav-cloud-settings-v1"]?.settings?.password === "dummy-app-password"')
+    options.evaluate('''async () => { const key='webdav-cloud-settings-v1'; const c=(await chrome.storage.sync.get(key))[key]; await chrome.storage.sync.set({[key]:{...c,settings:{...c.settings,path:'synced-other-device.txt'}}}); }''')
+    wait_extension(options, '() => document.querySelector("#webdav-path").value === "synced-other-device.txt"')
+    options.locator('#webdav-path').fill('cookies.txt')
+    cloud_toggle.uncheck()
+    options.get_by_role('button', name='保存并使用 WebDAV', exact=True).click()
+    wait_extension(options, 'async () => (await chrome.storage.sync.get("webdav-cloud-settings-v1"))["webdav-cloud-settings-v1"]?.enabled === false')
+    assert not options.evaluate('async () => (await chrome.storage.sync.get("webdav-cloud-settings-v1"))["webdav-cloud-settings-v1"].settings || null')
+    print('webdav_google_config_opt_in_remote_restore_and_opt_out_passed')
     options.evaluate('''async () => { const key='settings-storage-key'; const saved=(await chrome.storage.sync.get(key))[key]; await chrome.storage.sync.set({[key]:{...saved, backgroundSync:false, startupPull:false}}); }''')
     options.screenshot(path=str(ROOT / 'settings.png'), full_page=True)
     site = context.new_page(); site.goto(base + '/site'); site.bring_to_front()

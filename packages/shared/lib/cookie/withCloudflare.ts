@@ -1,4 +1,6 @@
 import { cookiesMapContentHash, domainContentHash } from './fingerprint';
+import { readDrive, writeDrive, type DriveSnapshot } from '../drive/api';
+import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { buildWebdavUrl, readWebdav, writeWebdav, type WebdavSnapshot } from '../webdav/api';
 
@@ -26,11 +28,14 @@ import {
 const remoteDigests = new WeakMap<ICookiesMap, Promise<string>>();
 const remotePayloads = new WeakMap<ICookiesMap, string>();
 const webdavSnapshots = new WeakMap<ICookiesMap, { url: string; snapshot: WebdavSnapshot }>();
+const driveSnapshots = new WeakMap<ICookiesMap, DriveSnapshot>();
 
 export const check = async (accountInfo?: AccountInfo) => {
   const cloudflareAccountInfo = accountInfo || (await accountStorage.get());
   if (cloudflareAccountInfo?.selectedProvider === 'webdav') {
     buildWebdavUrl(await webdavStorage.get());
+  } else if (cloudflareAccountInfo?.selectedProvider === 'google-drive') {
+    if (!(await driveAccountStorage.get()).connected) throw new Error('请在设置中使用 Google 登录连接云端硬盘');
   } else if (cloudflareAccountInfo?.selectedProvider === 'github') {
     if (!cloudflareAccountInfo.githubAccessToken) {
       return Promise.reject({
@@ -59,11 +64,15 @@ export const check = async (accountInfo?: AccountInfo) => {
 export const readCookiesMap = async (accountInfo: AccountInfo): Promise<ICookiesMap> => {
   let content = '';
   let webdavRead: { url: string; snapshot: WebdavSnapshot } | undefined;
+  let driveRead: DriveSnapshot | undefined;
   if (accountInfo.selectedProvider === 'webdav') {
     const config = await webdavStorage.get();
     const snapshot = await readWebdav(config);
     webdavRead = { url: buildWebdavUrl(config), snapshot };
     content = snapshot.content;
+  } else if (accountInfo.selectedProvider === 'google-drive') {
+    driveRead = await readDrive();
+    content = driveRead.content;
   } else if (accountInfo.selectedProvider === 'github') {
     const activeStorageItem = getActiveStorageItem();
     if (activeStorageItem?.rawUrl) {
@@ -78,6 +87,7 @@ export const readCookiesMap = async (accountInfo: AccountInfo): Promise<ICookies
     remotePayloads.set(map, content);
     remoteDigests.set(map, cookiesMapContentHash(map));
     if (webdavRead) webdavSnapshots.set(map, webdavRead);
+    if (driveRead) driveSnapshots.set(map, driveRead);
     return map;
   };
   if (content) {
@@ -173,6 +183,12 @@ export const writeCookiesMap = async (
     if (!previous || previous.url !== url) throw new Error('请先拉取 WebDAV 文件后再写入');
     const result = await writeWebdav(config, encodingStr, previous.snapshot);
     webdavSnapshots.delete(previousMap);
+    return result;
+  } else if (accountInfo.selectedProvider === 'google-drive') {
+    const previous = driveSnapshots.get(previousMap);
+    if (!previous) throw new Error('请先拉取 Google Drive 文件后再写入');
+    const result = await writeDrive(encodingStr, previous);
+    driveSnapshots.delete(previousMap);
     return result;
   } else if (accountInfo.selectedProvider === 'github') {
     const storageKeyGistId = settingsInfo?.storageKeyGistId;

@@ -1,12 +1,14 @@
 # CookieSync
 
-通过 WebDAV、Cloudflare KV 或 GitHub Gist，在自己的电脑之间同步 Cookie 与 LocalStorage。
+通过 Google Drive、WebDAV、Cloudflare KV 或 GitHub Gist，在自己的电脑之间同步 Cookie 与 LocalStorage。
 
 基于 [jackluson/sync-your-cookie](https://github.com/jackluson/sync-your-cookie) 二次开发，采用 MIT 许可证，保留原作者 Jack Lu 的版权声明。
 
 ## 功能
 
 - WebDAV 地址、用户名、密码／应用密码及远程文件路径配置，支持独立临时文件连接测试。
+- 可选通过 Chrome 账号同步 WebDAV 配置，避免第二台电脑重复填写；包含应用密码，需主动开启。
+- Google Drive 隐藏应用目录后端，维护者一次性配置 OAuth 后，用户点击 Google 登录即可连接，令牌由 Chrome 管理。维护者开通方法见 [Google 同步说明](docs/GOOGLE.md)。
 - 手动推送、拉取并应用、按网站合并；保留 Cloudflare KV 与 GitHub Gist 后端。
 - 启动自动拉取，后台默认每 2 分钟合并改动，可调整为 1～60 分钟；离线队列保留并重试，无关闭钩子。
 - 简体中文界面，支持 Protobuf 编码及可选 AES-256-GCM 加密。
@@ -19,6 +21,8 @@ Cookie 失效、服务器撤销会话或设备风控仍可能要求重新登录�
 打开 [最新 Releases](https://github.com/Xioaruan912/CookieSync/releases/latest)，在 Assets 下载 **CookieSync-chrome-版本号.zip**。解压后在 `chrome://extensions` 开启开发者模式并加载包含 `manifest.json` 的目录。`SHA256SUMS.txt` 可用于校验安装包。
 
 GitHub 的“Code → Download ZIP”是源码，不是可安装扩展。更新时覆盖原安装目录并重新加载，不要先卸载，以保留本机配置。正式包没有开发重载服务。
+
+**1.6.x 首次升级至 1.7.0 请先记录配置和加密密码。** 新版为跨电脑同步固定扩展 ID，旧身份的配置需迁移一次，随后开启配置同步；后续不再变更 ID。详见 [一次迁移说明](docs/GOOGLE.md#170-固定扩展-id一次迁移)。
 
 ## 构建与加载
 
@@ -59,7 +63,7 @@ node scripts/workspace.mjs verify
 
 Cookie 和 LocalStorage 可能等同于登录凭据。请使用私人 HTTPS WebDAV、专用应用密码，并在两端启用相同的数据加密设置；Protobuf 或 Base64 本身不是加密。
 
-WebDAV 凭据仅保存在本机扩展存储。原有 Gist/KV 账号及通用设置仍使用 Chrome 同步存储。详见 [隐私说明](PRIVACY.md) 与 [配置及安全说明](docs/WEBDAV.md)。不要向仓库提交真实 Cookie、密码、令牌、同步文件或浏览器资料。
+WebDAV 凭据默认仅存本机；主动开启配置同步后会包含应用密码并进入 Chrome 同步存储。原有 Gist/KV 账号及通用设置仍使用 Chrome 同步存储。详见 [隐私说明](PRIVACY.md)、[Google 同步](docs/GOOGLE.md) 与 [配置及安全说明](docs/WEBDAV.md)。不要向仓库提交真实 Cookie、密码、令牌、同步文件或浏览器资料。
 
 ## 许可证
 

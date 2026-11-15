@@ -1,6 +1,7 @@
 import { accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
+import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage';
 import type { PendingSyncJob } from './automatic';
 
 type Jobs = Record<string, PendingSyncJob>;
@@ -22,13 +23,15 @@ export async function syncDestinationKey() {
   const destination = JSON.stringify(
     account.selectedProvider === 'webdav'
       ? ['webdav', dav?.url, dav?.username, dav?.path]
-      : [
-          account.selectedProvider,
-          account.accountId,
-          account.namespaceId,
-          settings.storageKeyGistId,
-          settings.storageKey,
-        ],
+      : account.selectedProvider === 'google-drive'
+        ? ['google-drive', chrome.runtime.getManifest().oauth2?.client_id, (await driveAccountStorage.get()).userId]
+        : [
+            account.selectedProvider,
+            account.accountId,
+            account.namespaceId,
+            settings.storageKeyGistId,
+            settings.storageKey,
+          ],
   );
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(destination));
   return 'cookiesync-pending-' + Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');

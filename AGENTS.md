@@ -10,3 +10,5 @@
 - WebDAV conditional writes stay enabled by default. AList/OpenList compatibility is explicit opt-in with its non-atomic limitation documented.
 - Preserve GitHub Gist, Cloudflare KV, MIT license and upstream attribution. Never log cookie/token values or commit actual credentials.
 - Repository destination: https://github.com/Xioaruan912/CookieSync. Preserve upstream and never force-push without explicit instruction.
+- Keep the public manifest key in chrome-extension/google-config.json stable. Changing it breaks cross-device Chrome Sync and OAuth identity.
+- Google OAuth client IDs are maintainer configuration (GOOGLE_CLIENT_ID or google-config.json); never reuse another app's client or embed a client secret. Background authorization must remain non-interactive and bound to the original Drive account.

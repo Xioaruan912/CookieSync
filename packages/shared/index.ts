@@ -11,3 +11,4 @@ export * from './lib/utils';
 export * from './lib/github';
 
 export * from './lib/webdav/api';
+export * from './lib/drive/api';
