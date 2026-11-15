@@ -178,3 +178,56 @@ test('remote write suppression is scoped to one site and ends after restoration'
   await restoring;
   assert.ok(!isApplyingRemoteState('douyin.com'));
 });
+
+test('manual push and background push serialize and retain both domains', async () => {
+  const { pushCookies, pushMultipleDomainCookies } = await import('../lib/cookie/withStorage.ts');
+  const { domainStatusStorage } = await import('@sync-your-cookie/storage/lib/domainStatusStorage');
+  await domainStatusStorage.resetState();
+  await settingsStorage.update({ protobufEncoding: false, encryptionEnabled: false });
+  let data = { domainCookieMap: {} };
+  let version = 0;
+  const server = createServer(async (req, res) => {
+    if (req.method === 'GET') {
+      res.writeHead(200, { ETag: `"${version}"` }).end(JSON.stringify(data));
+      return;
+    }
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    await new Promise(resolve => setTimeout(resolve, 80));
+    if (req.headers['if-match'] !== `"${version}"`) {
+      res.writeHead(412).end();
+      return;
+    }
+    data = JSON.parse(body);
+    version++;
+    res.writeHead(204).end();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    await webdavStorage.update({
+      url: `http://127.0.0.1:${server.address().port}/`,
+      username: 'test',
+      password: 'test',
+      path: 'cookies.txt',
+    });
+    await accountStorage.update({ selectedProvider: 'webdav' });
+    const results = await Promise.all([
+      pushCookies('xiaohongshu.com', [{ name: 'session', value: 'A', domain: '.xiaohongshu.com', session: true }], []),
+      pushMultipleDomainCookies([
+        {
+          domain: '115.com',
+          cookies: [{ name: 'session', value: 'B', domain: '.115.com', session: true }],
+          localStorageItems: [],
+        },
+      ]),
+    ]);
+    assert.ok(results.every(result => result.success));
+    assert.deepEqual(Object.keys(data.domainCookieMap).sort(), ['115.com', 'xiaohongshu.com']);
+    data = {};
+    const { pullCookies } = await import('../lib/cookie/withStorage.ts');
+    const refreshed = await pullCookies();
+    assert.equal(Object.keys(refreshed.domainCookieMap || {}).length, 0, 'an empty remote must replace stale manager entries');
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});

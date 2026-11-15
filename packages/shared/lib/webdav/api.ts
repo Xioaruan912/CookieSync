@@ -68,23 +68,23 @@ async function request(config: WebdavConfig, method: string, body?: string, head
   }
 }
 
-function checkStatus(response: Response, allowMissing = false) {
+function checkStatus(response: Response, allowMissing = false, method = 'PUT') {
   if (response.ok || (allowMissing && response.status === 404)) return;
   const hints: Record<number, string> = {
     401: '用户名或密码错误',
     403: '没有读写权限',
     404: '目录不存在，请先在服务器创建目录',
     409: '目录不存在或写入冲突',
-    412: '远程文件发生冲突，请重新拉取后重试',
+    412: '写入条件不满足：可能是版本冲突、文件锁或服务器条件写入不兼容，本次未上传',
     423: '文件被锁定，请稍后重试',
     507: '服务器空间不足',
   };
-  throw new Error(`WebDAV HTTP ${response.status}：${hints[response.status] || '服务器请求失败'}`);
+  throw new Error(`WebDAV ${method} HTTP ${response.status}：${hints[response.status] || '服务器请求失败'}`);
 }
 
 export async function readWebdav(config: WebdavConfig): Promise<WebdavSnapshot> {
   const { response, content } = await request(config, 'GET');
-  checkStatus(response, true);
+  checkStatus(response, true, 'GET');
   return {
     content: response.status === 404 ? '' : content.trim(),
     exists: response.status !== 404,
@@ -97,7 +97,14 @@ export async function writeWebdav(config: WebdavConfig, content: string, previou
     throw new Error('WebDAV 服务器未提供强 ETag，已阻止覆盖；请更换服务器，或明确开启不安全兼容模式');
   }
   const headers: Record<string, string> = { 'Content-Type': 'text/plain; charset=utf-8' };
-  if (!previous.exists) headers['If-None-Match'] = '*';
+  if (config.allowUnsafeWrites) {
+    // Explicit opt-in for gateways which reject conditional PUT. This detects prior
+    // changes but cannot make the subsequent read/PUT pair atomic across devices.
+    const latest = await readWebdav(config);
+    if (latest.exists !== previous.exists || latest.content !== previous.content) {
+      throw new Error('WebDAV 内容发生冲突，已停止覆盖；请刷新远程列表后确认数据');
+    }
+  } else if (!previous.exists) headers['If-None-Match'] = '*';
   else if (previous.etag && !previous.etag.startsWith('W/')) headers['If-Match'] = previous.etag;
   const { response } = await request(config, 'PUT', content, headers);
   checkStatus(response);
@@ -112,13 +119,17 @@ export async function testWebdavConnection(config: WebdavConfig): Promise<void> 
   await writeWebdav(probe, marker, { content: '', exists: false });
   let readError: unknown;
   try {
-    if ((await readWebdav(probe)).content !== marker) throw new Error('WebDAV 测试文件内容不一致');
+    const initial = await readWebdav(probe);
+    if (initial.content !== marker) throw new Error('WebDAV 测试文件内容不一致');
+    const overwritten = marker + ' overwritten';
+    await writeWebdav(probe, overwritten, initial);
+    if ((await readWebdav(probe)).content !== overwritten) throw new Error('WebDAV 测试文件覆盖后内容不一致');
   } catch (error) {
     readError = error;
   }
   try {
     const { response } = await request(probe, 'DELETE');
-    checkStatus(response, true);
+    checkStatus(response, true, 'DELETE');
   } catch {
     throw new Error('WebDAV 测试文件清理失败，请手动删除远程 .connection-test- 文件并检查 DELETE 权限');
   }

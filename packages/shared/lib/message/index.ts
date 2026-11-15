@@ -5,6 +5,7 @@ import pTimeout from 'p-timeout';
 export type { ICookie };
 export enum MessageType {
   PushCookie = 'PushCookie',
+  RefreshCookies = 'RefreshCookies',
   PullCookie = 'PullCookie',
   RemoveCookie = 'RemoveCookie',
   RemoveCookieItem = 'RemoveCookieItem',
@@ -59,6 +60,7 @@ export type SetLocalStorageMessagePayload = {
 };
 
 export type MessageMap = {
+  [MessageType.RefreshCookies]: { type: MessageType.RefreshCookies; payload: Record<string, never> };
   [MessageType.PushCookie]: {
     type: MessageType.PushCookie;
     payload: PushCookieMessagePayload;
@@ -270,3 +272,6 @@ export const sendGetLocalStorageMessage = async (host: string, isTry = true) => 
       });
   });
 };
+
+export const refreshCookiesUsingMessage = () =>
+  sendMessage<MessageType.RefreshCookies>({ type: MessageType.RefreshCookies, payload: {} });

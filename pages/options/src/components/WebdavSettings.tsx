@@ -30,7 +30,7 @@ export function WebdavSettings() {
         toast.success('WebDAV 配置已保存，已切换同步后端');
       } else {
         await testWebdavConnection(normalized);
-        toast.success('连接测试成功：已验证临时文件的写入、读取和删除');
+        toast.success('连接测试成功：已验证临时文件的创建、覆盖、读取和删除');
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'WebDAV 操作失败');
@@ -101,7 +101,7 @@ export function WebdavSettings() {
           checked={!!config.allowUnsafeWrites}
           onChange={e => setConfig(current => ({ ...current, allowUnsafeWrites: e.target.checked }))}
         />
-        允许无强 ETag 的服务器覆盖写入（兼容模式，可能丢失另一台电脑的数据，请勿同时推送）
+        AList / OpenList 等网关兼容模式（停用条件写入；上传前检查内容，但无法防止并发覆盖，请勿两台电脑同时推送）
       </label>
       <p className="text-xs text-muted-foreground">
         凭据仅保存在本机扩展存储。Cookie 可代表登录身份，请使用私人目录和专用应用密码；建议在高级设置开启 Protobuf

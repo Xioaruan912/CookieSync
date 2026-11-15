@@ -1,6 +1,8 @@
+import { syncFeedbackStorage } from '@sync-your-cookie/storage/lib/syncFeedbackStorage';
+import { useEffect, useState } from 'react';
 /* eslint-disable react/no-unescaped-entities */
 /* eslint-disable jsx-a11y/click-events-have-key-events */
-import { getTabsByHost, useStorageSuspense } from '@sync-your-cookie/shared';
+import { getTabsByHost, refreshCookiesUsingMessage, useStorageSuspense } from '@sync-your-cookie/shared';
 import {
   Button,
   DataTable,
@@ -53,6 +55,25 @@ const CookieTable = () => {
   const domainStatus = useStorageSuspense(domainStatusStorage);
 
   const cookieMap = useStorageSuspense(cookieStorage);
+  const feedback = useStorageSuspense(syncFeedbackStorage);
+  const [refreshing, setRefreshing] = useState(false);
+  const [readError, setReadError] = useState('');
+  const refresh = async () => {
+    setRefreshing(true);
+    setReadError('');
+    try {
+      await refreshCookiesUsingMessage();
+    } catch (error) {
+      setReadError(
+        (error as { msg?: string; message?: string })?.msg || (error as Error)?.message || '远程列表读取失败',
+      );
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  useEffect(() => {
+    void refresh();
+  }, []);
 
   const {
     showCookiesColumns,
@@ -378,10 +399,38 @@ const CookieTable = () => {
     <div className="h-screen flex flex-col">
       <div className="space-y-4 p-4 ">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">同步管理</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-xl font-bold tracking-tight">同步管理</h2>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void refresh()}
+              disabled={refreshing || domainStatus.pushing}>
+              <RotateCw size={14} className={refreshing ? 'mr-1 animate-spin' : 'mr-1'} />
+              {refreshing ? '正在读取…' : '刷新远程列表'}
+            </Button>
+          </div>
           <p className="text-muted-foreground text-sm">已推送的 {localStorageMode ? 'LocalStorage 数据' : 'Cookie'} </p>
         </div>
       </div>
+      {feedback.lastPush && !feedback.lastPush.ok ? (
+        <div role="alert" className="mx-4 mb-3 rounded border border-destructive/40 p-3 text-sm text-destructive">
+          最近一次推送未成功（{feedback.lastPush.host}）：{feedback.lastPush.message}
+          <p className="mt-1 text-xs">下方是本机已加载的数据；显示 0 不代表远程文件为空。</p>
+        </div>
+      ) : null}
+      {readError ? (
+        <p role="alert" className="mx-4 mb-3 text-sm text-destructive">
+          远程列表未加载：{readError}
+        </p>
+      ) : null}
+      {!domainList.length && !refreshing ? (
+        <p className="mx-4 mb-3 text-sm text-muted-foreground">
+          {readError
+            ? '暂时无法确认远程网站数量，请检查设置后刷新。'
+            : '当前列表暂无网站数据。请确认推送成功，或刷新远程列表。'}
+        </p>
+      ) : null}
       <div className="h-0 flex-1 overflow-auto">
         <Spinner show={loading}>
           {selectedDomain ? (
