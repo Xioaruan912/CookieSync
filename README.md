@@ -1,113 +1,68 @@
-# CookieSync · WebDAV 与简体中文分支
+# CookieSync
 
-基于 [jackluson/sync-your-cookie](https://github.com/jackluson/sync-your-cookie) 的 MIT 二次开发版本。新增 WebDAV 同步配置、连接测试和后端，汉化设置、弹窗与管理侧栏，保留 Cloudflare KV 与 GitHub Gist。
+通过 WebDAV、Cloudflare KV 或 GitHub Gist，在自己的电脑之间同步 Cookie 与 LocalStorage。
 
-- WebDAV URL、用户名、密码／应用密码、远程文件路径；凭据仅保存本机。
-- 手动推送、拉取并应用、按网站合并；增加浏览器启动自动拉取、后台增量同步与本机离线队列（默认每 2 分钟合并，无关闭钩子）。
-- HTTPS、超时、防重定向、ETag 条件写；连接测试使用独立临时文件。
-- 继续支持原有 Protobuf 编码、LocalStorage 和可选 AES-256-GCM 加密。
-- 小红书、抖音、115 主域及子域 Cookie 优先处理，修复会话 Cookie 误设过期时间。
+基于 [jackluson/sync-your-cookie](https://github.com/jackluson/sync-your-cookie) 二次开发，采用 MIT 许可证，保留原作者 Jack Lu 的版权声明。
 
-安装、配置、合并规则、自动同步限制与安全风险见 **[WebDAV 使用说明](docs/WEBDAV.md)**。
+## 功能
+
+- WebDAV 地址、用户名、密码／应用密码及远程文件路径配置，支持独立临时文件连接测试。
+- 手动推送、拉取并应用、按网站合并；保留 Cloudflare KV 与 GitHub Gist 后端。
+- 启动自动拉取，后台默认每 2 分钟合并改动，可调整为 1～60 分钟；离线队列保留并重试，无关闭钩子。
+- 简体中文界面，支持 Protobuf 编码及可选 AES-256-GCM 加密。
+- 小红书、抖音、115 主域及子域 Cookie 优先处理，修复会话 Cookie 恢复时误设过期时间的问题。
+
+Cookie 失效、服务器撤销会话或设备风控仍可能要求重新登录；不保证免扫码。三个目标网站的测试使用虚拟数据，未使用真实账号。
+
+## 构建与加载
+
+需要 Node.js 20.12+ 和 pnpm 9.1.1；项目声明的 Node 版本见 `.nvmrc`。
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm build
+```
+
+在 Chrome 打开 `chrome://extensions`，开启开发者模式，选择“加载已解压的扩展程序”，加载根目录 `dist/`。
+
+两台电脑分别配置相同的 WebDAV 目的地。首次在已登录电脑推送，在另一台拉取；之后可使用自动同步。详细步骤和限制见 [WebDAV 使用说明](docs/WEBDAV.md)。原有 Cloudflare 配置步骤可参考 [上游说明](https://github.com/jackluson/sync-your-cookie/blob/main/how-to-use.md)。
+
+## 验证
+
+```sh
 pnpm type-check
 pnpm test
 ```
 
-Chrome 开发者模式中加载根目录 `dist/`。不要将依赖、构建目录、浏览器资料或真实 Cookie / 密码提交到 GitHub。Cookie 同步不能保证绕过小红书、抖音等网站的设备风控或重新验证。
+可选浏览器测试：
 
-以下保留原项目说明及作者信息。
+```sh
+python -m pip install -r tests/requirements-browser.txt
+python -m playwright install chromium
+python tests/browser-smoke.py
+```
 
----
+浏览器测试使用独立临时资料、本机 WebDAV 和虚拟页面。GitHub Actions 执行构建、类型检查、单元测试并提供扩展产物。
 
-<div align="center">
-<img src="chrome-extension/public/icon-128.png" alt="logo"/>
-<h1> Sync your cookie to Your Cloudflare or Github Gist</h1>
+## 项目结构
 
-![](https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black)
-![](https://img.shields.io/badge/Typescript-3178C6?style=flat-square&logo=typescript&logoColor=white)
-![](https://badges.aleen42.com/src/vitejs.svg)
-![GitHub action badge](https://github.com/jackluson/sync-your-cookie/actions/workflows/build-zip.yml/badge.svg)
-<!-- <img src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https://github.com/jackluson/sync-your-cookieFactions&count_bg=%23#222222&title_bg=%23#454545&title=😀&edge_flat=true" alt="hits"/> -->
+| 目录 | 内容 |
+| --- | --- |
+| `chrome-extension/` | 扩展清单、后台同步与浏览器事件处理 |
+| `pages/` | 设置页、弹窗、侧栏及页面脚本 |
+| `packages/` | 共享逻辑、存储、编码、界面及构建工具 |
+| `tests/` | 可选浏览器冒烟测试 |
+| `docs/` | 配置方法、行为边界与验证说明 |
+| `.github/` | CI、依赖更新及问题模板 |
 
-</div>
+依赖、构建产物、缓存、浏览器资料和本机配置均不提交。首次检出或清理后执行 `pnpm install --frozen-lockfile` 恢复开发环境。
 
-[English](./README.md) | [中文](./README_ZH.md)
+## 安全与隐私
 
-`Sync your cookie` is a chrome extension that helps you to sync your cookie to Cloudflare or Github Gist. It's a useful tool for web developers to share cookies between different devices. 
+Cookie 和 LocalStorage 可能等同于登录凭据。请使用私人 HTTPS WebDAV、专用应用密码，并在两端启用相同的数据加密设置；Protobuf 或 Base64 本身不是加密。
 
-### Install
-Chrome: [Sync Your Cookie](https://chromewebstore.google.com/detail/sync-your-cookie/bcegpckmgklcpcapnbigfdadedcneopf)
+WebDAV 凭据仅保存在本机扩展存储。原有 Gist/KV 账号及通用设置仍使用 Chrome 同步存储。详见 [隐私说明](PRIVACY.md) 与 [配置及安全说明](docs/WEBDAV.md)。不要向仓库提交真实 Cookie、密码、令牌、同步文件或浏览器资料。
 
-Edge: [Sync Your Cookie](https://microsoftedge.microsoft.com/addons/detail/sync-your-cookie/ohlcghldllgnmkegocpcphdbbphikgfm)
+## 许可证
 
-
-### Features
-
-- Supports syncing cookies to Cloudflare or Github Gist (Include LocalStorage)
-- Supports configuring `Auto Merge` and `Auto Push` rules for different sites
-- Cookie data is transmitted via protobuf encoding
-- Provides a management panel to facilitate viewing, copying, and managing synchronized cookie data
-- Multi-account synchronization based on Storage-key
-
-
-### Project Screenshots
-
-Account Settings Page
-
-<img width="600" src="./screenshots/settings_v2.png" alt="account settings"/>
-
-Cookie Sync Popup Page
-
-<img width="600" src="./screenshots/sync.png" alt="cookie sync popup"/>
-
-Cookie Manager Sidebar Panel
-
-<img width="600" src="./screenshots/panel.png" alt="cookie manager sidebar panel"/>
-
-Cookie Detail
-
-<img width="600" src="./screenshots/panel_item.png" alt="cookie manager sidebar panel"/>
-
-LocalStorage Detail
-
-<img width="600" src="./screenshots/panel_item_localStorage.png" alt="cookie manager sidebar panel"/>
-
-Pushed Cookie on Github Gist
-
-<img width="600" src="./screenshots/gist.png" alt="Pushed Cookie on Github Gist"/>
-
-
-Pushed Cookie on Cloudflare
-
-<img width="600" src="./screenshots/key_value.png" alt="Pushed Cookie on Cloudflare"/>
-
-
-### Usage
-
-[How to use](./how-to-use.md)
-
-### TODO
-
-- [x] Custom Save Configure
-- [x] Multi-account synchronization based on Storage-key
-- [x] Sync LocalStorage
-- [x] More Cloud Platform (First github gist)
-
-### Privacy Policy
-
-Please refer to [Privacy Policy](./private-policy.md) for more information.
-
-### Support
-
-If you find this project helpful, you can support the development by:
-- Starring the repository ⭐
-- [Sponsoring via Ko-fi](https://ko-fi.com/jacklu) 💖
-- Sponsor via Wechat
-  <div>
-    <img src="./screenshots/wechat_sponsor.jpg" alt="微信支付" style="width: 150px;">
-  </div>
-- Sharing it with others 🚀
+[MIT](LICENSE)。上游来源见开头的链接，原始版权声明保留在许可证中。
