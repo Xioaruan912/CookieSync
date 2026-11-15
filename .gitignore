@@ -28,3 +28,9 @@ apps/chrome-extension/public/manifest.json
 *.zip
 
 **/__pycache__/
+
+# Local logs and tool state
+*.log
+*.tsbuildinfo
+**/*.pyc
+**/.venv/
