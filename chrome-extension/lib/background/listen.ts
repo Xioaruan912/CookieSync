@@ -1,5 +1,6 @@
 import {
   check,
+  syncCookieDomain,
   checkResponseAndCallback,
   CookieOperator,
   extractDomainAndPort,
@@ -27,7 +28,10 @@ const handlePush = async (payload: PushCookieMessagePayload, callback: HandleCal
   const userAgent = navigator?.userAgent || '';
   try {
     await check();
+    const previousConfig = (await domainConfigStorage.get()).domainMap[host];
     await domainConfigStorage.updateItem(host, {
+      autoPush: previousConfig?.autoPush ?? true,
+      autoPull: previousConfig?.autoPull ?? true,
       sourceUrl: sourceUrl,
       favIconUrl,
     });
@@ -35,17 +39,16 @@ const handlePush = async (payload: PushCookieMessagePayload, callback: HandleCal
       pushing: true,
     });
     const [domain, port, hostname] = await extractDomainAndPort(host);
-    const condition = sourceUrl ? { url: sourceUrl } : { domain: domain };
+    const condition = { domain: syncCookieDomain(sourceUrl ? new URL(sourceUrl).hostname : domain) };
     const cookies = await chrome.cookies.getAll(condition);
 
     let localStorageItems: NonNullable<Parameters<typeof pushCookies>[2]> = [];
-    const includeLocalStorage = settingsStorage.getSnapshot()?.includeLocalStorage;
+    const includeLocalStorage = settingsStorage.getSnapshot()?.includeLocalStorage !== false;
     if (includeLocalStorage) {
       try {
         const hostname = sourceUrl ? new URL(sourceUrl).hostname : host;
         localStorageItems = await sendGetLocalStorageMessage(hostname);
       } catch (error) {
-        console.error('sendGetLocalStorageMessage error', error);
         const cookieMap = await cookieStorage.getSnapshot();
         localStorageItems = cookieMap?.domainCookieMap?.[host]?.localStorageItems || [];
       }
@@ -58,7 +61,7 @@ const handlePush = async (payload: PushCookieMessagePayload, callback: HandleCal
       const res = await pushCookies(host, cookies, localStorageItems, userAgent);
       checkResponseAndCallback(res, 'push', callback);
     } else {
-      callback({ isOk: false, msg: 'no cookies and  localStorageItems found', result: cookies });
+      callback({ isOk: false, msg: '未找到 Cookie 或 LocalStorage，请先确认已登录', result: cookies });
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (err: any) {
@@ -73,8 +76,14 @@ const handlePull = async (activeTabUrl: string, domain: string, isReload: boolea
     await check();
     await domainStatusStorage.togglePullingState(domain, true);
     const cookieMap = await pullAndSetCookies(activeTabUrl, domain, isReload);
-    console.log('handlePull->cookieMap', cookieMap);
-    callback({ isOk: true, msg: 'Pull success', result: cookieMap });
+
+    const previousConfig = (await domainConfigStorage.get()).domainMap[domain];
+    await domainConfigStorage.updateItem(domain, {
+      autoPull: previousConfig?.autoPull ?? true,
+      autoPush: previousConfig?.autoPush ?? true,
+      sourceUrl: activeTabUrl,
+    });
+    callback({ isOk: true, msg: '拉取成功', result: cookieMap });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (err: any) {
     checkResponseAndCallback(err, 'pull', callback);

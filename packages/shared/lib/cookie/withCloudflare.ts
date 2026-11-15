@@ -1,3 +1,6 @@
+import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
+import { buildWebdavUrl, readWebdav, writeWebdav, type WebdavSnapshot } from '../webdav/api';
+
 import { accountStorage, type AccountInfo } from '@sync-your-cookie/storage/lib/accountStorage';
 import { getActiveStorageItem, settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 
@@ -19,22 +22,26 @@ import {
   isBase64Encrypted,
 } from '@sync-your-cookie/protobuf';
 
-export const check = (accountInfo?: AccountInfo) => {
-  const cloudflareAccountInfo = accountInfo || accountStorage.getSnapshot();
-  if (cloudflareAccountInfo?.selectedProvider === 'github') {
+const webdavSnapshots = new WeakMap<ICookiesMap, { url: string; snapshot: WebdavSnapshot }>();
+
+export const check = async (accountInfo?: AccountInfo) => {
+  const cloudflareAccountInfo = accountInfo || (await accountStorage.get());
+  if (cloudflareAccountInfo?.selectedProvider === 'webdav') {
+    buildWebdavUrl(await webdavStorage.get());
+  } else if (cloudflareAccountInfo?.selectedProvider === 'github') {
     if (!cloudflareAccountInfo.githubAccessToken) {
       return Promise.reject({
-        message: 'GitHub Access Token is empty',
+        message: '请配置 GitHub 访问令牌',
         code: MessageErrorCode.AccountCheck,
       });
     }
   } else {
     if (!cloudflareAccountInfo?.accountId || !cloudflareAccountInfo.namespaceId || !cloudflareAccountInfo.token) {
-      let message = 'Account ID is empty';
+      let message = '请配置 Cloudflare 账号 ID';
       if (!cloudflareAccountInfo?.namespaceId) {
-        message = 'NamespaceId ID is empty';
+        message = '请配置命名空间 ID';
       } else if (!cloudflareAccountInfo.token) {
-        message = 'Token is empty';
+        message = '请配置访问令牌';
       }
 
       return Promise.reject({
@@ -48,7 +55,13 @@ export const check = (accountInfo?: AccountInfo) => {
 
 export const readCookiesMap = async (accountInfo: AccountInfo): Promise<ICookiesMap> => {
   let content = '';
-  if (accountInfo.selectedProvider === 'github') {
+  let webdavRead: { url: string; snapshot: WebdavSnapshot } | undefined;
+  if (accountInfo.selectedProvider === 'webdav') {
+    const config = await webdavStorage.get();
+    const snapshot = await readWebdav(config);
+    webdavRead = { url: buildWebdavUrl(config), snapshot };
+    content = snapshot.content;
+  } else if (accountInfo.selectedProvider === 'github') {
     const activeStorageItem = getActiveStorageItem();
     if (activeStorageItem?.rawUrl) {
       content = await GithubApi.instance.fetchRawContent(activeStorageItem.rawUrl);
@@ -58,30 +71,33 @@ export const readCookiesMap = async (accountInfo: AccountInfo): Promise<ICookies
     content = await readCloudflareKV(accountInfo.accountId!, accountInfo.namespaceId!, accountInfo.token!);
   }
 
+  const remember = (map: ICookiesMap) => {
+    if (webdavRead) webdavSnapshots.set(map, webdavRead);
+    return map;
+  };
   if (content) {
     try {
-      const settingsInfo = settingsStorage.getSnapshot();
+      const settingsInfo = await settingsStorage.get();
       const encryptionEnabled = settingsInfo?.encryptionEnabled;
       const encryptionPassword = settingsInfo?.encryptionPassword;
 
       // Check if content is encrypted and decrypt if needed
       let processedContent = content;
-      const protobufEncoding = !content.startsWith('{');
+      const protobufEncoding = !content.trimStart().startsWith('{');
 
       if (protobufEncoding && isBase64Encrypted(content)) {
         if (!encryptionEnabled || !encryptionPassword) {
           return Promise.reject({
-            message: 'Failed to decrypt data. Please check your encryption password.',
+            message: '数据解密失败，请检查两台电脑的加密密码是否一致。',
             code: MessageErrorCode.DecryptFailed,
           });
         }
         try {
           processedContent = await decryptBase64(content, encryptionPassword);
         } catch (decryptError) {
-          console.error('Decryption failed:', decryptError);
-          // throw new Error('Failed to decrypt data. Please check your encryption password.');
+          // throw new Error('数据解密失败，请检查两台电脑的加密密码是否一致。');
           return Promise.reject({
-            message: 'Failed to decrypt data. Please check your encryption password.',
+            message: '数据解密失败，请检查两台电脑的加密密码是否一致。',
             code: MessageErrorCode.DecryptFailed,
           });
         }
@@ -90,31 +106,39 @@ export const readCookiesMap = async (accountInfo: AccountInfo): Promise<ICookies
       if (protobufEncoding) {
         const compressedBuffer = base64ToArrayBuffer(processedContent);
         const deMsg = await decodeCookiesMap(compressedBuffer);
-        console.log('readCookiesMap->deMsg', deMsg);
-        return deMsg;
+
+        return remember(deMsg);
       } else {
-        console.log('readCookiesMap->res', JSON.parse(processedContent));
-        return JSON.parse(processedContent);
+        const parsed = JSON.parse(processedContent);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid cookie map');
+        return remember(parsed);
       }
     } catch (error) {
-      console.log('Decode error', error, content);
+      // Do not log remote cookie payloads.
       // return {};
       return Promise.reject({
-        message: `Decode error: ${error}, please check your save settings`,
+        message: '同步数据解码或解密失败，请检查远程文件、编码设置和加密密码',
         code: MessageErrorCode.DecodeFailed,
       });
     }
   } else {
-    return {};
+    return remember({});
   }
 };
 
-export const writeCookiesMap = async (accountInfo: AccountInfo, cookiesMap: ICookiesMap = {}) => {
-  const settingsInfo = settingsStorage.getSnapshot();
+export const writeCookiesMap = async (
+  accountInfo: AccountInfo,
+  cookiesMap: ICookiesMap = {},
+  previousMap: ICookiesMap = cookiesMap,
+) => {
+  const settingsInfo = await settingsStorage.get();
   const protobufEncoding = settingsInfo?.protobufEncoding;
   const encryptionEnabled = settingsInfo?.encryptionEnabled;
   const encryptionPassword = settingsInfo?.encryptionPassword;
 
+  if (encryptionEnabled && (!protobufEncoding || !encryptionPassword)) {
+    throw new Error('已启用加密：请开启 Protobuf 编码并设置加密密码，拒绝明文上传');
+  }
   let encodingStr = '';
   if (protobufEncoding) {
     const buffered = await encodeCookiesMap(cookiesMap);
@@ -124,13 +148,19 @@ export const writeCookiesMap = async (accountInfo: AccountInfo, cookiesMap: ICoo
     // Encrypt the data if encryption is enabled
     if (encryptionEnabled && encryptionPassword) {
       encodingStr = await encryptBase64(encodingStr, encryptionPassword);
-      console.log('writeCookiesMap-> data encrypted');
     }
   } else {
     encodingStr = JSON.stringify(cookiesMap);
-    console.log('writeCookiesMap->', cookiesMap);
   }
-  if (accountInfo.selectedProvider === 'github') {
+  if (accountInfo.selectedProvider === 'webdav') {
+    const config = await webdavStorage.get();
+    const url = buildWebdavUrl(config);
+    const previous = webdavSnapshots.get(previousMap);
+    if (!previous || previous.url !== url) throw new Error('请先拉取 WebDAV 文件后再写入');
+    const result = await writeWebdav(config, encodingStr, previous.snapshot);
+    webdavSnapshots.delete(previousMap);
+    return result;
+  } else if (accountInfo.selectedProvider === 'github') {
     const storageKeyGistId = settingsInfo?.storageKeyGistId;
     const storageKey = settingsInfo?.storageKey;
     return await GithubApi.instance.updateGist(storageKeyGistId!, storageKey!, encodingStr);
@@ -169,7 +199,7 @@ export const mergeAndWriteCookies = async (
     },
   };
 
-  const res = await writeCookiesMap(accountInfo, cookiesMap);
+  const res = await writeCookiesMap(accountInfo, cookiesMap, oldCookieMap);
   return [res, cookiesMap];
 };
 
@@ -198,7 +228,7 @@ export const mergeAndWriteMultipleDomainCookies = async (
     domainCookieMap: newDomainCookieMap,
   };
 
-  const res = await writeCookiesMap(cloudflareAccountInfo, cookiesMap);
+  const res = await writeCookiesMap(cloudflareAccountInfo, cookiesMap, oldCookieMap);
   return [res, cookiesMap];
 };
 
@@ -235,7 +265,7 @@ export const removeAndWriteCookies = async (
     }
   }
 
-  const res = await writeCookiesMap(cloudflareAccountInfo, cookiesMap);
+  const res = await writeCookiesMap(cloudflareAccountInfo, cookiesMap, oldCookieMap);
   return [res, cookiesMap];
 };
 
@@ -269,6 +299,6 @@ export const editAndWriteCookies = async (
     }
   }
 
-  const res = await writeCookiesMap(cloudflareAccountInfo, cookiesMap);
+  const res = await writeCookiesMap(cloudflareAccountInfo, cookiesMap, oldCookieMap);
   return [res, cookiesMap];
 };

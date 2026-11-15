@@ -76,7 +76,6 @@ export class GithubApi {
     let syncGist = await this.getSyncGists();
 
     if (!syncGist && this.initDefault) {
-      console.log('No sync gists found, creating one...');
       const content = await this.initContent();
       await this.createGist('Sync Your Cookie Gist', `${this.prefix}Default`, content, false);
       // syncGists.push(newGist.data);
@@ -129,7 +128,7 @@ export class GithubApi {
           // storageKeys.push(file[0].replace(this.prefix, ''));
         }
       }
-      console.log('storageKeys', storageKeys, gist.id);
+
       settingsStorage.update({
         storageKeyList: storageKeys,
         storageKey: currentStorageExist ? currentStorageKey : storageKeys[0]?.value,
@@ -137,7 +136,6 @@ export class GithubApi {
         gistHtmlUrl: gist.html_url,
       });
     } else {
-      console.log('No files found in gist', gist.id);
     }
     // const keys = Object.keys(files);
     // const storageKeys = keys.filter(key => key.startsWith(this.prefix)).map(key => key.replace(this.prefix, ''));
@@ -152,7 +150,7 @@ export class GithubApi {
         return;
       }
       this.accessToken = accessToken;
-      console.log('GithubApi accountStorage changed -> this.accessToken', this.accessToken);
+
       this.inited = false;
       this.init();
     });
@@ -292,7 +290,7 @@ export class GithubApi {
   private ensureToken() {
     if (!this.accessToken) {
       this.accessToken = accountStorage.getSnapshot()?.githubAccessToken;
-      console.log('this.accessToken', this.accessToken);
+
       this.newOctokit();
     }
     if (!this.accessToken) {
@@ -313,6 +311,5 @@ const clientSecret = '';
 // export const githubApi = new GithubApi(clientId, clientSecret);
 
 export const initGithubApi = async (initDefault = false) => {
-  console.log('initGithubApi finish');
   GithubApi.getInstance(clientId, clientSecret, initDefault);
 };

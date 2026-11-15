@@ -1,0 +1,4 @@
+{
+  "extensionName": { "message": "CookieSync · 登录状态同步" },
+  "extensionDescription": { "message": "通过 WebDAV、Cloudflare KV 或 GitHub Gist 同步 Cookie 与 LocalStorage" }
+}

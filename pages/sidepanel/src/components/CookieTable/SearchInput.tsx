@@ -26,7 +26,7 @@ export const SearchInput: FC<SearchInputProps> = props => {
           }
         }}
         className="bg-gray-100 pl-[36px]"
-        placeholder="Filter"
+        placeholder="筛选"
       />
       {searchVal && (
         <X

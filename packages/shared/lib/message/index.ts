@@ -105,10 +105,8 @@ export type SendResponse = {
 };
 
 export function sendMessage<T extends MessageType>(message: Message<T>, isTab = false, useTimeout: boolean = false) {
-  console.log('message', message);
   const send = (resolve: (value: SendResponse | PromiseLike<SendResponse>) => void, reject: (reason?: any) => void) => {
     chrome.runtime.sendMessage(message, function (result: SendResponse) {
-      console.log('sendMessage->message', message);
       if (result?.isOk) {
         resolve(result);
       } else {
@@ -123,13 +121,11 @@ export function sendMessage<T extends MessageType>(message: Message<T>, isTab = 
           if (tabs.length === 0) {
             // const allOpendTabs = await chrome.tabs.query({});
 
-            console.log('No active tab found, try alternative way');
             // reject({ isOk: false, msg: 'No active tab found' } as SendResponse);
             send(resolve, reject);
             return;
           }
           chrome.tabs.sendMessage(tabs[0].id!, message, function (result) {
-            console.log('isTab', isTab, 'result->', result);
             if (result?.isOk) {
               resolve(result);
             } else {
@@ -244,7 +240,6 @@ export const sendGetLocalStorageMessage = async (host: string, isTry = true) => 
           return;
         }
 
-        console.error('getLocalStorage and try reload fetch again', err);
         const matchedTabs = await getTabsByHost(host);
         if (matchedTabs.length === 0) {
           await chrome.tabs.create({
@@ -266,7 +261,6 @@ export const sendGetLocalStorageMessage = async (host: string, isTry = true) => 
             const localStorageItems = await sendGetLocalStorageMessage(host, false);
             myResolve(localStorageItems);
           } catch (error) {
-            console.log('error', error);
             myReject(error);
           }
         }, 500);

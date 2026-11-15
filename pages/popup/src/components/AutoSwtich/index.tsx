@@ -11,7 +11,7 @@ export function AutoSwitch(props: AutoSwitchProps) {
   return (
     <div className="flex items-center space-x-2">
       <Switch disabled={disabled} onCheckedChange={onChange} checked={value} id={id} />
-      <Label htmlFor={id}>Auto</Label>
+      <Label htmlFor={id}>自动</Label>
     </div>
   );
 }

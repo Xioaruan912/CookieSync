@@ -1,3 +1,4 @@
+import { WebdavSettings } from './components/WebdavSettings';
 import {
   useStorageSuspense,
   useTheme,
@@ -32,6 +33,7 @@ const Options = () => {
   const [accountId, setAccountId] = useState(accountInfo.accountId);
   const [namespaceId, setNamespaceId] = useState(accountInfo.namespaceId);
   const [openEye, setOpenEye] = useState(false);
+  const [providerTab, setProviderTab] = useState(accountInfo.selectedProvider === 'webdav' ? 'webdav' : 'legacy');
   const { loading, handleLaunchAuth } = useGithub();
   const [loadingSave, setLoadingSave] = useState(false);
 
@@ -51,10 +53,10 @@ const Options = () => {
 
   const handleSave = async () => {
     if (!accountId?.trim() || !token?.trim()) {
-      toast.warning('Account ID and Token are required');
+      toast.warning('请填写账号 ID 和令牌');
       return;
     } else if (!namespaceId?.trim()) {
-      toast.warning('NamespaceId are required');
+      toast.warning('请填写命名空间 ID');
       return;
     }
     try {
@@ -63,9 +65,9 @@ const Options = () => {
       if (res.success === true) {
         const [message] = res.messages;
         if (message?.message) {
-          toast.success('Save Success (' + message.message.replace('API', '') + ')');
+          toast.success('保存成功 (' + message.message.replace('API', '') + ')');
         } else {
-          toast.success('Save Success');
+          toast.success('保存成功');
         }
         accountStorage.update({
           selectedProvider: 'cloudflare',
@@ -76,18 +78,17 @@ const Options = () => {
       } else {
         const [error] = res.errors;
         if (error?.message) {
-          toast.error('Verify Failed: ' + error.message);
+          toast.error('验证失败：' + error.message);
         } else {
-          toast.error('Verify Failed: Unknown Error');
+          toast.error('验证失败：未知错误');
         }
       }
     } catch (err: any) {
-      console.log('error', err);
       const [error] = err?.errors || [];
       if (error?.message) {
-        toast.error('Verify Failed: ' + error.message);
+        toast.error('验证失败：' + error.message);
       } else {
-        toast.error('Verify Failed: Unknown Error');
+        toast.error('验证失败：未知错误');
       }
     } finally {
       setLoadingSave(false);
@@ -107,7 +108,7 @@ const Options = () => {
       bio: '',
       email: '',
     });
-    toast.success('Log out Success');
+    toast.success('已退出 GitHub');
     initStorageKey();
   };
 
@@ -123,9 +124,9 @@ const Options = () => {
                   title={
                     <div>
                       <p>
-                        githubAccessToken: <span className="text-orange-500">{accountInfo.githubAccessToken}</span>
+                        githubAccessToken: <span className="text-orange-500">已保存（隐藏）</span>
                       </p>
-                      <p>Your accessToken is only stored on your local device.</p>
+                      <p>原版 GitHub 凭据保存在 Chrome 同步存储中，请妥善保管。</p>
                     </div>
                   }>
                   <p className="text-base flex items-center font-medium">
@@ -138,7 +139,7 @@ const Options = () => {
             </div>
             <Button onClick={handleLogout} type="submit" variant="outline" className="w-full mt-4">
               <LogOut size={16} className="mr-2" />
-              Log out
+              退出 GitHub
             </Button>
           </div>
         </CardContent>
@@ -147,20 +148,18 @@ const Options = () => {
     return (
       <>
         <CardContent>
-          <CardDescription className="mt-[-16px] mb-4">
-            Enter your cloudflare account Or using Github Gist
-          </CardDescription>
+          <CardDescription className="mt-[-16px] mb-4">配置 Cloudflare 账号或使用 GitHub Gist</CardDescription>
           <div className="grid gap-4">
             <div className="grid gap-2">
               <div className="flex justify-between items-center ">
-                <Label htmlFor="token">Authorization Token</Label>
+                <Label htmlFor="token">授权令牌</Label>
                 <p className="flex items-center text-center text-xs">
                   <a
                     href="https://github.com/jackluson/sync-your-cookie/blob/main/how-to-use.md"
                     target="_blank"
                     className=" cursor-pointer underline mx-2"
                     rel="noreferrer">
-                    How to get it?
+                    如何获取？
                   </a>
                   <span
                     role="button"
@@ -182,21 +181,21 @@ const Options = () => {
                 onChange={handleTokenInput}
                 className="w-full mb-2"
                 type={openEye ? 'text' : 'password'}
-                placeholder="please input your cloudflare token "
+                placeholder="请输入 Cloudflare 令牌"
                 required
               />
             </div>
             <div className="grid gap-2">
               <div className="flex justify-between items-center ">
-                <Label htmlFor="accountId">Account ID</Label>
+                <Label htmlFor="accountId">账号 ID</Label>
                 <p className="flex items-center text-center text-xs">
-                  Don’t have a cloudflare Account yet?
+                  还没有 Cloudflare 账号？
                   <a
                     href="https://dash.cloudflare.com/sign-up"
                     target="_blank"
                     className=" cursor-pointer underline ml-2"
                     rel="noreferrer">
-                    Sign up
+                    注册
                   </a>
                 </p>
               </div>
@@ -206,20 +205,20 @@ const Options = () => {
                 onChange={handleAccountInput}
                 className="w-full mb-2"
                 type="text"
-                placeholder="please input your cloudflare account ID "
+                placeholder="请输入 Cloudflare 账号 ID"
                 required
               />
             </div>
             <div className="grid gap-2">
               <div className="flex justify-between items-center ">
-                <Label htmlFor="namespaceId">Namespace ID</Label>
+                <Label htmlFor="namespaceId">命名空间 ID</Label>
                 {namespaceId?.trim() && accountId?.trim() ? (
                   <a
                     href={`https://dash.cloudflare.com/${accountId.trim()}/workers/kv/namespaces/${namespaceId.trim()}`}
                     target="_blank"
                     className=" cursor-pointer underline ml-2"
                     rel="noreferrer">
-                    Go to namespace
+                    打开命名空间
                   </a>
                 ) : null}
 
@@ -236,17 +235,17 @@ const Options = () => {
                 onChange={handleNamespaceInput}
                 className="w-full mb-4"
                 type="text"
-                placeholder="please input namespace ID "
+                placeholder="请输入命名空间 ID"
               />
             </div>
             <Button disabled={loadingSave} onClick={handleSave} type="submit" className="w-full">
               {loadingSave ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Save
+              保存
             </Button>
           </div>
         </CardContent>
         <div className="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
-          <span className="bg-background text-muted-foreground relative z-10 px-2">Or continue with</span>
+          <span className="bg-background text-muted-foreground relative z-10 px-2">或使用以下方式</span>
         </div>
         <CardContent>
           <Button disabled={loading} onClick={handleLaunchAuth} className="w-full mt-6" variant="outline" size="sm">
@@ -255,7 +254,7 @@ const Options = () => {
               className="ml-1 h-4 w-4 overflow-hidden object-contain "
               alt="logo"
             />
-            <span className="ml-2">Using with GitHub</span>
+            <span className="ml-2">使用 GitHub Gist</span>
           </Button>
         </CardContent>
       </>
@@ -263,21 +262,21 @@ const Options = () => {
   };
 
   return (
-    <div className="w-screen h-screen absolute top-0 left-0 right-0 bottom-0 flex flex-col items-center justify-center p-4 bg-background ">
+    <div className="w-full min-h-screen flex flex-col items-center justify-start py-12 px-4 bg-background ">
       <div className="fixed right-8 top-8 ">
         <ThemeDropdown setTheme={setTheme} />
       </div>
-      <div className=" mt-[-80px] flex justify-center flex-col items-center">
+      <div className="w-full flex justify-center flex-col items-center">
         <img
           src={chrome.runtime.getURL('options/logo.png')}
-          className="size-40 overflow-hidden object-contain mb-4 animate-[spin_20s_linear_infinite]"
+          className="size-16 overflow-hidden object-contain mb-4"
           alt="logo"
         />
         <div className="w-full">
-          <Card className="mx-auto min-w-[400px] max-w-lg">
+          <Card className="mx-auto w-full max-w-lg">
             <CardHeader className="relative">
               <div className="flex justify-between">
-                <CardTitle className="text-xl">Settings</CardTitle>
+                <CardTitle className="text-xl">设置</CardTitle>
               </div>
               <SettingsPopover
                 trigger={
@@ -287,13 +286,33 @@ const Options = () => {
                 }
               />
             </CardHeader>
-            {renderAccount()}
+            <div className="px-6 pb-4 flex gap-2">
+              <Button
+                variant={providerTab === 'webdav' ? 'default' : 'outline'}
+                onClick={() => setProviderTab('webdav')}>
+                WebDAV
+              </Button>
+              <Button
+                variant={providerTab === 'legacy' ? 'default' : 'outline'}
+                onClick={() => setProviderTab('legacy')}>
+                Cloudflare / GitHub
+              </Button>
+            </div>
+            <p className="px-6 pb-4 text-sm">
+              当前后端：
+              {accountInfo.selectedProvider === 'webdav'
+                ? 'WebDAV'
+                : accountInfo.selectedProvider === 'github'
+                  ? 'GitHub Gist'
+                  : 'Cloudflare KV'}
+            </p>
+            {providerTab === 'webdav' ? <WebdavSettings /> : renderAccount()}
           </Card>
         </div>
       </div>
 
       <div className="mt-2 text-sm">
-        Built by
+        原作者：
         <a
           className="mx-0.5 font-bold text-primary "
           target="_blank"
@@ -301,7 +320,7 @@ const Options = () => {
           rel="noreferrer">
           jackluson
         </a>
-        . The source code is available on{' '}
+        。原项目源码：{' '}
         <a
           className="font-bold inline-flex items-center "
           href="https://github.com/jackluson/sync-your-cookie"
@@ -329,4 +348,4 @@ const Options = () => {
   );
 };
 
-export default withErrorBoundary(withSuspense(Options, <div> Loading ... </div>), <div> Error Occur </div>);
+export default withErrorBoundary(withSuspense(Options, <div> 加载中… </div>), <div> 页面加载失败，请重新打开 </div>);

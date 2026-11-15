@@ -39,8 +39,7 @@ export function StorageSelect(props: StorageSelectProps) {
     const newKey = inputValue.trim().replaceAll(/\s+/g, '');
     const exist = options.find(option => option.value === newKey);
     if (exist) {
-      console.warn('Key already exists or is empty');
-      toast.error('Key already exists');
+      toast.error('存储键已存在');
       return;
     }
     try {
@@ -48,7 +47,6 @@ export function StorageSelect(props: StorageSelectProps) {
       await props.onAdd(newKey);
       setInputValue('');
     } catch (error) {
-      console.log('error', error);
     } finally {
       setLoading(false);
     }
@@ -56,7 +54,7 @@ export function StorageSelect(props: StorageSelectProps) {
 
   const handleRemoveKey = async (option: IOption) => {
     // Handle removing a storage key
-    console.log('Remove storage key', option);
+
     if (loading) {
       return;
     }
@@ -64,7 +62,6 @@ export function StorageSelect(props: StorageSelectProps) {
       setLoading(true);
       await onRemove(option.value);
     } catch (error) {
-      console.log('error', error);
     } finally {
       setLoading(false);
     }
@@ -81,7 +78,7 @@ export function StorageSelect(props: StorageSelectProps) {
         }}
         {...rest}>
         <SelectTrigger className="w-[150px] scale-90 ">
-          <SelectValue className="ml-[-8px]" placeholder="Select a Storage Key" />
+          <SelectValue className="ml-[-8px]" placeholder="选择存储键" />
         </SelectTrigger>
         <SelectPortal>
           <SelectContent onCloseAutoFocus={evt => evt.preventDefault()}>
@@ -127,7 +124,7 @@ export function StorageSelect(props: StorageSelectProps) {
                 type="submit"
                 variant="outline">
                 <Plus size={18} />
-                Add
+                添加
               </Button>
             </div>
           </SelectContent>

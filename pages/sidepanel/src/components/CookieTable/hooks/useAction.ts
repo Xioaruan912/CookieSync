@@ -63,11 +63,11 @@ export const useAction = (cookie: Cookie) => {
   const handleCopy = (domain: string, isJSON: boolean = false) => {
     const cookies = cookie.domainCookieMap?.[domain]?.cookies || [];
     if (cookies.length === 0) {
-      toast.warning('no cookie to copy, check again.');
+      toast.warning('没有可复制的 Cookie，请检查后重试');
       return;
     }
     if (!navigator.clipboard) {
-      toast.warning('please check clipboard permission settings before copy ');
+      toast.warning('请先允许剪贴板访问');
       return;
     }
     let copyText = '';
@@ -85,11 +85,10 @@ export const useAction = (cookie: Cookie) => {
     }
     navigator?.clipboard?.writeText(copyText).then(
       () => {
-        toast.success('Copy success');
+        toast.success('复制成功');
       },
       err => {
-        console.log('err', err);
-        toast.error('Copy failed');
+        toast.error('复制失败');
       },
     );
   };

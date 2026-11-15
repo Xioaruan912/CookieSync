@@ -7,7 +7,6 @@ declare global {
   }
 }
 
-
 /**
  * 消息监听器类
  * 基于发布订阅模式，集中管理消息处理
@@ -43,11 +42,15 @@ export class MessageListener {
   }
 
   // 处理消息
-  handleMessage = (message: Message, sender: chrome.runtime.MessageSender, sendResponse: (response?: SendResponse) => void) => {
+  handleMessage = (
+    message: Message,
+    sender: chrome.runtime.MessageSender,
+    sendResponse: (response?: SendResponse) => void,
+  ) => {
     // 打印消息类型
-    if(message.toString() === 'ping') {
+    if (message.toString() === 'ping') {
       this.listen();
-      return
+      return;
     }
     // 如果消息类型为获取本地存储
     if (message.type === MessageType.GetLocalStorage) {
@@ -60,7 +63,7 @@ export class MessageListener {
       this.emit(MessageType.SetLocalStorage, message.payload, sendResponse);
     }
     return true; // keep the channel open
-  }
+  };
 
   private init(): void {
     // 此处不能使用 async 函数
@@ -76,7 +79,6 @@ export class MessageListener {
     // });
     // window.removeEventListener("load", this.listen);
     // window.addEventListener("load", this.listen);
-    console.log('chrome', chrome, chrome.tabs)
 
     // var port = chrome.runtime.connect(null as any, { name: 'hi' });
     // console.log("port", port);
@@ -88,28 +90,27 @@ export class MessageListener {
   public ping = () => {
     chrome.runtime.sendMessage('ping', response => {
       setTimeout(this.ping, 1000);
-      console.log('pong', response);
+
       // if (chrome.runtime.lastError) {
       // } else {
       //   // Do whatever you want, background script is ready now
       // }
     });
-  }
+  };
 
   public listen = (initSetTimeout = true) => {
-    if(this.timer) {
+    if (this.timer) {
       clearTimeout(this.timer);
     }
     const fn = this.handleMessage;
     chrome.runtime.onMessage.removeListener(fn);
     chrome.runtime.onMessage.addListener(fn);
-    if(initSetTimeout) {
+    if (initSetTimeout) {
       this.timer = setTimeout(() => {
-        console.log('listen timeout reset')
         this.listen();
-      }, 6000)
+      }, 6000);
     }
-  }
+  };
 
   /**
    * 监听消息
@@ -127,7 +128,6 @@ export class MessageListener {
    * @param {(...args: any[]) => void} sendResponse 回调函数
    */
   async emit(event: string, data: any, sendResponse?: (...args: any[]) => void): Promise<void> {
-    console.log("data", data);
     return new Promise((resolve, reject) => {
       try {
         if (sendResponse) {
@@ -149,4 +149,4 @@ export class MessageListener {
 }
 
 export const messageListener = MessageListener.getInstance();
-window.$messageListener = messageListener
+window.$messageListener = messageListener;

@@ -1,4 +1,13 @@
-import { extractDomainAndPort, useTheme, withErrorBoundary, withSuspense } from '@sync-your-cookie/shared';
+import { automaticStatusStorage } from '@sync-your-cookie/storage/lib/automaticStatusStorage';
+import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
+import {
+  extractDomainAndPort,
+  syncCookieDomain,
+  useStorageSuspense,
+  useTheme,
+  withErrorBoundary,
+  withSuspense,
+} from '@sync-your-cookie/shared';
 
 import { Button, Image, Spinner, Toaster } from '@sync-your-cookie/ui';
 import { CloudDownload, CloudUpload, Copyright, PanelRightOpen, RotateCw, Settings } from 'lucide-react';
@@ -9,6 +18,7 @@ import { useDomainConfig } from './hooks/useDomainConfig';
 
 const Popup = () => {
   const { theme } = useTheme();
+  const automaticStatus = useStorageSuspense(automaticStatusStorage);
   const [activeTabUrl, setActiveTabUrl] = useState('');
   const [favIconUrl, setFavIconUrl] = useState('');
 
@@ -73,6 +83,28 @@ const Popup = () => {
             </div>
           ) : null}
 
+          {['xiaohongshu.com', 'douyin.com', '115.com'].includes(syncCookieDomain(domain)) ? (
+            <div className="mb-4 max-w-[350px] text-xs space-y-2">
+              <p>已启用主域及子域 Cookie 同步。建议一台发送、一台接收，减少旧登录覆盖。</p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isPushingOrPulling}
+                  onClick={() => domainConfigStorage.updateItem(domain, { autoPush: true, autoPull: false })}>
+                  此电脑主要发送
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isPushingOrPulling}
+                  onClick={() => domainConfigStorage.updateItem(domain, { autoPush: false, autoPull: true })}>
+                  此电脑主要接收
+                </Button>
+              </div>
+              <p>首次先手动推送／拉取；之后默认自动收发，可按角色调整。过期或被撤销的登录仍需验证。</p>
+            </div>
+          ) : null}
           <div className=" flex flex-col">
             {/* <Button title={cloudflareAccountId} className="mb-2" onClick={handleUpdateToken}>
             Update Token
@@ -87,7 +119,7 @@ const Popup = () => {
                 ) : (
                   <CloudUpload size={16} className="mr-2" />
                 )}
-                Push cookie
+                推送并合并 Cookie
               </Button>
               <AutoSwitch
                 disabled={!activeTabUrl}
@@ -107,7 +139,7 @@ const Popup = () => {
                 ) : (
                   <CloudDownload size={16} className="mr-2" />
                 )}
-                Pull cookie
+                拉取并应用 Cookie
               </Button>
 
               <AutoSwitch
@@ -127,18 +159,21 @@ const Popup = () => {
                   // });
                   chrome.sidePanel
                     .open({ windowId: currentWindow.id! })
-                    .then(() => {
-                      console.log('Side panel opened successfully');
-                    })
-                    .catch(error => {
-                      console.error('Error opening side panel:', error);
-                    });
+                    .then(() => {})
+                    .catch(error => {});
                 });
               }}>
               <PanelRightOpen size={16} className="mr-2" />
-              Open Manager
+              打开同步管理
             </Button>
           </div>
+          <p className="mt-3 max-w-[350px] text-xs text-muted-foreground">
+            {automaticStatus.error
+              ? `后台同步待重试：${automaticStatus.error}`
+              : automaticStatus.lastSuccess
+                ? `最近后台同步：${new Date(automaticStatus.lastSuccess).toLocaleString('zh-CN')}`
+                : '首次推送后启用无感同步；浏览器启动自动拉取，运行期间后台保存。'}
+          </p>
           <Toaster
             theme={theme}
             closeButton
@@ -179,4 +214,4 @@ const Popup = () => {
   );
 };
 
-export default withErrorBoundary(withSuspense(Popup, <div> Loading ... </div>), <div> Error Occur </div>);
+export default withErrorBoundary(withSuspense(Popup, <div> 加载中… </div>), <div> 页面加载失败，请重新打开 </div>);

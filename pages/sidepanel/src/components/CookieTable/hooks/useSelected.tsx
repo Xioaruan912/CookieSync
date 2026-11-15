@@ -125,7 +125,6 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
       <Popover
         open={key === selectedKey && sameId && !!selectedRow}
         onOpenChange={val => {
-          console.log('val', val);
           if (val === false) {
             handleCancel();
           }
@@ -153,7 +152,7 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
         </PopoverTrigger>
         <PopoverContent className="w-80 ">
           <div className="grid gap-2">
-            <p className="text-lg font-semibold ">Edit</p>
+            <p className="text-lg font-semibold ">编辑</p>
             <div className="grid grid-cols-5 items-center gap-2">
               <Label htmlFor={keyName}>{keyName}</Label>
               <Input
@@ -181,13 +180,13 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
             </div>
             <div className="flex justify-end mt-2">
               <Button size="sm" variant="outline" onClick={() => handleCancel()}>
-                Cancel
+                取消
               </Button>
               <Button disabled={loading} onClick={() => handleSave()} size="sm" className="ml-2">
-                Save
+                保存
               </Button>
               <Button onClick={() => handleSave(true)} disabled={loading} size="sm" className="ml-2">
-                Save And Apply
+                保存并应用
               </Button>
             </div>
           </div>
@@ -211,7 +210,6 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
               value={String(selectedRow?.[key] || '')}
               className={cn('min-w-[200px] h-8 ', 'pr-[128px]')}
               onChange={e => {
-                console.log('e.target.value', e.target.value);
                 setSelectedRow({
                   ...selectedRow,
                   [key]: e.target.value,
@@ -223,10 +221,10 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
               variant="outline"
               onClick={() => handleCancel()}
               className="absolute my-1 w-[64px] h-[24px] right-[62px] top-0 bottom-0 mx-auto ">
-              Cancel
+              取消
             </Button>
             <Button size="sm" className="absolute my-1  w-[48px] h-[24px]  right-2 top-0 bottom-0 mx-auto ">
-              Save
+              保存
             </Button>
           </div>
         ) : (
@@ -264,10 +262,9 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
     };
     try {
       await chrome.cookies.set(setVal);
-      toast.success('set success');
+      toast.success('应用成功');
     } catch (error) {
-      console.log('set cookie error', setVal, error);
-      toast.error('set failed');
+      toast.error('应用失败');
     }
   };
 
@@ -277,9 +274,9 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
 
   const showCookiesColumns: ColumnDef<CookieShowItem>[] = [
     {
-      id: 'Domain',
+      id: '域名',
       accessorKey: 'domain',
-      header: 'Domain',
+      header: '域名',
       cell: ({ row }) => {
         const domainValue = row.original.domain;
         if (currentSearchStr.trim() && domainValue.includes(currentSearchStr)) {
@@ -310,9 +307,9 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
       },
     },
     // {
-    //   id: 'Name',
+    //   id: '名称',
     //   accessorKey: 'name',
-    //   header: 'Name',
+    //   header: '名称',
     //   // cell: ({ row }) => {
     //   //   return renderEditCell('name', row.original);
     //   // },
@@ -320,7 +317,7 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
     {
       id: 'Value',
       accessorKey: 'value',
-      header: 'Key / Value',
+      header: '键／值',
       cell: ({ row }) => {
         return renderEditCell('value', row.original);
       },
@@ -336,7 +333,7 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="h-8 w-8 p-0">
-                <span className="sr-only">Open menu</span>
+                <span className="sr-only">打开菜单</span>
                 <Ellipsis className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -346,7 +343,7 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
                 className="cursor-pointer"
                 onClick={() => handleSet(row.original)}>
                 <Wrench size={16} className="mr-2 h-4 w-4" />
-                Apply
+                应用
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -354,14 +351,14 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
                 className="cursor-pointer"
                 onClick={() => handleDelete(row.original)}>
                 <Trash2 size={16} className="mr-2 h-4 w-4" />
-                Delete
+                删除
               </DropdownMenuItem>
               {/* <DropdownMenuItem
                 disabled={disabled}
                 className="cursor-pointer"
                 onClick={() => handleDelete(row.original)}>
                 <Trash2 size={16} className="mr-2 h-4 w-4" />
-                Delete And Set
+                删除并应用
               </DropdownMenuItem> */}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -374,7 +371,7 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
     {
       id: 'Value',
       accessorKey: 'value',
-      header: 'Key / Value',
+      header: '键／值',
       cell: ({ row, cell }) => {
         const id = cell.id;
         return renderEditCell('value', { id, ...row.original }, 'key');
