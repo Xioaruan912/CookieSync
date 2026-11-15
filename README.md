@@ -8,7 +8,7 @@
 
 - WebDAV 地址、用户名、密码／应用密码及远程文件路径配置，支持独立临时文件连接测试。
 - 可选通过 Chrome 账号同步 WebDAV 配置，避免第二台电脑重复填写；包含应用密码，需主动开启。
-- Google Drive 隐藏应用目录后端，维护者一次性配置 OAuth 后，用户点击 Google 登录即可连接，令牌由 Chrome 管理。维护者开通方法见 [Google 同步说明](docs/GOOGLE.md)。
+- Google Drive 隐藏应用目录后端，官方安装包已预置 OAuth 客户端，用户点击 Google 登录即可发起授权，令牌由 Chrome 管理。项目处于 Google 测试状态时仅测试用户可授权；维护者配置方法见 [Google 同步说明](docs/GOOGLE.md)。
 - 手动推送、拉取并应用、按网站合并；保留 Cloudflare KV 与 GitHub Gist 后端。
 - 启动自动拉取，后台默认每 2 分钟合并改动，可调整为 1～60 分钟；离线队列保留并重试，无关闭钩子。
 - 简体中文界面，支持 Protobuf 编码及可选 AES-256-GCM 加密。

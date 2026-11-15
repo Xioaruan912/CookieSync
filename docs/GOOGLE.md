@@ -10,6 +10,8 @@
 
 ## Google Drive Cookie 后端
 
+1.7.1 官方安装包已预置 CookieSync 的 OAuth 客户端。若 Google 项目仍处于测试状态，维护者需先把使用者的 Google 邮箱加入测试用户列表；这不等于已向所有用户公开授权。无需在扩展界面输入客户端 ID。
+
 维护者开通 Google 登录的安装包中，打开设置 → Google Drive → 使用 Google 登录。首次同意 CookieSync 的应用数据目录权限后，会切换到 Drive 后端，后续沿用自动推送／拉取和默认 2 分钟检查。每台电脑首次连接一次，使用同一 Google 账号。
 
 扩展只请求 `https://www.googleapis.com/auth/drive.appdata`，使用隐藏的 `appDataFolder`，文件名为 `CookieSync-cookies-v1.txt`。它不会出现在普通“我的云端硬盘”文件列表中，也不会读取你的其他文件。断开保留云端文件；可在 Google Drive 管理应用中处理隐藏应用数据。切换后端不会自动迁移旧文件；如需迁移，先备份并在正确电脑手动确认推送方向。
