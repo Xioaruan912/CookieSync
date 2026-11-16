@@ -26,6 +26,18 @@ export function AutoSyncStatus() {
   };
   return (
     <div className="mx-6 mb-4 rounded border p-3 text-xs grid gap-2" aria-label="自动同步状态">
+      <label className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          checked={settings.autoDiscoverSites !== false}
+          onChange={event => void settingsStorage.update({ autoDiscoverSites: event.target.checked })}
+        />
+        自动发现并同步新访问的网站（默认开启）
+      </label>
+      <p className="text-muted-foreground">
+        访问的网站存在 Cookie 或 LocalStorage
+        时自动登记。无法准确识别是否已登录，因此也可能同步未登录站点的数据。可在同步管理中逐站关闭；关闭此开关仅停止发现新站点。
+      </p>
       <p>
         自动同步：{enabled ? `已开启 · ${phase}` : '已关闭'} · 待上传 {status.pendingCount || 0} 个网站
       </p>

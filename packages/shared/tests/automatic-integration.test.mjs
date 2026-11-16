@@ -28,7 +28,12 @@ function area() {
     setAccessLevel: async () => {},
   };
 }
-const events = () => ({ addListener: () => {} });
+const events = () => {
+  const listeners = [];
+  return { listeners, addListener: fn => listeners.push(fn) };
+};
+const openTabs = [];
+let pageLocalItems = [];
 let payload = '',
   writes = 0,
   failRead = false,
@@ -51,7 +56,19 @@ globalThis.chrome = {
     removeCachedAuthToken: async () => {},
   },
   cookies: {
-    getAll: async ({ domain }) => cookies.filter(c => c.domain.includes(domain)),
+    getAll: async ({ domain, url }) =>
+      cookies.filter(c => {
+        if (!domain && !url) return true;
+        const host = c.domain.replace(/^\./, '');
+        if (url) {
+          const page = new URL(url);
+          return (
+            (page.hostname === host || (!c.hostOnly && page.hostname.endsWith('.' + host))) &&
+            page.pathname.startsWith(c.path || '/')
+          );
+        }
+        return host === domain || host.endsWith('.' + domain);
+      }),
     set: (details, callback) => {
       const restored = {
         ...details,
@@ -63,7 +80,7 @@ globalThis.chrome = {
     },
     onChanged: events(),
   },
-  tabs: { query: async () => [], sendMessage: async () => ({ isOk: true, result: [] }) },
+  tabs: { query: async () => openTabs, sendMessage: async () => ({ isOk: true, result: pageLocalItems }) },
   alarms: { get: async () => ({ periodInMinutes: 2 }), create: async () => {}, onAlarm: events() },
 };
 function reply(value, status = 200, headers = {}) {
@@ -215,4 +232,105 @@ test('connecting a backend starts discovery without restarting Chrome or waiting
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline && writes === 0) await new Promise(resolve => originalTimeout(resolve, 50));
   assert.equal(writes, 1, 'save/connect event must start initial upload');
+});
+
+async function pageReady(url, items = []) {
+  return new Promise(resolve => {
+    for (const listener of chrome.runtime.onMessage.listeners)
+      listener(
+        { type: 'CookieSyncPageReady', localStorageItems: items },
+        { id: 'fixture', frameId: 0, tab: { id: 12, url } },
+        resolve,
+      );
+  });
+}
+test('visiting NodeSeek auto-registers and uploads without ever clicking manual push', async () => {
+  await settingsStorage.update({ autoDiscoverSites: true });
+  cookies.push({
+    name: 'nodeseek_sid',
+    value: 'synthetic-nodeseek',
+    domain: '.nodeseek.com',
+    path: '/',
+    session: true,
+  });
+  pageLocalItems = [{ key: 'fixture-login', value: 'local-state' }];
+  openTabs.push({ id: 12, url: 'https://www.nodeseek.com/' });
+  for (const key of Object.keys(chrome.storage.local.data))
+    if (key.endsWith('-last-attempt')) chrome.storage.local.data[key] = 0;
+  await pageReady('https://www.nodeseek.com/', pageLocalItems);
+  const config = (await domainConfigStorage.get()).domainMap['nodeseek.com'];
+  assert.ok(config, 'an arbitrary visited site must not require manual push registration');
+  assert.equal(config.autoPush, true);
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline && !JSON.parse(payload || '{}').domainCookieMap?.['nodeseek.com'])
+    await new Promise(resolve => originalTimeout(resolve, 50));
+  const entry = JSON.parse(payload).domainCookieMap['nodeseek.com'];
+  assert.equal(entry.cookies[0].value, 'synthetic-nodeseek');
+  assert.equal(entry.localStorageItems[0].value, 'local-state');
+  openTabs.splice(0);
+  pageLocalItems = [];
+});
+
+test('discovery respects opt-out and does not register cookie-less sites or unrelated domains', async () => {
+  cookies.push({ name: 'sid', value: 'unvisited', domain: '.unvisited.example', path: '/', session: true });
+  await pageReady('https://empty.example/');
+  assert.equal((await domainConfigStorage.get()).domainMap['empty.example'], undefined);
+  await settingsStorage.update({ autoDiscoverSites: false });
+  await pageReady('https://unvisited.example/');
+  assert.equal((await domainConfigStorage.get()).domainMap['unvisited.example'], undefined);
+  await settingsStorage.update({ autoDiscoverSites: true });
+  await domainConfigStorage.updateItem('blocked.example', { autoPush: false, autoPull: false });
+  await pageReady('https://blocked.example/', [{ key: 'token', value: 'synthetic' }]);
+  assert.equal((await domainConfigStorage.get()).domainMap['blocked.example'].autoPush, false);
+  assert.equal((await domainConfigStorage.get()).domainMap['blocked.example'].autoPull, false);
+});
+
+test('normal-tab discovery never samples LocalStorage from a matching incognito tab', async () => {
+  const original = chrome.tabs.sendMessage,
+    sampled = [];
+  openTabs.push(
+    { id: 66, url: 'https://storage-only.example/', incognito: true },
+    { id: 67, url: 'https://storage-only.example/', incognito: false },
+  );
+  chrome.tabs.sendMessage = async id => {
+    sampled.push(id);
+    return { isOk: true, result: [{ key: 'token', value: id === 66 ? 'private-incognito' : 'normal-fixture' }] };
+  };
+  for (const key of Object.keys(chrome.storage.local.data))
+    if (key.endsWith('-last-attempt')) chrome.storage.local.data[key] = 0;
+  try {
+    await automatic.restoreAtStartup(true);
+    const entry = JSON.parse(payload).domainCookieMap['storage-only.example'];
+    assert.ok(entry, 'LocalStorage-only normal sites should be discovered');
+    assert.equal(entry.localStorageItems[0].value, 'normal-fixture');
+    assert.ok(!sampled.includes(66), 'incognito tab must never supply auto-sync LocalStorage');
+  } finally {
+    chrome.tabs.sendMessage = original;
+    openTabs.splice(0);
+  }
+});
+
+test('normal-profile restoration never writes LocalStorage into matching incognito tabs', async () => {
+  const { applyLocalStorageToTabs } = require('../dist/index.js');
+  const original = chrome.tabs.sendMessage,
+    sampled = [];
+  openTabs.push(
+    { id: 66, url: 'https://restore-only.example/', incognito: true },
+    { id: 67, url: 'https://restore-only.example/', incognito: false },
+  );
+  chrome.tabs.sendMessage = async (id, message) => {
+    sampled.push(id);
+    return { isOk: true, result: [] };
+  };
+  try {
+    assert.equal(
+      await applyLocalStorageToTabs('restore-only.example', [{ key: 'token', value: 'normal-fixture' }]),
+      true,
+    );
+    assert.ok(sampled.includes(67));
+    assert.ok(!sampled.includes(66));
+  } finally {
+    chrome.tabs.sendMessage = original;
+    openTabs.splice(0);
+  }
 });

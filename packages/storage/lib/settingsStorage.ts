@@ -19,6 +19,7 @@ export interface ISettings {
   encryptionPassword?: string;
   startupPull?: boolean;
   backgroundSync?: boolean;
+  autoDiscoverSites?: boolean;
   syncIntervalMinutes?: number;
 }
 const key = 'settings-storage-key';
@@ -39,6 +40,7 @@ const initStorage = (): BaseStorage<ISettings> => {
       contextMenu: false,
       startupPull: true,
       backgroundSync: true,
+      autoDiscoverSites: true,
       syncIntervalMinutes: 2,
     },
     {

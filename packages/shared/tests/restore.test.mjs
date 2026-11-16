@@ -1,6 +1,50 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 const { cookieSetDetails, syncCookieDomain, matchesSyncDomain } = await import('../lib/cookie/restore.ts');
+const { collectSiteCookies, canonicalSiteHost, matchesSitePage } = await import('../lib/cookie/restore.ts');
+
+test('arbitrary site discovery keeps www/ports stable and collects parent-path cookies without unrelated domains', async () => {
+  assert.equal(canonicalSiteHost('WWW.NodeSeek.com'), 'nodeseek.com');
+  assert.ok(matchesSitePage('nodeseek.com', 'www.nodeseek.com'));
+  assert.ok(matchesSyncDomain('nodeseek.com', 'www.nodeseek.com'));
+  assert.ok(matchesSyncDomain('www.nodeseek.com', '.nodeseek.com'));
+  assert.ok(!matchesSyncDomain('nodeseek.com', 'evilnodeseek.com'));
+  assert.ok(!matchesSitePage('nodeseek.com', 'evilnodeseek.com'));
+  assert.ok(!matchesSitePage('localhost:80', 'localhost:81'));
+  const fixtures = [
+    { name: 'login', domain: '.example.com', path: '/account', value: 'fixture', hostOnly: false },
+    { name: 'own', domain: 'sub.example.com', path: '/', value: 'own', hostOnly: true },
+    { name: 'parent-only', domain: 'example.com', path: '/', value: 'not-applicable', hostOnly: true },
+    { name: 'unrelated', domain: '.other.example', path: '/', value: 'exclude', hostOnly: false },
+  ];
+  const previous = globalThis.chrome;
+  globalThis.chrome = {
+    cookies: {
+      getAll: async details =>
+        fixtures.filter(cookie => {
+          const domain = cookie.domain.replace(/^\./, '');
+          if (details.domain) return domain === details.domain || domain.endsWith('.' + details.domain);
+          if (details.url) {
+            const page = new URL(details.url);
+            return (
+              (page.hostname === domain || (!cookie.hostOnly && page.hostname.endsWith('.' + domain))) &&
+              page.pathname.startsWith(cookie.path)
+            );
+          }
+          return true;
+        }),
+    },
+  };
+  try {
+    for (const path of ['/account', '/'])
+      assert.deepEqual((await collectSiteCookies('https://sub.example.com' + path)).map(c => c.name).sort(), [
+        'login',
+        'own',
+      ]);
+  } finally {
+    globalThis.chrome = previous;
+  }
+});
 
 test('collects supported site families with exact domain boundaries', () => {
   for (const root of ['xiaohongshu.com', 'douyin.com', '115.com']) {

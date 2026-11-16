@@ -8,7 +8,9 @@ import {
   waitSyncJobEdits,
   canRestoreAtStartup,
   matchesSyncDomain,
-  syncCookieDomain,
+  canonicalSiteHost,
+  matchesSitePage,
+  collectSiteCookies,
   isApplyingRemoteState,
   automaticIntervalMs,
   pickAutomaticLocalItems,
@@ -73,9 +75,9 @@ async function localItems(host: string) {
   if (settings.includeLocalStorage === false) return [];
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
-    if (!tab.id || !tab.url?.startsWith('http')) continue;
+    if (!tab.id || !tab.url?.startsWith('http') || tab.incognito) continue;
     const hostname = new URL(tab.url).host;
-    if (hostname !== host && hostname.replace(/^www\./, '') !== host) continue;
+    if (!matchesSitePage(host, hostname)) continue;
     try {
       const response = await chrome.tabs.sendMessage(tab.id, { type: 'GetLocalStorage', payload: { domain: host } });
       if (response?.isOk) return response.result || [];
@@ -84,6 +86,61 @@ async function localItems(host: string) {
     }
   }
   return undefined;
+}
+
+function scheduleReconcile() {
+  if (connectionTimer) clearTimeout(connectionTimer);
+  connectionTimer = setTimeout(() => {
+    connectionTimer = undefined;
+    void backgroundReady.then(() => restoreAtStartup(true));
+  }, 1000);
+}
+
+async function discoverVisitedSite(rawUrl: string, observed?: ILocalStorageItem[], schedule = true) {
+  let page: URL;
+  try {
+    page = new URL(rawUrl);
+  } catch {
+    return;
+  }
+  if (!['http:', 'https:'].includes(page.protocol) || page.username || page.password) return;
+  const settings = await settingsStorage.get();
+  const config = await domainConfigStorage.get();
+  const host =
+    Object.keys(config.domainMap).find(site => matchesSitePage(site, page.host)) || canonicalSiteHost(page.host);
+  const sourceUrl = page.origin + page.pathname;
+  if (config.domainMap[host]) {
+    if (config.domainMap[host].sourceUrl !== sourceUrl) await domainConfigStorage.updateItem(host, { sourceUrl });
+    return host;
+  }
+  if (settings.backgroundSync === false || settings.autoDiscoverSites === false) return;
+  const cookies = await collectSiteCookies(sourceUrl);
+  const items = settings.includeLocalStorage === false ? [] : observed ?? (await localItems(host));
+  const cached = (await cookieStorage.get()).domainCookieMap?.[host];
+  if (!cookies.length && !items?.length && !cached?.cookies?.length && !cached?.localStorageItems?.length) return;
+  // updateItem preserves explicit switches even if they changed while discovery was reading.
+  await domainConfigStorage.updateItem(host, { sourceUrl });
+  if (schedule) scheduleReconcile();
+  return host;
+}
+
+async function discoverOpenSites() {
+  const settings = await settingsStorage.get();
+  if (settings.backgroundSync === false || settings.autoDiscoverSites === false) return;
+  const tabs = await chrome.tabs.query({});
+  const seen = new Set<string>();
+  for (const tab of tabs) {
+    if (!tab.url || tab.incognito) continue;
+    let page: URL;
+    try {
+      page = new URL(tab.url);
+    } catch {
+      continue;
+    }
+    if (seen.has(canonicalSiteHost(page.host))) continue;
+    seen.add(canonicalSiteHost(page.host));
+    await discoverVisitedSite(tab.url, undefined, false);
+  }
 }
 
 export function captureAutomaticSync(host: string, observed?: ILocalStorageItem[], skipEmpty = false): Promise<void> {
@@ -105,7 +162,7 @@ async function captureNow(host: string, observed?: ILocalStorageItem[], skipEmpt
   if (!baseline) return;
   const key = await queueKey();
   const url = config.sourceUrl || `https://${host}`;
-  const cookies = await chrome.cookies.getAll({ domain: syncCookieDomain(new URL(url).hostname) });
+  const cookies = await collectSiteCookies(url);
   const pending = (await getJobs(key))[host];
   const previous = (await cookieStorage.get()).domainCookieMap?.[host];
   const cached = previous?.localStorageItems || [];
@@ -214,6 +271,7 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
     await domainConfigStorage.ensureDefaults();
     await autoSyncStatusStorage.update({ phase: 'checking', lastCheck: Date.now(), error: '' });
     try {
+      await discoverOpenSites();
       // Capture against the last applied local cache before pullCookies replaces it.
       // A periodic scan also catches cookies that changed while the MV3 worker was asleep.
       const beforeRead = await domainConfigStorage.get();
@@ -268,13 +326,7 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
 }
 
 export function initAutomaticSync() {
-  const reconcileConnection = () => {
-    if (connectionTimer) clearTimeout(connectionTimer);
-    connectionTimer = setTimeout(() => {
-      connectionTimer = undefined;
-      void backgroundReady.then(() => restoreAtStartup(true));
-    }, 1000);
-  };
+  const reconcileConnection = scheduleReconcile;
   accountStorage.subscribe(reconcileConnection);
   webdavStorage.subscribe(() => {
     if (accountStorage.getSnapshot()?.selectedProvider === 'webdav') reconcileConnection();
@@ -295,11 +347,15 @@ export function initAutomaticSync() {
   void domainConfigStorage.ensureDefaults();
   void configureAlarm();
   let wasEnabled = settingsStorage.getSnapshot()?.backgroundSync !== false;
+  let wasDiscovering = settingsStorage.getSnapshot()?.autoDiscoverSites !== false;
   settingsStorage.subscribe(() => {
     void configureAlarm();
     const enabled = settingsStorage.getSnapshot()?.backgroundSync !== false;
     if (enabled && wasEnabled === false) reconcileConnection();
+    const discovering = settingsStorage.getSnapshot()?.autoDiscoverSites !== false;
+    if (enabled && discovering && !wasDiscovering) reconcileConnection();
     wasEnabled = enabled;
+    wasDiscovering = discovering;
   });
   chrome.alarms.onAlarm.addListener(alarm => {
     if (alarm.name === alarmName) void restoreAtStartup(true);
@@ -328,17 +384,40 @@ export function initAutomaticSync() {
     }
     if (
       !['CookieSyncLocalStorageChanged', 'CookieSyncPageReady'].includes(message?.type) ||
-      !sender.tab?.url?.startsWith('http')
+      !sender.tab?.url?.startsWith('http') ||
+      sender.tab.incognito
     )
       return;
     const hostname = new URL(sender.tab.url).host;
     void domainConfigStorage
       .ensureDefaults()
-      .then(() => domainConfigStorage.get())
+      .then(async () => {
+        const value = message.localStorageItems;
+        const observed =
+          Array.isArray(value) &&
+          value.every(item => item && typeof item.key === 'string' && typeof item.value === 'string')
+            ? value
+            : undefined;
+        await discoverVisitedSite(sender.tab!.url!, observed);
+        return domainConfigStorage.get();
+      })
       .then(async config => {
         for (const [host, item] of Object.entries(config.domainMap)) {
-          if (hostname !== host && hostname.replace(/^www\./, '') !== host) continue;
+          if (!matchesSitePage(host, hostname)) continue;
           if (message.type === 'CookieSyncPageReady') {
+            if (item.autoPush !== false && (await settingsStorage.get()).backgroundSync !== false) {
+              if (!(await getSyncBaseline(host))) {
+                scheduleReconcile();
+                continue;
+              }
+              const value = message.localStorageItems;
+              const observed =
+                Array.isArray(value) &&
+                value.every(item => item && typeof item.key === 'string' && typeof item.value === 'string')
+                  ? value
+                  : undefined;
+              await captureAutomaticSync(host, observed, true);
+            }
             if (item.autoPull !== false) {
               if (startup) await startup;
               await captures.get(host)?.catch(() => {});
@@ -378,4 +457,6 @@ export function initAutomaticSync() {
       .catch(() => reply({ isOk: false }));
     return true;
   });
+  // Also discover already-open sites after an extension reload, when old pages cannot send new messages.
+  reconcileConnection();
 }

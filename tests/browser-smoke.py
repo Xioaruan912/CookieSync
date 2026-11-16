@@ -290,5 +290,49 @@ with sync_playwright() as p:
     assert version == seed_version, 'manual check uploaded unchanged content'
     assert so.get_by_text('最近上传成功：',exact=False).is_visible()
     print('first_connection_automatic_seed_and_status_hash_skip_passed')
+    # Arbitrary visited sites are discovered; no manual PushCookie message is sent.
+    so.evaluate('''async () => { const all=await chrome.storage.local.get(null); await chrome.storage.local.set(Object.fromEntries(Object.keys(all).filter(k=>k.endsWith('-last-attempt')).map(k=>[k,0]))); }''')
+    seed.add_cookies([
+      {'name':'nodeseek_sid','value':'synthetic-nodeseek','domain':'.nodeseek.com','path':'/','secure':True,'httpOnly':True},
+      {'name':'not_visited','value':'excluded-fixture','domain':'.unvisited.example','path':'/','secure':True},
+    ])
+    ns=seed.new_page()
+    ns.route('**/*',lambda route:route.fulfill(status=200,content_type='text/html',body='<html><script>localStorage.setItem("fixture-token","nodeseek-state")</script><body>NodeSeek fixture</body></html>'))
+    ns.goto('https://www.nodeseek.com/')
+    deadline=time.monotonic()+25
+    while time.monotonic()<deadline:
+        saved=json.loads(files['/dav/automatic-first-seed.txt'][0])['domainCookieMap']
+        if 'nodeseek.com' in saved:break
+        time.sleep(.1)
+    else:raise AssertionError('visiting NodeSeek did not auto-register/upload without a manual push')
+    assert any(c['value']=='synthetic-nodeseek' for c in saved['nodeseek.com']['cookies'])
+    assert any(i['value']=='nodeseek-state' for i in saved['nodeseek.com']['localStorageItems'])
+    assert not so.evaluate('async () => (await chrome.storage.local.get("domainConfig-storage-key"))["domainConfig-storage-key"].domainMap["unvisited.example"] || null')
+    empty=seed.new_page()
+    empty.route('**/*',lambda route:route.fulfill(status=200,content_type='text/html',body='<html>Empty fixture</html>'))
+    empty.goto('https://empty.example/')
+    time.sleep(.7)
+    assert not so.evaluate('async () => (await chrome.storage.local.get("domainConfig-storage-key"))["domainConfig-storage-key"].domainMap["empty.example"] || null')
+    print('visited_nodeseek_auto_discovery_and_unvisited_cookie_exclusion_passed')
+    # Login data can appear after PageReady; discovery keeps checking unknown pages.
+    so.evaluate('''async () => { const all=await chrome.storage.local.get(null); await chrome.storage.local.set(Object.fromEntries(Object.keys(all).filter(k=>k.endsWith('-last-attempt')).map(k=>[k,0]))); }''')
+    late=seed.new_page()
+    late.route('**/*',lambda route:route.fulfill(status=200,content_type='text/html',body='<html>Late login fixture</html>'))
+    late.goto('https://late-login.example/')
+    only=seed.new_page()
+    only.route('**/*',lambda route:route.fulfill(status=200,content_type='text/html',body='<html><script>localStorage.setItem("fixture-token","storage-only-login")</script></html>'))
+    only.goto('https://storage-only.example/')
+    seed.add_cookies([{'name':'late_sid','value':'late-login-fixture','domain':'late-login.example','path':'/','secure':True,'httpOnly':True}])
+    deadline=time.monotonic()+50
+    while time.monotonic()<deadline:
+        saved=json.loads(files['/dav/automatic-first-seed.txt'][0])['domainCookieMap']
+        if 'late-login.example' in saved and 'storage-only.example' in saved:break
+        # Test scheduler eligibility without waiting a full two-minute upload interval.
+        so.evaluate('''async () => { const all=await chrome.storage.local.get(null); await chrome.storage.local.set(Object.fromEntries(Object.keys(all).filter(k=>k.endsWith('-last-attempt')).map(k=>[k,0]))); }''')
+        time.sleep(.4)
+    else:raise AssertionError('late Cookie or LocalStorage-only login was not auto-discovered')
+    assert any(c['value']=='late-login-fixture' for c in saved['late-login.example']['cookies'])
+    assert any(i['value']=='storage-only-login' for i in saved['storage-only.example']['localStorageItems'])
+    print('late_cookie_and_localstorage_only_auto_discovery_passed')
     seed.close()
 server.shutdown()
