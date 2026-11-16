@@ -4,7 +4,7 @@
 - Keep the repository source-only: no node_modules, dist, build, .turbo, browser profiles, ZIPs or credentials in the working directory.
 - Build and verify with `node scripts/workspace.mjs verify`. Dependencies and intermediate files go to an OS cache outside the repository; release files go to the adjacent `CookieSync-release` directory. `build` skips verification for already-tested source.
 - Do not introduce a development auto-reload server or background control connection. Users download the production ZIP, extract it, and load/reload the extension in Chrome.
-- Auto push and pull default to enabled. Discover visited HTTP(S) sites with Cookie or LocalStorage data by default; respect the discovery/global/per-site switches, and never bulk-enroll unvisited cookie domains.
+- Auto push and pull default to enabled. Automatically discover visited HTTP(S) sites only within the bundled 300-site list and user overrides. Pause all automatic capture/push/pull and old jobs outside the list without deleting data; manual commands remain available. Sync per-domain overrides through Chrome Sync and the separate Drive appData policy file before any automatic replay. Respect all existing discovery/global/per-site switches.
 - Compare semantic SHA-256 fingerprints of plaintext, not ciphertext. Ignore ordering, timestamps and device store IDs. Encryption-policy changes must still rewrite remote data.
 - Keep per-destination baselines and preserve pending local data on conflicts. Test in-flight changes, empty reads, individual edits/deletions, and unchanged-data skips.
 - WebDAV conditional writes stay enabled by default. AList/OpenList compatibility is explicit opt-in with its non-atomic limitation documented.

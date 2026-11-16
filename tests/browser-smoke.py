@@ -316,6 +316,13 @@ with sync_playwright() as p:
     print('visited_nodeseek_auto_discovery_and_unvisited_cookie_exclusion_passed')
     # Login data can appear after PageReady; discovery keeps checking unknown pages.
     so.evaluate('''async () => { const all=await chrome.storage.local.get(null); await chrome.storage.local.set(Object.fromEntries(Object.keys(all).filter(k=>k.endsWith('-last-attempt')).map(k=>[k,0]))); }''')
+    # Custom allowlist entries are saved through the real options UI before visiting them.
+    so.get_by_label('自定义自动同步域名',exact=True).fill('late-login.example')
+    so.get_by_role('button',name='添加网站',exact=True).click()
+    wait_extension(so, 'async () => !!(await chrome.storage.sync.get("cookiesync-site-rule-v1:late-login.example"))["cookiesync-site-rule-v1:late-login.example"]?.enabled')
+    so.get_by_label('自定义自动同步域名',exact=True).fill('storage-only.example')
+    so.get_by_role('button',name='添加网站',exact=True).click()
+    wait_extension(so, 'async () => !!(await chrome.storage.sync.get("cookiesync-site-rule-v1:storage-only.example"))["cookiesync-site-rule-v1:storage-only.example"]?.enabled')
     late=seed.new_page()
     late.route('**/*',lambda route:route.fulfill(status=200,content_type='text/html',body='<html>Late login fixture</html>'))
     late.goto('https://late-login.example/')
@@ -334,5 +341,26 @@ with sync_playwright() as p:
     assert any(c['value']=='late-login-fixture' for c in saved['late-login.example']['cookies'])
     assert any(i['value']=='storage-only-login' for i in saved['storage-only.example']['localStorageItems'])
     print('late_cookie_and_localstorage_only_auto_discovery_passed')
+    # Removing permission stops already registered sites and legacy queued jobs, retaining their data.
+    unknown=seed.new_page()
+    unknown.route('**/*',lambda route:route.fulfill(status=200,content_type='text/html',body='<html><script>localStorage.setItem("token","unlisted")</script></html>'))
+    seed.add_cookies([{'name':'legacy_sid','value':'legacy-preserved','domain':'legacy-unlisted.example','path':'/','secure':True}])
+    unknown.goto('https://legacy-unlisted.example/')
+    time.sleep(1)
+    assert not so.evaluate('async () => (await chrome.storage.local.get("domainConfig-storage-key"))["domainConfig-storage-key"].domainMap["legacy-unlisted.example"] || null')
+    # Disable NodeSeek through its real built-in list checkbox, then change its local Cookie.
+    so.get_by_text('查看和编辑内置 300 个网站',exact=True).click()
+    so.get_by_label('搜索内置网站',exact=True).fill('nodeseek.com')
+    so.get_by_label('内置网站列表',exact=True).get_by_role('checkbox').uncheck()
+    wait_extension(so, 'async () => (await chrome.storage.sync.get("cookiesync-site-rule-v1:nodeseek.com"))["cookiesync-site-rule-v1:nodeseek.com"]?.enabled === false')
+    seed.add_cookies([{'name':'nodeseek_sid','value':'changed-but-paused','domain':'.nodeseek.com','path':'/','secure':True,'httpOnly':True}])
+    last_check=so.evaluate('async () => (await chrome.storage.local.get("cookiesync-auto-status"))["cookiesync-auto-status"].lastCheck')
+    so.get_by_role('button',name='立即检查并同步',exact=True).click()
+    wait_extension(so, f'async () => {{const s=(await chrome.storage.local.get("cookiesync-auto-status"))["cookiesync-auto-status"];return s?.lastCheck > {last_check} && s?.phase === "idle";}}')
+    saved=json.loads(files['/dav/automatic-first-seed.txt'][0])['domainCookieMap']
+    assert any(c['value']=='synthetic-nodeseek' for c in saved['nodeseek.com']['cookies'])
+    assert any(c['value']=='changed-but-paused' for c in seed.cookies('https://www.nodeseek.com/'))
+    assert not 'legacy-unlisted.example' in saved
+    print('allowlist_ui_custom_add_pause_and_unlisted_retention_passed')
     seed.close()
 server.shutdown()

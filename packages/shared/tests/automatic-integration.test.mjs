@@ -34,6 +34,7 @@ const events = () => {
 };
 const openTabs = [];
 let pageLocalItems = [];
+let sitePayload = '';
 let payload = '',
   writes = 0,
   failRead = false,
@@ -91,23 +92,33 @@ globalThis.fetch = async (url, init) => {
   if (failRead) return reply('', 503);
   if (url.includes('/about?')) return reply({ user: { permissionId: 'owner' } });
   if (init.method === 'POST') {
-    payload = init.body.split('Content-Type: text/plain; charset=UTF-8\r\n\r\n')[1].split('\r\n--cookiesync_')[0];
-    writes++;
-    return reply({ id: 'file' });
+    const content = init.body.split('Content-Type: text/plain; charset=UTF-8\r\n\r\n')[1].split('\r\n--cookiesync_')[0];
+    const sites = init.body.includes('CookieSync-sites-v1.json');
+    if (sites) sitePayload = content;
+    else {
+      payload = content;
+      writes++;
+    }
+    return reply({ id: sites ? 'sites-file' : 'file' });
   }
+  const sites = url.includes('/sites-file') || decodeURIComponent(url).includes('CookieSync-sites-v1.json');
   if (init.method === 'PATCH') {
-    payload = init.body;
-    writes++;
-    return reply({ id: 'file' });
+    if (sites) sitePayload = init.body;
+    else {
+      payload = init.body;
+      writes++;
+    }
+    return reply({ id: sites ? 'sites-file' : 'file' });
   }
-  if (url.includes('alt=media')) return reply(payload, 200, { etag: '"fixture"' });
-  return reply({ files: payload ? [{ id: 'file' }] : [] });
+  if (url.includes('alt=media')) return reply(sites ? sitePayload : payload, 200, { etag: '"fixture"' });
+  return reply({ files: (sites ? sitePayload : payload) ? [{ id: sites ? 'sites-file' : 'file' }] : [] });
 };
 const { accountStorage } = require('@sync-your-cookie/storage/lib/accountStorage');
 const { driveAccountStorage } = require('@sync-your-cookie/storage/lib/driveStorage');
 const { settingsStorage } = require('@sync-your-cookie/storage/lib/settingsStorage');
 const { domainConfigStorage } = require('@sync-your-cookie/storage/lib/domainConfigStorage');
 const { cookieStorage } = require('@sync-your-cookie/storage/lib/cookieStorage');
+const { sitePolicyStorage } = require('@sync-your-cookie/storage/lib/sitePolicyStorage');
 const { setSyncBaseline, domainContentHash } = require('../dist/index.js');
 const automatic = require('../../../chrome-extension/lib/background/automaticSync.ts');
 
@@ -286,6 +297,7 @@ test('discovery respects opt-out and does not register cookie-less sites or unre
 });
 
 test('normal-tab discovery never samples LocalStorage from a matching incognito tab', async () => {
+  await sitePolicyStorage.setRule('storage-only.example', true);
   const original = chrome.tabs.sendMessage,
     sampled = [];
   openTabs.push(
@@ -299,7 +311,7 @@ test('normal-tab discovery never samples LocalStorage from a matching incognito 
   for (const key of Object.keys(chrome.storage.local.data))
     if (key.endsWith('-last-attempt')) chrome.storage.local.data[key] = 0;
   try {
-    await automatic.restoreAtStartup(true);
+    await automatic.restoreAtStartup(true, true);
     const entry = JSON.parse(payload).domainCookieMap['storage-only.example'];
     assert.ok(entry, 'LocalStorage-only normal sites should be discovered');
     assert.equal(entry.localStorageItems[0].value, 'normal-fixture');
@@ -333,4 +345,84 @@ test('normal-profile restoration never writes LocalStorage into matching incogni
     chrome.tabs.sendMessage = original;
     openTabs.splice(0);
   }
+});
+
+test('unlisted legacy sites stop automatic capture and upload without deleting their data', async () => {
+  await domainConfigStorage.updateItem('legacy-unlisted.example', { autoPush: true, autoPull: true });
+  await setSyncBaseline('legacy-unlisted.example', await domainContentHash());
+  cookies.push({
+    name: 'sid',
+    value: 'legacy-preserved',
+    domain: '.legacy-unlisted.example',
+    path: '/',
+    session: true,
+  });
+  const { syncDestinationKey } = require('../dist/index.js');
+  const key = await syncDestinationKey();
+  const legacyJob = {
+    domain: 'legacy-unlisted.example',
+    cookies: [],
+    localStorageItems: [],
+    revision: 'legacy-queued',
+    baseHash: await domainContentHash(),
+  };
+  await chrome.storage.local.set({
+    [key]: { ...chrome.storage.local.data[key], 'legacy-unlisted.example': legacyJob },
+  });
+  const oldWrites = writes;
+  await automatic.captureAutomaticSync('legacy-unlisted.example', []);
+  await automatic.flushAutomaticSync(true);
+  assert.equal(writes, oldWrites, 'an old enabled entry outside the new allowlist must not upload');
+  assert.ok(cookies.some(c => c.value === 'legacy-preserved'));
+  assert.equal(chrome.storage.local.data[key]['legacy-unlisted.example'].revision, 'legacy-queued');
+  assert.equal((await domainConfigStorage.get()).domainMap['legacy-unlisted.example'].autoPush, true);
+});
+
+test('denied child cookies never piggyback on an allowed parent during auto push or pull; existing backups remain', async () => {
+  await settingsStorage.update({ backgroundSync: false });
+  await sitePolicyStorage.setRule('parent.example', true);
+  await sitePolicyStorage.setRule('private.parent.example', false);
+  const rootCookie = { name: 'root_sid', value: 'root-remote', domain: '.parent.example', path: '/', session: true };
+  const privateCookie = {
+    name: 'private_sid',
+    value: 'private-backup',
+    domain: 'private.parent.example',
+    path: '/',
+    session: true,
+    hostOnly: true,
+  };
+  const map = JSON.parse(payload);
+  map.domainCookieMap['parent.example'] = { cookies: [rootCookie, privateCookie], localStorageItems: [] };
+  payload = JSON.stringify(map);
+  await cookieStorage.update(map, true);
+  await domainConfigStorage.updateItem('parent.example', { autoPush: true, autoPull: true });
+  await setSyncBaseline('parent.example', await domainContentHash(map.domainCookieMap['parent.example']));
+  cookies.push({ ...rootCookie, value: 'root-new' }, { ...privateCookie, value: 'private-local-only' });
+  await settingsStorage.update({ backgroundSync: true });
+  await automatic.captureAutomaticSync('parent.example', []);
+  await automatic.flushAutomaticSync(true);
+  const saved = JSON.parse(payload).domainCookieMap['parent.example'].cookies;
+  assert.ok(saved.some(c => c.value === 'root-new'));
+  assert.ok(
+    saved.some(c => c.value === 'private-backup'),
+    'existing paused cloud data must remain',
+  );
+  assert.ok(
+    !saved.some(c => c.value === 'private-local-only'),
+    'denied child current Cookie must never upload via parent',
+  );
+  for (let i = cookies.length - 1; i >= 0; i--) if (cookies[i].name === 'root_sid') cookies.splice(i, 1);
+  await automatic.restoreAtStartup(true, true);
+  assert.ok(cookies.some(c => c.name === 'root_sid' && c.value === 'root-new'));
+  assert.ok(
+    !cookies.some(c => c.name === 'private_sid' && c.value === 'private-backup'),
+    'automatic parent pull must not write denied child Cookie',
+  );
+  assert.ok(cookies.some(c => c.value === 'private-local-only'));
+  const { pullAndSetCookies } = require('../dist/index.js');
+  await pullAndSetCookies('https://parent.example/', 'parent.example', false, JSON.parse(payload));
+  assert.ok(
+    cookies.some(c => c.name === 'private_sid' && c.value === 'private-backup'),
+    'explicit manual pull remains unrestricted',
+  );
 });

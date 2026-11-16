@@ -130,6 +130,7 @@ export const pullAndSetCookies = async (
   isReload = true,
   providedMap?: Cookie,
   targetTabId?: number,
+  cookieFilter?: (cookie: ICookie) => boolean,
 ): Promise<Cookie> => {
   const pendingRevision = await getPendingRevision(host);
   // Network reads do not suppress local changes. Only writes to this site's scope do.
@@ -137,7 +138,7 @@ export const pullAndSetCookies = async (
   const scope = syncCookieDomain(host);
   applyingRemoteHosts.set(scope, (applyingRemoteHosts.get(scope) || 0) + 1);
   try {
-    const result = await restoreCookieMap(activeTabUrl, host, isReload, cookieMap, targetTabId);
+    const result = await restoreCookieMap(activeTabUrl, host, isReload, cookieMap, targetTabId, cookieFilter);
     const digest = await domainContentHash(cookieMap.domainCookieMap?.[host]);
     await setSyncBaseline(host, digest);
     await settleManualSync(host, pendingRevision, digest);
@@ -155,10 +156,14 @@ const restoreCookieMap = async (
   isReload: boolean,
   providedMap?: Cookie,
   targetTabId?: number,
+  cookieFilter?: (cookie: ICookie) => boolean,
 ): Promise<Cookie> => {
   const cookieMap = providedMap || (await pullCookies());
-  const cookieDetails = cookieMap?.domainCookieMap?.[host]?.cookies || [];
+  const cookieDetails = (cookieMap?.domainCookieMap?.[host]?.cookies || []).filter(
+    cookie => !cookieFilter || cookieFilter(cookie),
+  );
   const localStorageItems = cookieMap?.domainCookieMap?.[host]?.localStorageItems || [];
+  if (cookieFilter && !cookieDetails.length && !localStorageItems.length) return cookieMap;
   if (cookieDetails.length === 0 && localStorageItems.length === 0) {
     throw new Error('远程没有该网站的登录数据，请先在已登录电脑推送');
   } else {
@@ -281,6 +286,7 @@ const pushMultipleDomainCookiesImpl = async (
     userAgent?: string;
     baseHash?: string;
   }[],
+  cookieFilter?: (cookie: ICookie, host: string) => boolean,
 ): Promise<WriteResponse> => {
   const accountInfo = await accountStorage.get();
   try {
@@ -290,7 +296,18 @@ const pushMultipleDomainCookiesImpl = async (
       pushing: true,
     });
     const oldCookie = await readCookiesMapWithStatus(accountInfo);
-    const [res, cookieMap] = await mergeAndWriteMultipleDomainCookies(accountInfo, domainCookies, oldCookie);
+    const filtered = cookieFilter
+      ? domainCookies.map(item => ({
+          ...item,
+          cookies: [
+            ...item.cookies.filter(cookie => cookieFilter(cookie, item.domain)),
+            ...(oldCookie.domainCookieMap?.[item.domain]?.cookies || []).filter(
+              cookie => !cookieFilter(cookie, item.domain),
+            ),
+          ],
+        }))
+      : domainCookies;
+    const [res, cookieMap] = await mergeAndWriteMultipleDomainCookies(accountInfo, filtered, oldCookie);
     await domainStatusStorage.update({
       pushing: false,
     });
