@@ -1,5 +1,4 @@
 import libAssetsPlugin from '@laynezh/vite-plugin-lib-assets';
-import { watchRebuildPlugin } from '@sync-your-cookie/hmr';
 import { resolve } from 'path';
 import { defineConfig } from 'vite';
 import makeManifestPlugin from './utils/plugins/make-manifest-plugin';
@@ -27,7 +26,6 @@ export default defineConfig({
       outputPath: outDir,
     }),
     makeManifestPlugin({ outDir }),
-    isDev && watchRebuildPlugin({ reload: true }),
   ],
   publicDir: resolve(rootDir, 'public'),
   build: {
