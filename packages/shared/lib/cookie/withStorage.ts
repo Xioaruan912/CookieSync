@@ -84,7 +84,13 @@ export const isApplyingRemoteState = (host: string) => (applyingRemoteHosts.get(
 export const applyLocalStorageToTabs = async (host: string, value: ILocalStorageItem[], targetTabId?: number) => {
   const tabs = await chrome.tabs.query({});
   const matching = tabs.filter(tab => {
-    if (!tab.id || (targetTabId !== undefined && tab.id !== targetTabId) || !tab.url?.startsWith('http')) return false;
+    if (
+      !tab.id ||
+      tab.incognito ||
+      (targetTabId !== undefined && tab.id !== targetTabId) ||
+      !tab.url?.startsWith('http')
+    )
+      return false;
     const hostname = new URL(tab.url).host;
     return hostname === host || hostname.replace(/^www\./, '') === host;
   });

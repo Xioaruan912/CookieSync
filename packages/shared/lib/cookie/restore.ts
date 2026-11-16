@@ -3,6 +3,24 @@ import type { ICookie } from '@sync-your-cookie/protobuf';
 const loginSites = ['xiaohongshu.com', 'douyin.com', '115.com'];
 const within = (host: string, domain: string) => host === domain || host.endsWith(`.${domain}`);
 
+export const canonicalSiteHost = (host: string) => host.toLowerCase().replace(/^www\./, '');
+export const matchesSitePage = (site: string, pageHost: string) =>
+  canonicalSiteHost(site) === canonicalSiteHost(pageHost);
+
+export async function collectSiteCookies(sourceUrl: string): Promise<chrome.cookies.Cookie[]> {
+  const page = new URL(sourceUrl);
+  if (!['http:', 'https:'].includes(page.protocol)) return [];
+  const scope = syncCookieDomain(canonicalSiteHost(page.hostname));
+  // URL filtering hides cookies on other paths; domain filtering hides parent cookies.
+  // Inspect the current context's store and retain only this site's child/applicable parent domains.
+  // Other cookie domains are never registered or persisted from this transient response.
+  const cookies = await chrome.cookies.getAll({});
+  return cookies.filter(cookie => {
+    const domain = cookie.domain.toLowerCase().replace(/^\./, '');
+    return within(domain, scope) || (!cookie.hostOnly && within(scope, domain));
+  });
+}
+
 export function syncCookieDomain(host: string): string {
   const normalized = host.toLowerCase().replace(/:\d+$/, '').replace(/^\./, '');
   return loginSites.find(domain => within(normalized, domain)) || normalized;
@@ -10,8 +28,8 @@ export function syncCookieDomain(host: string): string {
 
 export function matchesSyncDomain(host: string, cookieDomain: string): boolean {
   const normalized = cookieDomain.toLowerCase().replace(/^\./, '');
-  const scope = syncCookieDomain(host);
-  return loginSites.includes(scope) ? within(normalized, scope) : within(host.replace(/:\d+$/, ''), normalized);
+  const scope = syncCookieDomain(canonicalSiteHost(host));
+  return within(normalized, scope) || within(scope, normalized);
 }
 
 export function cookieSetDetails(cookie: ICookie, activeTabUrl: string): chrome.cookies.SetDetails | undefined {
