@@ -27,10 +27,14 @@ import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage';
 import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
+import { isSiteAllowed, isAutomaticCookieAllowed } from '@sync-your-cookie/storage/lib/commonSites';
+import { readSiteRules, sitePolicyStorage } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
+import { syncSitePolicy } from '@sync-your-cookie/shared/lib/drive/sitePolicy';
 
 type ILocalStorageItem = PendingSyncJob['localStorageItems'][number];
 
 type Jobs = Record<string, PendingSyncJob>;
+const cookieAllowed = isAutomaticCookieAllowed;
 const alarmName = 'cookiesync-retry';
 let upload: Promise<void> | undefined;
 let startup: Promise<void> | undefined;
@@ -66,6 +70,16 @@ const queueKey = syncDestinationKey;
 
 async function getJobs(key: string): Promise<Jobs> {
   return (await chrome.storage.local.get(key))[key] || {};
+}
+
+async function getActiveJobs(key: string): Promise<Jobs> {
+  const rules = await readSiteRules();
+  const config = await domainConfigStorage.get();
+  return Object.fromEntries(
+    Object.entries(await getJobs(key)).filter(
+      ([host]) => isSiteAllowed(host, rules) && config.domainMap[host]?.autoPush !== false,
+    ),
+  );
 }
 
 const editJobs = editSyncJobs;
@@ -105,6 +119,7 @@ async function discoverVisitedSite(rawUrl: string, observed?: ILocalStorageItem[
   }
   if (!['http:', 'https:'].includes(page.protocol) || page.username || page.password) return;
   const settings = await settingsStorage.get();
+  if (!isSiteAllowed(page.hostname, await readSiteRules())) return;
   const config = await domainConfigStorage.get();
   const host =
     Object.keys(config.domainMap).find(site => matchesSitePage(site, page.host)) || canonicalSiteHost(page.host);
@@ -155,6 +170,8 @@ export function captureAutomaticSync(host: string, observed?: ILocalStorageItem[
 
 async function captureNow(host: string, observed?: ILocalStorageItem[], skipEmpty = false) {
   const settings = await settingsStorage.get();
+  const rules = await readSiteRules();
+  if (!isSiteAllowed(host, rules)) return;
   if (isApplyingRemoteState(host) || settings.backgroundSync === false) return;
   const config = (await domainConfigStorage.get()).domainMap[host];
   if (!config || config.autoPush === false) return;
@@ -162,9 +179,11 @@ async function captureNow(host: string, observed?: ILocalStorageItem[], skipEmpt
   if (!baseline) return;
   const key = await queueKey();
   const url = config.sourceUrl || `https://${host}`;
-  const cookies = await collectSiteCookies(url);
+  const collected = (await collectSiteCookies(url)).filter(cookie => cookieAllowed(cookie, host, rules));
   const pending = (await getJobs(key))[host];
   const previous = (await cookieStorage.get()).domainCookieMap?.[host];
+  // Preserve paused child-domain backups without collecting their current browser values.
+  const cookies = [...collected, ...(previous?.cookies || []).filter(cookie => !cookieAllowed(cookie, host, rules))];
   const cached = previous?.localStorageItems || [];
   const items =
     settings.includeLocalStorage === false
@@ -202,7 +221,7 @@ async function captureNow(host: string, observed?: ILocalStorageItem[], skipEmpt
     ...jobs,
     [host]: { ...job, baseHash: jobs[host]?.baseHash || (await getSyncBaseline(host)) || job.baseHash },
   }));
-  await autoSyncStatusStorage.update({ pendingCount: Object.keys(await getJobs(key)).length });
+  await autoSyncStatusStorage.update({ pendingCount: Object.keys(await getActiveJobs(key)).length });
   if (!timer)
     timer = setTimeout(
       () => {
@@ -219,36 +238,46 @@ export async function flushAutomaticSync(force = false): Promise<void> {
     const settings = await settingsStorage.get();
     if (settings.backgroundSync === false && !force) return;
     const key = await queueKey();
-    await waitSyncJobEdits();
-    const sent = await getJobs(key);
-    if (!Object.keys(sent).length) return;
-    const rateKey = `${key}-last-attempt`;
-    const lastAttempt = (await chrome.storage.local.get(rateKey))[rateKey] || 0;
-    if (!force && Date.now() - lastAttempt < automaticIntervalMs(settings.syncIntervalMinutes)) return;
-    await chrome.storage.local.set({ [rateKey]: Date.now() });
     try {
+      // A cloud opt-out must be known before replaying any legacy pending jobs.
+      await syncSitePolicy();
+      await waitSyncJobEdits();
+      const sent = await getActiveJobs(key);
+      if (!Object.keys(sent).length) return;
+      const rateKey = `${key}-last-attempt`;
+      const lastAttempt = (await chrome.storage.local.get(rateKey))[rateKey] || 0;
+      if (!force && Date.now() - lastAttempt < automaticIntervalMs(settings.syncIntervalMinutes)) return;
+      await chrome.storage.local.set({ [rateKey]: Date.now() });
       if (key !== (await queueKey())) return;
       await autoSyncStatusStorage.update({ phase: 'uploading', lastAttempt: Date.now() });
-      const result = await pushMultipleDomainCookies(Object.values(sent));
+      const rules = await readSiteRules();
+      const result = await pushMultipleDomainCookies(Object.values(sent), (cookie, host) =>
+        cookieAllowed(cookie, host, rules),
+      );
       if (!('success' in result ? result.success : (result as unknown as { status?: number }).status === 200)) {
         throw new Error('自动同步上传失败');
       }
       const writtenHashes = Object.fromEntries(
-        await Promise.all(Object.entries(sent).map(async ([host, job]) => [host, await domainContentHash(job)])),
+        await Promise.all(
+          Object.entries(sent).map(async ([host, job]) => [
+            host,
+            (await getSyncBaseline(host)) || (await domainContentHash(job)),
+          ]),
+        ),
       );
       await editJobs(key, jobs => acknowledgeJobs(jobs, sent, writtenHashes));
       await autoSyncStatusStorage.update({
         phase: 'idle',
         lastSuccess: Date.now(),
         error: '',
-        pendingCount: Object.keys(await getJobs(key)).length,
+        pendingCount: Object.keys(await getActiveJobs(key)).length,
       });
     } catch (error) {
       await autoSyncStatusStorage.update({
         phase: 'idle',
         lastAttempt: Date.now(),
         error: errorMessage(error),
-        pendingCount: Object.keys(await getJobs(key)).length,
+        pendingCount: Object.keys(await getActiveJobs(key)).length,
       });
       // Durable jobs remain for the next alarm, cookie change or browser startup.
     }
@@ -271,17 +300,20 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
     await domainConfigStorage.ensureDefaults();
     await autoSyncStatusStorage.update({ phase: 'checking', lastCheck: Date.now(), error: '' });
     try {
+      await syncSitePolicy();
+      const rules = await readSiteRules();
       await discoverOpenSites();
       // Capture against the last applied local cache before pullCookies replaces it.
       // A periodic scan also catches cookies that changed while the MV3 worker was asleep.
       const beforeRead = await domainConfigStorage.get();
       for (const [domain, item] of Object.entries(beforeRead.domainMap)) {
-        if (item.autoPush !== false && (await getSyncBaseline(domain)))
+        if (isSiteAllowed(domain, rules) && item.autoPush !== false && (await getSyncBaseline(domain)))
           await captureAutomaticSync(domain, undefined, true);
       }
       const remote = await pullCookies();
       const config = await domainConfigStorage.get();
       for (const domain of new Set([...Object.keys(remote.domainCookieMap || {}), ...Object.keys(config.domainMap)])) {
+        if (!isSiteAllowed(domain, rules)) continue;
         const item = config.domainMap[domain];
         await captures.get(domain)?.catch(() => {});
         const pending = await getJobs(await queueKey());
@@ -304,7 +336,9 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
             }
             continue;
           }
-          await pullAndSetCookies(item?.sourceUrl || `https://${domain}`, domain, false, remote);
+          await pullAndSetCookies(item?.sourceUrl || `https://${domain}`, domain, false, remote, undefined, cookie =>
+            cookieAllowed(cookie, domain, rules),
+          );
           await chrome.storage.session.set({ [`cookiesync-pulled-${domain}`]: Date.now() });
         } catch (error) {
           await autoSyncStatusStorage.update({ error: errorMessage(error) });
@@ -314,7 +348,7 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
       if (settings.backgroundSync !== false) await flushAutomaticSync(force || !periodic);
       await autoSyncStatusStorage.update({
         phase: 'idle',
-        pendingCount: Object.keys(await getJobs(await queueKey())).length,
+        pendingCount: Object.keys(await getActiveJobs(await queueKey())).length,
       });
     } catch (error) {
       await autoSyncStatusStorage.update({ phase: 'idle', error: errorMessage(error) });
@@ -327,16 +361,13 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
 
 export function initAutomaticSync() {
   const reconcileConnection = scheduleReconcile;
+  sitePolicyStorage.subscribe(reconcileConnection);
   accountStorage.subscribe(reconcileConnection);
   webdavStorage.subscribe(() => {
     if (accountStorage.getSnapshot()?.selectedProvider === 'webdav') reconcileConnection();
   });
   driveAccountStorage.subscribe(() => {
-    if (
-      accountStorage.getSnapshot()?.selectedProvider === 'google-drive' &&
-      driveAccountStorage.getSnapshot()?.connected
-    )
-      reconcileConnection();
+    if (driveAccountStorage.getSnapshot()?.connected) reconcileConnection();
   });
   const configureAlarm = async () => {
     const interval = automaticIntervalMs((await settingsStorage.get()).syncIntervalMinutes) / 60000;
@@ -403,6 +434,8 @@ export function initAutomaticSync() {
       })
       .then(async config => {
         for (const [host, item] of Object.entries(config.domainMap)) {
+          const rules = await readSiteRules();
+          if (!isSiteAllowed(host, rules)) continue;
           if (!matchesSitePage(host, hostname)) continue;
           if (message.type === 'CookieSyncPageReady') {
             if (item.autoPush !== false && (await settingsStorage.get()).backgroundSync !== false) {
@@ -434,7 +467,9 @@ export function initAutomaticSync() {
                   await captures.get(host)?.catch(() => {});
                   if ((await getJobs(await queueKey()))[host]) continue;
                   if (remote.domainCookieMap?.[host])
-                    await pullAndSetCookies(sender.tab!.url!, host, false, remote, sender.tab!.id);
+                    await pullAndSetCookies(sender.tab!.url!, host, false, remote, sender.tab!.id, cookie =>
+                      cookieAllowed(cookie, host, rules),
+                    );
                   else {
                     await setSyncBaseline(host, await domainContentHash());
                     await captureAutomaticSync(host);

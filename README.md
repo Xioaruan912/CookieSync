@@ -12,7 +12,7 @@
 - 手动推送、拉取并应用、按网站合并；保留 Cloudflare KV 与 GitHub Gist 后端。
 - 启动自动拉取，后台默认每 2 分钟合并改动，可调整为 1～60 分钟；离线队列保留并重试，无关闭钩子。
 - 连接后主动检查；云端没有对应网站数据时，自动为已开启推送且本机有数据的网站建立备份。设置页可查看检查／上传时间、待同步数量及错误，也可立即检查。
-- 默认自动发现访问过的普通 HTTP(S) 网站，只要存在 Cookie 或启用的 LocalStorage 就登记并同步，无需先手动推送；支持 NodeSeek 等任意站点，可关闭发现开关或逐站禁用。无法可靠识别登录状态，未登录网站也可能产生可同步数据；不会批量上传未访问的 Cookie 域名。
+- 默认仅自动发现[内置 300 个网站及自定义名单](docs/SITES.md)中的普通 HTTP(S) 页面，有 Cookie / LocalStorage 即可自动登记，无需手动推送。可搜索、增补、停用域名；名单覆盖配置随 Chrome 账号及已连接的 Google Drive 合并同步。名单外旧站点及队列暂停自动收发，保留本地和云端数据；手动操作仍可用。不能可靠识别登录状态，名单内未登录网站也可能产生同步数据。
 - 简体中文界面，支持 Protobuf 编码及可选 AES-256-GCM 加密。
 - 小红书、抖音、115 主域及子域 Cookie 优先处理，修复会话 Cookie 恢复时误设过期时间的问题。
 
@@ -36,7 +36,7 @@ node scripts/workspace.mjs verify
 
 该命令自动在系统临时缓存中安装依赖、构建并运行检查；源码目录始终没有依赖或构建缓存。安装 ZIP 和解压目录位于源码旁边的 `CookieSync-release/`。对已验证源码仅打包可运行 `node scripts/workspace.mjs build`。也可用 `--cache`、`--output` 指定源码外的路径。
 
-两台电脑配置相同的 WebDAV 目的地。小红书、抖音、115 及已登记网站默认自动推送和自动拉取，保留用户明确关闭的设置。建议首次手动推送／拉取确认。详细步骤和限制见 [WebDAV 使用说明](docs/WEBDAV.md)。Cloudflare 配置可参考 [上游说明](https://github.com/jackluson/sync-your-cookie/blob/main/how-to-use.md)。
+两台电脑配置相同的 WebDAV 目的地。名单内的小红书、抖音、115、NodeSeek 等已登记网站默认自动推送和自动拉取，保留用户明确关闭的设置。建议首次手动推送／拉取确认。详细步骤和限制见 [WebDAV 使用说明](docs/WEBDAV.md)。Cloudflare 配置可参考 [上游说明](https://github.com/jackluson/sync-your-cookie/blob/main/how-to-use.md)。
 
 ## 内容比对
 

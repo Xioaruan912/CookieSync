@@ -3,6 +3,8 @@ import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage'
 const api = 'https://www.googleapis.com/drive/v3';
 const upload = 'https://www.googleapis.com/upload/drive/v3';
 export const driveFileName = 'CookieSync-cookies-v1.txt';
+export const driveSitesFileName = 'CookieSync-sites-v1.json';
+type DriveFileName = typeof driveFileName | typeof driveSitesFileName;
 export const driveScope = 'https://www.googleapis.com/auth/drive.appdata';
 export const isDriveConfigured = () => !!chrome.runtime.getManifest().oauth2?.client_id;
 
@@ -84,10 +86,10 @@ async function assertAccount(accessToken: string) {
   return account.userId;
 }
 
-async function findFile(accessToken: string, userId: string): Promise<string | undefined> {
+async function findFile(accessToken: string, userId: string, fileName: DriveFileName): Promise<string | undefined> {
   const query = new URLSearchParams({
     spaces: 'appDataFolder',
-    q: `name = '${driveFileName}' and trashed = false`,
+    q: `name = '${fileName}' and trashed = false`,
     fields: 'files(id),nextPageToken',
     pageSize: '100',
   });
@@ -100,25 +102,28 @@ async function findFile(accessToken: string, userId: string): Promise<string | u
 }
 
 export interface DriveSnapshot {
+  fileName?: DriveFileName;
   content: string;
   userId: string;
   id?: string;
   etag?: string;
 }
 
-export async function readDrive(): Promise<DriveSnapshot> {
+export async function readDrive(fileName: DriveFileName = driveFileName): Promise<DriveSnapshot> {
   const accessToken = await token();
   const userId = await assertAccount(accessToken);
-  const id = await findFile(accessToken, userId);
-  if (!id) return { userId, content: '' };
+  const id = await findFile(accessToken, userId, fileName);
+  if (!id) return { fileName, userId, content: '' };
   const res = await request(`${api}/files/${encodeURIComponent(id)}?alt=media`, {}, accessToken, userId);
-  return { userId, id, content: await res.text(), etag: res.headers.get('etag') || undefined };
+  return { fileName, userId, id, content: await res.text(), etag: res.headers.get('etag') || undefined };
 }
 
 export async function writeDrive(content: string, previous: DriveSnapshot) {
+  const fileName = previous.fileName || driveFileName;
+  if (![driveFileName, driveSitesFileName].includes(fileName)) throw new Error('无效的 Google Drive 同步文件');
   const accessToken = await token();
   if ((await assertAccount(accessToken)) !== previous.userId) throw new Error('Google 账号不一致，已停止写入');
-  const id = await findFile(accessToken, previous.userId);
+  const id = await findFile(accessToken, previous.userId, fileName);
   if (id !== previous.id) throw new Error('Google Drive 同步文件已变化，请重新拉取');
   if (id) {
     if (!previous.etag || previous.etag.startsWith('W/'))
@@ -135,7 +140,7 @@ export async function writeDrive(content: string, previous: DriveSnapshot) {
     );
   } else {
     const boundary = `cookiesync_${crypto.randomUUID()}`;
-    const metadata = JSON.stringify({ name: driveFileName, parents: ['appDataFolder'] });
+    const metadata = JSON.stringify({ name: fileName, parents: ['appDataFolder'] });
     const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${content}\r\n--${boundary}--\r\n`;
     await request(
       `${upload}/files?uploadType=multipart&fields=id`,
@@ -147,7 +152,7 @@ export async function writeDrive(content: string, previous: DriveSnapshot) {
       accessToken,
       previous.userId,
     );
-    await findFile(accessToken, previous.userId); // Surface simultaneous first-create duplicates instead of silently selecting one.
+    await findFile(accessToken, previous.userId, fileName); // Surface simultaneous first-create duplicates instead of silently selecting one.
   }
   return { success: true, errors: [] };
 }

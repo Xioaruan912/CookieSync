@@ -1,5 +1,6 @@
 import { init } from './localStorage';
 import { matchesSitePage } from '@sync-your-cookie/shared/lib/cookie/restore';
+import { isSiteAllowed, siteRulesFromStorage } from '@sync-your-cookie/storage/lib/commonSites';
 init();
 
 // Observe only enabled sites; snapshots travel through private extension messages.
@@ -24,6 +25,10 @@ const checkLocalChanges = async () => {
     }
     const config = (await chrome.storage.local.get('domainConfig-storage-key'))['domainConfig-storage-key'];
     const host = location.host;
+    if (!isSiteAllowed(host, siteRulesFromStorage(await chrome.storage.sync.get(null)))) {
+      automaticEnabled = false;
+      return;
+    }
     const registered = Object.entries(config?.domainMap || {}).find(([domain]) => matchesSitePage(domain, host));
     const enabled = registered
       ? (registered[1] as { autoPush?: boolean }).autoPush !== false
