@@ -27,7 +27,6 @@
     "tailwind-merge": "^2.3.0"
   },
   "devDependencies": {
-    "@sync-your-cookie/hmr": "workspace:*",
     "@sync-your-cookie/protobuf": "workspace:*",
     "@sync-your-cookie/tailwindcss-config": "workspace:*",
     "@sync-your-cookie/tsconfig": "workspace:*",

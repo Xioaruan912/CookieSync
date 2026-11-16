@@ -25,7 +25,6 @@
     "eventemitter3": "^5.0.1"
   },
   "devDependencies": {
-    "@sync-your-cookie/hmr": "workspace:*",
     "@sync-your-cookie/tsconfig": "workspace:*"
   }
 }

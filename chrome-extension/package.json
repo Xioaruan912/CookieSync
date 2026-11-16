@@ -25,7 +25,6 @@
   "devDependencies": {
     "@laynezh/vite-plugin-lib-assets": "^0.5.21",
     "@sync-your-cookie/dev-utils": "workspace:*",
-    "@sync-your-cookie/hmr": "workspace:*",
     "@sync-your-cookie/tsconfig": "workspace:*",
     "@types/ws": "^8.5.10",
     "magic-string": "^0.30.12",

@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import { resolve } from 'path';
-import { watchRebuildPlugin } from '@sync-your-cookie/hmr';
 
 const rootDir = resolve(__dirname);
 const srcDir = resolve(rootDir, 'src');
@@ -16,7 +15,7 @@ export default defineConfig({
     },
   },
   base: '',
-  plugins: [react(), isDev && watchRebuildPlugin({ refresh: true })],
+  plugins: [react()],
   publicDir: resolve(rootDir, 'public'),
   build: {
     outDir: resolve(rootDir, '..', '..', 'dist', 'popup'),
