@@ -38,7 +38,7 @@ export function SitePolicySettings() {
   };
   return (
     <section className="grid gap-3 text-sm" aria-label="自动同步网站名单">
-      <h2 className="font-semibold text-lg">自动同步网站名单</h2>
+      <h2 className="section-title">网站名单</h2>
       <p>
         默认仅自动同步内置 {commonSites.length}{' '}
         个站点及你添加的域名。根域名包含其子域名，更具体的规则优先；同步管理中手动关闭的推送、拉取开关仍然有效。

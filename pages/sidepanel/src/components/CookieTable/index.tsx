@@ -386,7 +386,7 @@ const CookieTable = () => {
   };
   return (
     <div className="h-screen flex flex-col bg-background">
-      <div className="px-4 py-4 border-b mb-3 bg-card">
+      <div className="manager-header px-4 py-4 mb-4">
         <div>
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-xl font-bold tracking-tight">同步管理</h2>
@@ -399,7 +399,6 @@ const CookieTable = () => {
               {refreshing ? '正在读取…' : '刷新远程列表'}
             </Button>
           </div>
-          <p className="text-muted-foreground text-sm">查看网站备份与同步操作</p>
         </div>
       </div>
       {feedback.lastPush && !feedback.lastPush.ok ? (
@@ -426,15 +425,15 @@ const CookieTable = () => {
             <>{renderTable()}</>
           ) : (
             <div className="flex flex-col h-full">
-              <dl className="mx-4 mb-3 grid grid-cols-3 gap-1.5 rounded-xl border bg-card p-2">
+              <dl className="mx-4 mb-4 grid grid-cols-3 divide-x border-y py-3">
                 {[
                   [domainList.length, '网站'],
                   [totalCookieItem, 'Cookie'],
                   [totalLocalStorageItem, 'LocalStorage'],
                 ].map(([count, label]) => (
-                  <div key={label} className="min-w-0 rounded-lg bg-muted px-2 py-2">
+                  <div key={label} className="min-w-0 px-2">
                     <dt className="break-words text-[11px] text-muted-foreground">{label}</dt>
-                    <dd className="text-lg font-semibold tabular-nums">{count}</dd>
+                    <dd className="text-2xl font-semibold tabular-nums">{count}</dd>
                   </div>
                 ))}
               </dl>

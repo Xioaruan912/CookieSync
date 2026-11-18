@@ -28,12 +28,11 @@ body {
   border-top: 1px solid hsl(var(--border));
 }
 .signal-card {
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 16px;
   color: #ebfff5;
   background-color: #12392e;
-  background-image: radial-gradient(#70cda43b 1px, transparent 1px);
-  background-size: 14px 14px;
+  background-image: radial-gradient(ellipse at 100% 0%, #295c4b, transparent 70%);
 }
 .signal-top,
 .signal-bottom {
@@ -133,7 +132,7 @@ body {
 
 .popup-directions label { white-space: nowrap; }
 .popup-footer { display: grid; grid-template-columns: 1fr; }
-.popup-footer button { justify-self: end; }
+.popup-footer button { justify-self: start; }
 .popup-footer [role="status"] { overflow-wrap: anywhere; }
 @container (max-width: 315px) {
   .popup-directions, .popup-controls > .grid { grid-template-columns: minmax(0, 1fr); }
