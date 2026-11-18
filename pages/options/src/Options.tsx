@@ -13,7 +13,6 @@ import { accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
 import { initStorageKey } from '@sync-your-cookie/storage/lib/settingsStorage';
 import {
   Button,
-  Card,
   CardContent,
   CardDescription,
   CardHeader,
@@ -25,12 +24,24 @@ import {
   Toaster,
 } from '@sync-your-cookie/ui';
 import { Eye, EyeOff, Info, Loader2, LogOut, SlidersVertical } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { SettingsPopover } from './components/SettingsPopover';
 import { useGithub } from './hooks/useGithub';
 
+const sections = { connection: '同步连接', automation: '自动同步', sites: '网站名单' } as const;
+const currentSection = () => {
+  const key = window.location.hash.slice(1);
+  return Object.keys(sections).includes(key) ? key : 'connection';
+};
+
 const Options = () => {
+  const [section, setSection] = useState(currentSection);
+  useEffect(() => {
+    const navigate = () => { setSection(currentSection()); window.scrollTo(0, 0); };
+    window.addEventListener('hashchange', navigate);
+    return () => window.removeEventListener('hashchange', navigate);
+  }, []);
   const accountInfo = useStorageSuspense(accountStorage);
   const [token, setToken] = useState(accountInfo.token);
   const [accountId, setAccountId] = useState(accountInfo.accountId);
@@ -293,13 +304,13 @@ const Options = () => {
         <aside className="settings-navigation">
           <h1>同步设置</h1>
           <nav aria-label="设置导航">
-            <a href="#connection">同步连接</a>
-            <a href="#automation">自动同步</a>
-            <a href="#sites">网站名单</a>
+            {Object.entries(sections).map(([key, title]) => (
+              <a key={key} href={'#' + key} aria-current={section === key ? 'page' : undefined}>{title}</a>
+            ))}
           </nav>
         </aside>
         <div className="settings-content">
-          <Card id="connection" className="settings-card">
+          <section hidden={section !== 'connection'} aria-label={sections.connection}>
             <CardHeader>
               <CardTitle className="text-lg">同步连接</CardTitle>
             </CardHeader>
@@ -340,18 +351,18 @@ const Options = () => {
             ) : (
               renderAccount()
             )}
-          </Card>
-          <Card id="automation" className="settings-card">
+          </section>
+          <section hidden={section !== 'automation'} aria-label={sections.automation}>
             <CardHeader>
               <CardTitle className="text-lg">自动同步</CardTitle>
             </CardHeader>
             <AutoSyncStatus />
-          </Card>
-          <Card id="sites" className="settings-card">
+          </section>
+          <section hidden={section !== 'sites'} aria-label={sections.sites}>
             <CardContent className="pt-6">
               <SitePolicySettings />
             </CardContent>
-          </Card>
+          </section>
         </div>
       </div>
 
