@@ -4,18 +4,16 @@ import { useEffect } from 'react';
 import CookieTable from './components/CookieTable';
 const SidePanel = () => {
   useEffect(() => {
-    chrome.runtime.onMessage.addListener(message => {
-      // Might not be as easy if there are multiple side panels open
-      if (message === 'closeSidePanel') {
-        window.close();
-      }
-    });
+    const closePanel = (message: unknown) => {
+      if (message === 'closeSidePanel') window.close();
+    };
+    chrome.runtime.onMessage.addListener(closePanel);
+    return () => chrome.runtime.onMessage.removeListener(closePanel);
   }, []);
   const { theme } = useTheme();
 
   return (
     <div className="">
-      <header></header>
       <CookieTable />
       <Toaster
         theme={theme}

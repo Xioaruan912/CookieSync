@@ -219,12 +219,44 @@ with sync_playwright() as p:
     assert version == before_queue_version, 'automatic writes must not be immediate'
     print('durable_queue_and_low_frequency_passed')
     popup = context.new_page(); popup.on('pageerror', lambda error: errors.append(str(error)))
+    # An extension page opened in a normal tab would identify itself as the active tab.
+    # Supply a synthetic active website for the popup view while keeping real extension storage.
+    popup.add_init_script("""if (location.protocol === 'chrome-extension:' && chrome.tabs) {
+      const query = chrome.tabs.query.bind(chrome.tabs);
+      chrome.tabs.query = (filter, callback) => {
+        if (!filter.active) return callback ? query(filter, callback) : query(filter);
+        const tabs = [{id: 99, windowId: 1, url: 'https://popup-fixture.example/'}];
+        if (callback) callback(tabs);
+        else return Promise.resolve(tabs);
+      };
+    }""")
     popup.goto(f'chrome-extension://{extension_id}/popup/index.html')
     popup.get_by_role('button', name='打开同步管理', exact=True).wait_for()
-    popup.screenshot(path=str(ROOT / 'popup.png'))
+    popup.get_by_role('heading', name='popup-fixture.example', exact=True).wait_for()
+    popup.get_by_role('button', name='加入名单', exact=True).click()
+    popup.get_by_role('switch', name='自动推送', exact=True).wait_for()
+    popup.get_by_text('设置此电脑的同步方向', exact=True).click()
+    popup.get_by_role('button', name='仅拉取', exact=True).click()
+    wait_extension(popup, """async () => {
+      const data = await chrome.storage.local.get('domainConfig-storage-key');
+      const item = data['domainConfig-storage-key']?.domainMap?.['popup-fixture.example'];
+      return item?.autoPush === false && item?.autoPull === true;
+    }""")
+    popup.locator('.sync-popup').screenshot(path=str(ROOT / 'popup.png'))
     panel = context.new_page(); panel.on('pageerror', lambda error: errors.append(str(error)))
     panel.goto(f'chrome-extension://{extension_id}/sidepanel/index.html')
     panel.get_by_role('heading', name='同步管理', exact=True).wait_for()
+    assert popup.get_by_role('button', name='打开设置', exact=True).is_visible()
+    assert popup.locator('.signal-card').is_visible()
+    search = panel.get_by_role('textbox', name='搜索网站域名')
+    search.fill('no-matching-domain.example')
+    panel.get_by_text('没有匹配的网站', exact=True).wait_for()
+    panel.get_by_role('button', name='清除搜索', exact=True).click()
+    assert search.input_value() == ''
+    panel.get_by_role('button', name='115.com', exact=True).click()
+    panel.get_by_role('textbox', name='搜索 Cookie', exact=True).wait_for()
+    panel.get_by_role('button', name='返回', exact=True).click()
+    search.wait_for()
     panel.screenshot(path=str(ROOT / 'manager.png'))
     assert not errors, errors
     print('UI_errors', errors)
@@ -288,7 +320,7 @@ with sync_playwright() as p:
     so.get_by_role('button',name='立即检查并同步',exact=True).click()
     wait_extension(so, f'async () => {{ const s=(await chrome.storage.local.get("cookiesync-auto-status"))["cookiesync-auto-status"]; return s?.lastCheck > {seed_check} && s?.phase === "idle"; }}')
     assert version == seed_version, 'manual check uploaded unchanged content'
-    assert so.get_by_text('最近上传成功：',exact=False).is_visible()
+    assert so.get_by_text('最近上传成功',exact=True).is_visible()
     print('first_connection_automatic_seed_and_status_hash_skip_passed')
     # Arbitrary visited sites are discovered; no manual PushCookie message is sent.
     so.evaluate('''async () => { const all=await chrome.storage.local.get(null); await chrome.storage.local.set(Object.fromEntries(Object.keys(all).filter(k=>k.endsWith('-last-attempt')).map(k=>[k,0]))); }''')
@@ -349,6 +381,8 @@ with sync_playwright() as p:
     time.sleep(1)
     assert not so.evaluate('async () => (await chrome.storage.local.get("domainConfig-storage-key"))["domainConfig-storage-key"].domainMap["legacy-unlisted.example"] || null')
     # Disable NodeSeek through its real built-in list checkbox, then change its local Cookie.
+    so.get_by_role('navigation', name='设置导航').get_by_role('link', name='网站名单', exact=True).click()
+    assert so.url.endswith('#sites')
     so.get_by_text('查看和编辑内置 300 个网站',exact=True).click()
     so.get_by_label('搜索内置网站',exact=True).fill('nodeseek.com')
     so.get_by_label('内置网站列表',exact=True).get_by_role('checkbox').uncheck()

@@ -1,217 +1,309 @@
-import { automaticStatusStorage } from '@sync-your-cookie/storage/lib/automaticStatusStorage';
+import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
+import { accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
 import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
+import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage';
+import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
+import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
+import { isSiteAllowed } from '@sync-your-cookie/storage/lib/commonSites';
+import { sitePolicyStorage } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
 import {
   extractDomainAndPort,
-  syncCookieDomain,
   useStorageSuspense,
   useTheme,
   withErrorBoundary,
   withSuspense,
 } from '@sync-your-cookie/shared';
-
-import { Button, Image, Spinner, Toaster } from '@sync-your-cookie/ui';
-import { CloudDownload, CloudUpload, Copyright, PanelRightOpen, RotateCw, Settings } from 'lucide-react';
-import { useEffect, useState } from 'react';
-
-import { AutoSwitch } from './components/AutoSwtich';
+import { Button, Switch, Toaster } from '@sync-your-cookie/ui';
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Cloud,
+  Globe2,
+  Laptop,
+  PanelRightOpen,
+  RefreshCw,
+  Settings,
+} from 'lucide-react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { toast } from 'sonner';
 import { useDomainConfig } from './hooks/useDomainConfig';
 
 const Popup = () => {
   const { theme } = useTheme();
-  const automaticStatus = useStorageSuspense(automaticStatusStorage);
-  const [activeTabUrl, setActiveTabUrl] = useState('');
-  const [favIconUrl, setFavIconUrl] = useState('');
-
-  const {
-    pushing,
-    toggleAutoPushState,
-    toggleAutoPullState,
-    domain,
-    setDomain,
-    domainItemConfig,
-    domainItemStatus,
-    handlePush,
-    handlePull,
-  } = useDomainConfig();
+  const status = useStorageSuspense(autoSyncStatusStorage);
+  const settings = useStorageSuspense(settingsStorage);
+  const account = useStorageSuspense(accountStorage);
+  const drive = useStorageSuspense(driveAccountStorage);
+  const webdav = useStorageSuspense(webdavStorage);
+  const policy = useSyncExternalStore(sitePolicyStorage.subscribe, sitePolicyStorage.getSnapshot);
+  const config = useStorageSuspense(domainConfigStorage);
+  const [tab, setTab] = useState<chrome.tabs.Tab>();
+  const [loading, setLoading] = useState(true);
+  const [action, setAction] = useState<'push' | 'pull'>();
+  const [saving, setSaving] = useState(false);
+  const { domain, setDomain, handlePush, handlePull, pushing, pulling, domainItemStatus, domainItemConfig } =
+    useDomainConfig();
 
   useEffect(() => {
-    chrome.tabs.query({ active: true, lastFocusedWindow: true }, async function (tabs) {
-      if (tabs.length > 0) {
-        const activeTab = tabs[0];
-        if (activeTab.url && activeTab.url.startsWith('http')) {
-          setFavIconUrl(activeTab?.favIconUrl || '');
-          setActiveTabUrl(activeTab.url);
-          const [domain, tempPort] = await extractDomainAndPort(activeTab.url);
-          setDomain(domain + `${tempPort ? ':' + tempPort : ''}`);
-        }
-      }
-    });
-  }, []);
+    void chrome.tabs
+      .query({ active: true, lastFocusedWindow: true })
+      .then(async ([current]) => {
+        if (!current?.url || !/^https?:\/\//.test(current.url) || current.incognito) return;
+        const [host, port] = await extractDomainAndPort(current.url);
+        setDomain(port ? host + ':' + port : host);
+        setTab(current);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [setDomain]);
 
-  const isPushingOrPulling = domainItemStatus.pushing || domainItemStatus.pulling;
+  const provider = account.selectedProvider;
+  const connected =
+    provider === 'google-drive'
+      ? drive.connected
+      : provider === 'webdav'
+        ? !!webdav.url
+        : provider === 'github'
+          ? !!account.githubAccessToken
+          : !!(account.accountId && account.namespaceId && account.token);
+  const destination =
+    provider === 'google-drive'
+      ? 'Google Drive'
+      : provider === 'webdav'
+        ? 'WebDAV'
+        : provider === 'github'
+          ? 'GitHub Gist'
+          : 'Cloudflare KV';
+  const listed = !!domain && !!policy && isSiteAllowed(domain, policy);
+  const background = settings.backgroundSync !== false;
+  const registered = !!config.domainMap[domain];
+  const autoPush = domainItemConfig.autoPush !== false;
+  const autoPull = domainItemConfig.autoPull !== false;
+  const busy = !!action || pushing || pulling || !!domainItemStatus.pushing || !!domainItemStatus.pulling;
+  const siteState = !listed
+    ? '未加入名单'
+    : !connected
+      ? '等待配置连接'
+      : !background
+        ? '后台同步已关闭'
+        : !registered && settings.autoDiscoverSites === false
+          ? '等待手动登记'
+          : !autoPush && !autoPull
+            ? '此站已暂停'
+            : !registered
+              ? '等待自动登记'
+              : autoPush && autoPull
+                ? '自动收发'
+                : autoPush
+                  ? '仅自动推送'
+                  : '仅自动拉取';
 
-  const handleAndReload = () => {
-    handlePull(activeTabUrl, domain, true);
+  const transfer = async (direction: 'push' | 'pull') => {
+    if (!tab?.url || busy) return;
+    setAction(direction);
+    try {
+      if (direction === 'push') await handlePush(domain, tab.url, tab.favIconUrl);
+      else await handlePull(tab.url, domain, true);
+    } finally {
+      setAction(undefined);
+    }
+  };
+
+  const changeSite = async (save: () => Promise<void>) => {
+    setSaving(true);
+    try {
+      await save();
+    } catch {
+      toast.error('网站设置保存失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openManager = async () => {
+    try {
+      // Use the current tab's window directly so Chrome retains the click gesture.
+      if (tab?.windowId !== undefined) await chrome.sidePanel.open({ windowId: tab.windowId });
+      else await chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel/index.html') });
+    } catch {
+      await chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel/index.html') });
+    }
   };
 
   return (
-    <div className="flex flex-col items-center min-w-[400px] justify-center bg-background ">
-      <header className=" p-2 flex w-full justify-between items-center bg-card/50 shadow-md border-b border-border ">
-        <div className="flex items-center">
-          <img
-            src={chrome.runtime.getURL('options/logo.png')}
-            className="h-10 w-10 overflow-hidden object-contain "
-            alt="logo"
-          />
-          <h2 className="text-base text-foreground	font-bold">SyncYourCookie</h2>
+    <main className="sync-popup">
+      <header className="popup-header">
+        <div className="flex items-center gap-2">
+          <img src={chrome.runtime.getURL('options/logo.png')} className="size-7 object-contain" alt="" />
+          <span className="font-semibold tracking-tight">CookieSync</span>
         </div>
-        <Button
-          variant="ghost"
-          onClick={() => {
-            chrome.runtime.openOptionsPage();
-          }}
-          className="cursor-pointer text-sm mr-[-8px] ">
-          <Settings size={20} />
+        <Button variant="ghost" size="icon" aria-label="打开设置" onClick={() => void chrome.runtime.openOptionsPage()}>
+          <Settings size={17} aria-hidden />
         </Button>
       </header>
-      <main className="p-4 ">
-        <Spinner show={false}>
-          {domain ? (
-            <div className="flex justify-center items-center mb-2  ">
-              <Image src={favIconUrl} />
-              <h3 className="text-center whitespace-nowrap text-xl text-primary font-bold">{domain}</h3>
+      <section className="signal-card" aria-labelledby="current-site">
+        <div className="signal-top">
+          <span>当前网站</span>
+          <span>{connected ? destination : '尚未配置同步连接'}</span>
+        </div>
+        <h1 id="current-site">{loading ? '正在识别网站…' : domain || '当前页面不支持同步'}</h1>
+        <div className="signal-route" aria-hidden="true">
+          <Laptop size={18} />
+          <span className="signal-line">
+            <i
+              data-moving={action}
+              data-active={
+                listed &&
+                connected &&
+                background &&
+                (registered || settings.autoDiscoverSites !== false) &&
+                (autoPush || autoPull)
+              }
+            />
+          </span>
+          <Cloud size={21} />
+        </div>
+        <div className="signal-bottom">
+          <span>此电脑</span>
+          <span>{domain ? (policy ? siteState : '正在读取名单…') : '同步目的地'}</span>
+        </div>
+      </section>
+      {domain && policy && (
+        <section className="popup-controls" aria-label="当前网站操作">
+          {!listed ? (
+            <div className="popup-note">
+              <Globe2 size={17} aria-hidden />
+              <span>加入名单后可为此网站开启自动同步。</span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={saving}
+                onClick={() => void changeSite(() => sitePolicyStorage.setRule(domain, true))}>
+                加入名单
+              </Button>
             </div>
-          ) : null}
-
-          {['xiaohongshu.com', 'douyin.com', '115.com'].includes(syncCookieDomain(domain)) ? (
-            <div className="mb-4 max-w-[350px] text-xs space-y-2">
-              <p>已启用主域及子域 Cookie 同步。建议一台发送、一台接收，减少旧登录覆盖。</p>
-              <div className="flex gap-2">
+          ) : (
+            <div className="popup-directions">
+              <label>
+                自动推送
+                <Switch
+                  aria-label="自动推送"
+                  checked={autoPush}
+                  disabled={saving || busy}
+                  onCheckedChange={checked =>
+                    void changeSite(() => domainConfigStorage.toggleAutoPushState(domain, checked))
+                  }
+                />
+              </label>
+              <label>
+                自动拉取
+                <Switch
+                  aria-label="自动拉取"
+                  checked={autoPull}
+                  disabled={saving || busy}
+                  onCheckedChange={checked =>
+                    void changeSite(() => domainConfigStorage.toggleAutoPullState(domain, checked))
+                  }
+                />
+              </label>
+            </div>
+          )}
+          {listed && (
+            <details className="popup-modes">
+              <summary>设置此电脑的同步方向</summary>
+              <div className="mt-2 flex gap-2">
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={isPushingOrPulling}
-                  onClick={() => domainConfigStorage.updateItem(domain, { autoPush: true, autoPull: false })}>
-                  此电脑主要发送
+                  disabled={saving || busy}
+                  onClick={() =>
+                    void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: true, autoPull: false }))
+                  }>
+                  仅推送
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={isPushingOrPulling}
-                  onClick={() => domainConfigStorage.updateItem(domain, { autoPush: false, autoPull: true })}>
-                  此电脑主要接收
+                  disabled={saving || busy}
+                  onClick={() =>
+                    void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: false, autoPull: true }))
+                  }>
+                  仅拉取
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={saving || busy}
+                  onClick={() =>
+                    void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: true, autoPull: true }))
+                  }>
+                  双向同步
                 </Button>
               </div>
-              <p>首次先手动推送／拉取；之后默认自动收发，可按角色调整。过期或被撤销的登录仍需验证。</p>
-            </div>
-          ) : null}
-          <div className=" flex flex-col">
-            {/* <Button title={cloudflareAccountId} className="mb-2" onClick={handleUpdateToken}>
-            Update Token
-          </Button> */}
-            <div className="flex items-center mb-2 ">
-              <Button
-                disabled={!activeTabUrl || isPushingOrPulling || pushing}
-                className=" mr-2 w-[160px] justify-start"
-                onClick={() => handlePush(domain, activeTabUrl, favIconUrl)}>
-                {domainItemStatus.pushing ? (
-                  <RotateCw size={16} className="mr-2 animate-spin" />
-                ) : (
-                  <CloudUpload size={16} className="mr-2" />
-                )}
-                推送并合并 Cookie
-              </Button>
-              <AutoSwitch
-                disabled={!activeTabUrl}
-                onChange={() => toggleAutoPushState(domain)}
-                id="autoPush"
-                value={domainItemConfig.autoPush !== false}
-              />
-            </div>
-
-            <div className="flex items-center mb-2 ">
-              <Button
-                disabled={!activeTabUrl || isPushingOrPulling}
-                className=" w-[160px] mr-2 justify-start"
-                onClick={() => handleAndReload()}>
-                {domainItemStatus?.pulling ? (
-                  <RotateCw size={16} className="mr-2 animate-spin" />
-                ) : (
-                  <CloudDownload size={16} className="mr-2" />
-                )}
-                拉取并应用 Cookie
-              </Button>
-
-              <AutoSwitch
-                disabled={!activeTabUrl}
-                onChange={() => toggleAutoPullState(domain)}
-                id="autoPull"
-                value={domainItemConfig.autoPull !== false}
-              />
-            </div>
-
+            </details>
+          )}
+          <div className="grid grid-cols-2 gap-2">
             <Button
-              className="mb-2 justify-start"
-              onClick={async () => {
-                chrome.windows.getCurrent(async currentWindow => {
-                  // const res = await chrome.sidePanel.getOptions({
-                  //   tabId: currentWindow.id,
-                  // });
-                  chrome.sidePanel
-                    .open({ windowId: currentWindow.id! })
-                    .then(() => {})
-                    .catch(error => {});
-                });
-              }}>
-              <PanelRightOpen size={16} className="mr-2" />
-              打开同步管理
+              variant="outline"
+              aria-label="推送并合并 Cookie"
+              disabled={busy || !connected}
+              onClick={() => void transfer('push')}>
+              {action === 'push' ? (
+                <RefreshCw className="mr-2 animate-spin" size={15} />
+              ) : (
+                <ArrowUpFromLine className="mr-2" size={15} />
+              )}
+              {action === 'push' ? '正在推送…' : '推送到云端'}
+            </Button>
+            <Button
+              variant="outline"
+              aria-label="拉取并应用 Cookie"
+              disabled={busy || !connected}
+              onClick={() => void transfer('pull')}>
+              {action === 'pull' ? (
+                <RefreshCw className="mr-2 animate-spin" size={15} />
+              ) : (
+                <ArrowDownToLine className="mr-2" size={15} />
+              )}
+              {action === 'pull' ? '正在拉取…' : '拉取到此电脑'}
             </Button>
           </div>
-          <p className="mt-3 max-w-[350px] text-xs text-muted-foreground">
-            {automaticStatus.error
-              ? `后台同步待重试：${automaticStatus.error}`
-              : automaticStatus.lastSuccess
-                ? `最近后台同步：${new Date(automaticStatus.lastSuccess).toLocaleString('zh-CN')}`
-                : '首次推送后启用无感同步；浏览器启动自动拉取，运行期间后台保存。'}
-          </p>
-          <Toaster
-            theme={theme}
-            closeButton
-            toastOptions={{
-              duration: 1500,
-              style: {
-                // width: 'max-content',
-                // margin: '0 auto',
-              },
-              // className: 'w-[240px]',
-            }}
-            visibleToasts={1}
-            richColors
-            position="top-center"
-          />
-        </Spinner>
-      </main>
-      <footer className="w-full text-center justify-center p-4 flex items-center border-t border-border/90 ">
-        <span>
-          <Copyright size={16} />
-        </span>
-        <a
-          className=" inline-flex items-center mx-1 text-sm underline "
-          href="https://github.com/jackluson"
-          target="_blank"
-          rel="noopener noreferrer">
-          jackluson
-        </a>
-        <a href="https://github.com/jackluson/sync-your-cookie" target="_blank" rel="noopener noreferrer">
-          <img
-            src={chrome.runtime.getURL('popup/github.svg')}
-            className="h-4 w-4 overflow-hidden object-contain "
-            alt="logo"
-          />
-        </a>
+        </section>
+      )}
+      {!connected && <Button onClick={() => void chrome.runtime.openOptionsPage()}>配置同步连接</Button>}
+      <footer className="popup-footer">
+        <div className="min-w-0" role="status">
+          <div className="font-medium">
+            {status.phase === 'uploading'
+              ? '正在上传'
+              : status.phase === 'checking'
+                ? '正在检查'
+                : status.error
+                  ? '后台同步待重试'
+                  : status.pendingCount
+                    ? `${status.pendingCount} 个网站待上传`
+                    : '后台同步记录'}
+          </div>
+          <div className="break-words text-muted-foreground">
+            {status.error ||
+              (status.lastSuccess
+                ? `最近上传 ${new Date(status.lastSuccess).toLocaleString('zh-CN')}`
+                : status.lastCheck
+                  ? `最近检查 ${new Date(status.lastCheck).toLocaleString('zh-CN')}`
+                  : '尚无记录')}
+          </div>
+        </div>
+        <Button variant="ghost" size="sm" aria-label="打开同步管理" onClick={() => void openManager()}>
+          <PanelRightOpen size={15} className="mr-1.5" aria-hidden />
+          同步管理
+        </Button>
       </footer>
-    </div>
+      <Toaster theme={theme} closeButton visibleToasts={1} richColors position="top-center" />
+    </main>
   );
 };
 
-export default withErrorBoundary(withSuspense(Popup, <div> 加载中… </div>), <div> 页面加载失败，请重新打开 </div>);
+export default withErrorBoundary(
+  withSuspense(Popup, <div className="p-4">加载中…</div>),
+  <div className="p-4">页面加载失败，请重新打开</div>,
+);

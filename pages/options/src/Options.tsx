@@ -1,3 +1,4 @@
+import { SitePolicySettings } from './components/SitePolicySettings';
 import { WebdavSettings } from './components/WebdavSettings';
 import { DriveSettings } from './components/DriveSettings';
 import { AutoSyncStatus } from './components/AutoSyncStatus';
@@ -270,42 +271,53 @@ const Options = () => {
   };
 
   return (
-    <div className="w-full min-h-screen flex flex-col items-center justify-start py-12 px-4 bg-background ">
-      <div className="fixed right-8 top-8 ">
-        <ThemeDropdown setTheme={setTheme} />
-      </div>
-      <div className="w-full flex justify-center flex-col items-center">
-        <img
-          src={chrome.runtime.getURL('options/logo.png')}
-          className="size-16 overflow-hidden object-contain mb-4"
-          alt="logo"
-        />
-        <div className="w-full">
-          <Card className="mx-auto w-full max-w-lg">
-            <CardHeader className="relative">
-              <div className="flex justify-between">
-                <CardTitle className="text-xl">设置</CardTitle>
-              </div>
-              <SettingsPopover
-                trigger={
-                  <Button variant="secondary" size="icon" className="size-6 absolute right-4 top-4">
-                    <SlidersVertical size={18} />
-                  </Button>
-                }
-              />
+    <main className="settings-shell">
+      <header className="settings-header">
+        <div className="flex items-center gap-3">
+          <img src={chrome.runtime.getURL('options/logo.png')} className="size-9 object-contain" alt="" />
+          <strong className="text-lg tracking-tight">CookieSync</strong>
+        </div>
+        <div className="flex items-center gap-2">
+          <SettingsPopover
+            trigger={
+              <Button variant="outline" size="sm">
+                <SlidersVertical size={16} className="mr-1.5" />
+                高级设置
+              </Button>
+            }
+          />
+          <ThemeDropdown setTheme={setTheme} />
+        </div>
+      </header>
+      <div className="settings-layout">
+        <aside className="settings-navigation">
+          <h1>同步设置</h1>
+          <nav aria-label="设置导航">
+            <a href="#connection">同步连接</a>
+            <a href="#automation">自动同步</a>
+            <a href="#sites">网站名单</a>
+          </nav>
+        </aside>
+        <div className="settings-content">
+          <Card id="connection" className="settings-card">
+            <CardHeader>
+              <CardTitle className="text-lg">同步连接</CardTitle>
             </CardHeader>
-            <div className="px-6 pb-4 flex gap-2">
+            <div className="px-6 pb-4 flex flex-wrap gap-2">
               <Button
+                aria-pressed={providerTab === 'google-drive'}
                 variant={providerTab === 'google-drive' ? 'default' : 'outline'}
                 onClick={() => setProviderTab('google-drive')}>
                 Google Drive
               </Button>
               <Button
+                aria-pressed={providerTab === 'webdav'}
                 variant={providerTab === 'webdav' ? 'default' : 'outline'}
                 onClick={() => setProviderTab('webdav')}>
                 WebDAV
               </Button>
               <Button
+                aria-pressed={providerTab === 'legacy'}
                 variant={providerTab === 'legacy' ? 'default' : 'outline'}
                 onClick={() => setProviderTab('legacy')}>
                 Cloudflare / GitHub
@@ -328,12 +340,22 @@ const Options = () => {
             ) : (
               renderAccount()
             )}
+          </Card>
+          <Card id="automation" className="settings-card">
+            <CardHeader>
+              <CardTitle className="text-lg">自动同步</CardTitle>
+            </CardHeader>
             <AutoSyncStatus />
+          </Card>
+          <Card id="sites" className="settings-card">
+            <CardContent className="pt-6">
+              <SitePolicySettings />
+            </CardContent>
           </Card>
         </div>
       </div>
 
-      <div className="mt-2 text-sm">
+      <footer className="settings-footer">
         原作者：
         <a
           className="mx-0.5 font-bold text-primary "
@@ -356,7 +378,7 @@ const Options = () => {
           />
         </a>
         .
-      </div>
+      </footer>
 
       <Toaster
         position="top-center"
@@ -366,7 +388,7 @@ const Options = () => {
           duration: 2000,
         }}
       />
-    </div>
+    </main>
   );
 };
 
