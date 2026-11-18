@@ -24,7 +24,7 @@
 
 扩展只请求 `https://www.googleapis.com/auth/drive.appdata`，使用隐藏的 `appDataFolder`，文件名为 `CookieSync-cookies-v1.txt`。它不会出现在普通“我的云端硬盘”文件列表中，也不会读取你的其他文件。断开保留云端文件；可在 Google Drive 管理应用中处理隐藏应用数据。切换后端不会自动迁移旧文件；如需迁移，先备份并在正确电脑手动确认推送方向。
 
-令牌由 Chrome Identity API 缓存及处理过期，扩展不将令牌写入 Chrome Sync，也没有自建授权服务器。后台只静默请求授权；授权撤销、Chrome 登出、网络限制或 Google 要求重新验证时需点击重新连接。账号变化会停止写入。首次创建同步文件尽量只在一台电脑操作；检测到重复文件或缺失强 ETag 时停止覆盖，不自动猜测正确副本。
+令牌由 Chrome Identity API 缓存及处理过期，扩展不将令牌写入 Chrome Sync，也没有自建授权服务器。后台只静默请求授权；授权撤销、Chrome 登出、网络限制或 Google 要求重新验证时需点击重新连接。账号变化会停止写入。首次创建 Cookie 数据文件尽量只在一台电脑操作；检测到重复文件或缺失强 ETag 时停止覆盖，不自动猜测正确副本。
 
 内容仍支持 SHA-256 变化检测、按站点合并和原有 AES-256-GCM 加密。建议在高级设置启用 Protobuf 与加密并设置相同密码。隐藏目录不是加密；Google Drive 可达性也会影响后台同步。
 
@@ -44,3 +44,11 @@
 4. 在 main 重新运行发布工作流或推送变更，下载新 Release，验证真实 Google 账号首次授权、重启静默续用和双机读写。未设置 ID 的包会保留 WebDAV 功能，并明确显示 Google 登录尚未开通。
 
 项目借鉴 Quantum Highlighter PRO 的两层同步体验，独立实现，不复用其 OAuth 客户端、应用身份或源码。参考：[Quantum Highlighter PRO](https://github.com/Jorge-Antonio-Gomez/quantum-highlighter-pro-chrome-extension)、[Chrome OAuth 官方说明](https://developer.chrome.com/docs/extensions/how-to/integrate/oauth)、[令牌缓存与授权](https://developer.chrome.com/docs/extensions/reference/api/identity)、[Drive 应用数据目录](https://developers.google.com/workspace/drive/api/guides/appdata)。
+
+## 两台电脑同时修改配置
+
+1.11.0 起，Drive 为网站名单和普通扩展偏好追加独立的配置快照。升级两台电脑并连接同一 Drive 账号后，扩展会读取旧版名单和所有新快照。不同网站、不同偏好分别合并。若两台电脑对同一项给出不同值，采用修改时间较晚的一项，时间相同时以修订编号决定。电脑时钟差异可能影响同一项的选择。
+
+Drive 普通偏好包括主题、右键菜单开关和同步间隔。密码、授权令牌、加密设置和本机收发开关不进入配置快照。修改失败时，本机记录保留至下次重试。后台定期检查时也会读取配置；内容相同会跳过上传。新快照保留在应用数据目录中。
+
+错误以「网站名单与扩展设置」或「Cookie 数据」标明来源。配置同步无需强 ETag；Cookie 数据继续使用原有条件写入。

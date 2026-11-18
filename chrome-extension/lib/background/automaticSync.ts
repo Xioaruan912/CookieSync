@@ -296,7 +296,14 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
   }
   startup = (async () => {
     const settings = await settingsStorage.get();
-    if (periodic ? settings.backgroundSync === false : settings.startupPull === false) return;
+    if (periodic ? settings.backgroundSync === false : settings.startupPull === false) {
+      try {
+        await syncSitePolicy();
+      } catch (error) {
+        await autoSyncStatusStorage.update({ error: errorMessage(error) });
+      }
+      return;
+    }
     await domainConfigStorage.ensureDefaults();
     await autoSyncStatusStorage.update({ phase: 'checking', lastCheck: Date.now(), error: '' });
     try {

@@ -88,7 +88,7 @@ test('Drive first connection is interactive; background reads, conditional write
   assert.ok(authCalls.every(x => x.scopes.length === 1 && x.scopes[0] === drive.driveScope));
   assert.equal(JSON.stringify(chrome.storage.local.data).includes('fixture-token'), false);
   sequence = [owner, () => reply({ files: [{ id: 'file' }] })];
-  await assert.rejects(drive.writeDrive('new', { ...snapshot, etag: undefined }), /ETag/);
+  await assert.rejects(drive.writeDrive('new', { ...snapshot, etag: undefined }), /Cookie 数据.*ETag/);
   for (const connected of [true, false]) {
     await driveAccountStorage.set({ connected: true, userId: 'owner' });
     sequence = [
