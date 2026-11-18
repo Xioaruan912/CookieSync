@@ -15,21 +15,20 @@ import {
   Button,
   CardContent,
   CardDescription,
-  CardHeader,
-  CardTitle,
   Input,
   Label,
   SyncTooltip,
   ThemeDropdown,
   Toaster,
 } from '@sync-your-cookie/ui';
-import { Eye, EyeOff, Info, Loader2, LogOut, SlidersVertical } from 'lucide-react';
+import { Activity, Cable, ChevronRight, Eye, EyeOff, Globe2, Info, Loader2, LogOut, SlidersVertical } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { SettingsPopover } from './components/SettingsPopover';
 import { useGithub } from './hooks/useGithub';
 
 const sections = { connection: '同步连接', automation: '自动同步', sites: '网站名单' } as const;
+const sectionIcons = { connection: Cable, automation: Activity, sites: Globe2 };
 const currentSection = () => {
   const key = window.location.hash.slice(1);
   return Object.keys(sections).includes(key) ? key : 'connection';
@@ -304,17 +303,22 @@ const Options = () => {
         <aside className="settings-navigation">
           <h1>同步设置</h1>
           <nav aria-label="设置导航">
-            {Object.entries(sections).map(([key, title]) => (
-              <a key={key} href={'#' + key} aria-current={section === key ? 'page' : undefined}>{title}</a>
-            ))}
+            {(Object.keys(sections) as (keyof typeof sections)[]).map(key => {
+              const Icon = sectionIcons[key];
+              return (
+                <a key={key} href={'#' + key} aria-current={section === key ? 'page' : undefined}>
+                  <Icon size={18} aria-hidden="true" />
+                  <span>{sections[key]}</span>
+                  <ChevronRight size={15} aria-hidden="true" />
+                </a>
+              );
+            })}
           </nav>
         </aside>
         <div className="settings-content">
           <section hidden={section !== 'connection'} aria-label={sections.connection}>
-            <CardHeader>
-              <CardTitle className="text-lg">同步连接</CardTitle>
-            </CardHeader>
-            <div className="px-6 pb-4 flex flex-wrap gap-2">
+            <h2 className="section-title">同步连接</h2>
+            <div className="provider-selector" role="group" aria-label="选择要配置的服务">
               <Button
                 aria-pressed={providerTab === 'google-drive'}
                 variant={providerTab === 'google-drive' ? 'default' : 'outline'}
@@ -334,7 +338,7 @@ const Options = () => {
                 Cloudflare / GitHub
               </Button>
             </div>
-            <p className="px-6 pb-4 text-sm">
+            <p className="provider-current">
               当前后端：
               {accountInfo.selectedProvider === 'webdav'
                 ? 'WebDAV'
@@ -353,9 +357,7 @@ const Options = () => {
             )}
           </section>
           <section hidden={section !== 'automation'} aria-label={sections.automation}>
-            <CardHeader>
-              <CardTitle className="text-lg">自动同步</CardTitle>
-            </CardHeader>
+            <h2 className="section-title">自动同步</h2>
             <AutoSyncStatus />
           </section>
           <section hidden={section !== 'sites'} aria-label={sections.sites}>
@@ -367,28 +369,10 @@ const Options = () => {
       </div>
 
       <footer className="settings-footer">
-        原作者：
-        <a
-          className="mx-0.5 font-bold text-primary "
-          target="_blank"
-          href="https://github.com/jackluson"
-          rel="noreferrer">
-          jackluson
-        </a>
-        。原项目源码：{' '}
-        <a
-          className="font-bold inline-flex items-center "
-          href="https://github.com/jackluson/sync-your-cookie"
-          target="_blank"
-          rel="noopener noreferrer">
-          GitHub
-          <img
-            src={chrome.runtime.getURL('popup/github.svg')}
-            className="ml-1 h-4 w-4 overflow-hidden object-contain "
-            alt="logo"
-          />
-        </a>
-        .
+        <a href="https://github.com/Xioaruan912/CookieSync" target="_blank" rel="noreferrer">CookieSync 项目仓库 ↗</a>
+        <span>原作者 <a href="https://github.com/jackluson" target="_blank" rel="noreferrer">jackluson</a>
+          {' · '}<a href="https://github.com/jackluson/sync-your-cookie" target="_blank" rel="noreferrer">原项目</a>
+        </span>
       </footer>
 
       <Toaster
