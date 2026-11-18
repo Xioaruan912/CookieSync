@@ -19,66 +19,14 @@ body {
   padding: 18px 0;
   border-bottom: 1px solid hsl(var(--border));
 }
-.settings-layout {
-  display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
-  gap: 28px;
-  padding-top: 26px;
-}
-.settings-content {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-}
-.settings-navigation {
-  position: sticky;
-  align-self: start;
-  top: 20px;
-}
-.settings-navigation h1 {
-  font-size: 25px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  margin-bottom: 12px;
-}
-.settings-navigation nav {
-  display: grid;
-  gap: 4px;
-}
-.settings-navigation a {
-  display: block;
-  padding: 9px 11px;
-  border-radius: 8px;
-  font-size: 14px;
-}
-.settings-navigation a:hover,
-.settings-navigation a:focus-visible {
-  background: hsl(var(--accent));
-}
-.settings-card {
-  scroll-margin-top: 12px;
-  box-shadow: none;
-}
-.settings-card:target {
-  outline: 2px solid hsl(var(--ring));
-  outline-offset: 2px;
-}
-.settings-footer {
-  padding: 20px 0;
-  font-size: 12px;
-  color: hsl(var(--muted-foreground));
-}
-@media (max-width: 620px) {
-  .settings-layout {
-    grid-template-columns: 1fr;
-    gap: 12px;
-    padding-top: 14px;
-  }
-  .settings-navigation {
-    position: static;
-  }
-  .settings-navigation nav {
-    display: flex;
-    flex-wrap: wrap;
-  }
-}
+
+.settings-layout { max-width: 760px; margin: 28px auto 0; }
+.settings-navigation h1 { font-size: 26px; font-weight: 700; margin-bottom: 16px; }
+.settings-navigation nav { display: flex; gap: 18px; border-bottom: 1px solid hsl(var(--border)); }
+.settings-navigation a { padding: 10px 0; font-size: 14px; border-bottom: 2px solid transparent; }
+.settings-navigation a[aria-current="page"] { color: hsl(var(--primary)); font-weight: 650; border-bottom-color: currentColor; }
+.settings-navigation a:hover { color: hsl(var(--primary)); }
+.settings-content { padding: 20px 0; }
+.settings-content > section > div { padding-left: 0; padding-right: 0; }
+.settings-content > section > [aria-label="自动同步状态"] { margin-inline: 0; }
+.settings-footer { max-width: 760px; margin: auto; padding: 16px 0; border-top: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); font-size: 12px; }

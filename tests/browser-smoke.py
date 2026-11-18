@@ -235,6 +235,11 @@ with sync_playwright() as p:
     popup.get_by_role('heading', name='popup-fixture.example', exact=True).wait_for()
     popup.get_by_role('button', name='加入名单', exact=True).click()
     popup.get_by_role('switch', name='自动推送', exact=True).wait_for()
+    popup.set_viewport_size({'width':240,'height':640})
+    assert popup.evaluate('document.documentElement.scrollWidth <= innerWidth')
+    labels=popup.locator('.popup-directions label')
+    assert labels.nth(1).bounding_box()['y'] > labels.first.bounding_box()['y']
+    popup.set_viewport_size({'width':390,'height':640})
     popup.get_by_text('设置此电脑的同步方向', exact=True).click()
     popup.get_by_role('button', name='仅拉取', exact=True).click()
     wait_extension(popup, """async () => {
@@ -317,6 +322,8 @@ with sync_playwright() as p:
     wait_extension(so, 'async () => { const s=(await chrome.storage.local.get("cookiesync-auto-status"))["cookiesync-auto-status"]; return s?.phase === "idle" && s?.lastSuccess && s?.pendingCount === 0; }')
     seed_version=version
     seed_check=so.evaluate('async () => (await chrome.storage.local.get("cookiesync-auto-status"))["cookiesync-auto-status"].lastCheck')
+    so.get_by_role('link',name='自动同步',exact=True).click()
+    assert not so.locator('#webdav-url').is_visible()
     so.get_by_role('button',name='立即检查并同步',exact=True).click()
     wait_extension(so, f'async () => {{ const s=(await chrome.storage.local.get("cookiesync-auto-status"))["cookiesync-auto-status"]; return s?.lastCheck > {seed_check} && s?.phase === "idle"; }}')
     assert version == seed_version, 'manual check uploaded unchanged content'
@@ -349,6 +356,7 @@ with sync_playwright() as p:
     # Login data can appear after PageReady; discovery keeps checking unknown pages.
     so.evaluate('''async () => { const all=await chrome.storage.local.get(null); await chrome.storage.local.set(Object.fromEntries(Object.keys(all).filter(k=>k.endsWith('-last-attempt')).map(k=>[k,0]))); }''')
     # Custom allowlist entries are saved through the real options UI before visiting them.
+    so.get_by_role('link',name='网站名单',exact=True).click()
     so.get_by_label('自定义自动同步域名',exact=True).fill('late-login.example')
     so.get_by_role('button',name='添加网站',exact=True).click()
     wait_extension(so, 'async () => !!(await chrome.storage.sync.get("cookiesync-site-rule-v1:late-login.example"))["cookiesync-site-rule-v1:late-login.example"]?.enabled')
@@ -389,6 +397,8 @@ with sync_playwright() as p:
     wait_extension(so, 'async () => (await chrome.storage.sync.get("cookiesync-site-rule-v1:nodeseek.com"))["cookiesync-site-rule-v1:nodeseek.com"]?.enabled === false')
     seed.add_cookies([{'name':'nodeseek_sid','value':'changed-but-paused','domain':'.nodeseek.com','path':'/','secure':True,'httpOnly':True}])
     last_check=so.evaluate('async () => (await chrome.storage.local.get("cookiesync-auto-status"))["cookiesync-auto-status"].lastCheck')
+    so.get_by_role('link',name='自动同步',exact=True).click()
+    assert not so.locator('#webdav-url').is_visible()
     so.get_by_role('button',name='立即检查并同步',exact=True).click()
     wait_extension(so, f'async () => {{const s=(await chrome.storage.local.get("cookiesync-auto-status"))["cookiesync-auto-status"];return s?.lastCheck > {last_check} && s?.phase === "idle";}}')
     saved=json.loads(files['/dav/automatic-first-seed.txt'][0])['domainCookieMap']

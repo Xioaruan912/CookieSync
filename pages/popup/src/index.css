@@ -1,12 +1,16 @@
 body {
   margin: 0;
+  width: 390px;
+  max-width: 100%;
   font-family: 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 .sync-popup {
-  width: 390px;
-  max-width: 100vw;
+  width: 100%;
+  box-sizing: border-box;
+  grid-template-columns: minmax(0, 1fr);
+  container-type: inline-size;
   padding: 12px 14px;
   display: grid;
   gap: 12px;
@@ -125,4 +129,13 @@ body {
 .popup-modes summary {
   cursor: pointer;
   width: fit-content;
+}
+
+.popup-directions label { white-space: nowrap; }
+.popup-footer { display: grid; grid-template-columns: 1fr; }
+.popup-footer button { justify-self: end; }
+.popup-footer [role="status"] { overflow-wrap: anywhere; }
+@container (max-width: 315px) {
+  .popup-directions, .popup-controls > .grid { grid-template-columns: minmax(0, 1fr); }
+  .popup-modes > div, .popup-note { flex-wrap: wrap; }
 }
