@@ -1,4 +1,9 @@
-import { driveSitesFileName, readDrive, writeDrive } from './api';
+import { openDriveConfiguration } from './api';
+import {
+  adoptPreferences,
+  mergePreferences,
+  type DrivePreferences,
+} from '@sync-your-cookie/storage/lib/drivePreferences';
 import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage';
 import { mergeSiteRules, type SiteRules } from '@sync-your-cookie/storage/lib/commonSites';
 import { readSiteRules, storeSiteRules } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
@@ -19,21 +24,50 @@ export async function syncSitePolicy(): Promise<void> {
   syncing = (async () => {
     const account = await driveAccountStorage.get();
     if (!account.connected) return;
-    const previous = await readDrive(driveSitesFileName);
+    const cloud = await openDriveConfiguration();
+    let remote: SiteRules = {};
+    let preferences: DrivePreferences = {};
+    const cacheKey = 'cookiesync-drive-config-cache-v2';
+    const cache = (await chrome.storage.session.get(cacheKey))[cacheKey];
+    const versions = Object.fromEntries(cloud.files.map(file => [file.id, file.version || '']));
+    const reusable =
+      cache?.userId === cloud.userId &&
+      Object.keys(cache.versions).every(id => !!versions[id] && versions[id] === cache.versions[id]);
+    if (reusable) {
+      remote = mergeSiteRules(cache.rules);
+      preferences = mergePreferences(cache.preferences);
+    }
+    for (const file of cloud.files) {
+      if (reusable && file.version && cache.versions[file.id] === file.version) continue;
+      const content = await cloud.read(file.id);
+      if (!content || content.length > 100000) throw new Error('配置快照为空或过大');
+      const data = JSON.parse(content);
+      if (data?.version === 1) remote = mergeSiteRules(remote, decodeSitePolicy(content));
+      else if (data?.version === 2) {
+        remote = mergeSiteRules(remote, decodeSitePolicy(JSON.stringify({ version: 1, rules: data.rules })));
+        preferences = mergePreferences(preferences, data.preferences);
+      } else throw new Error('云端配置格式错误');
+    }
     const currentAccount = await driveAccountStorage.get();
-    if (!currentAccount.connected || currentAccount.userId !== previous.userId)
-      throw new Error('Google 账号已变化，未应用云端网站名单');
-    const remote = decodeSitePolicy(previous.content);
-    // Re-read after the network roundtrip so edits made while fetching are not lost.
+    if (!currentAccount.connected || currentAccount.userId !== cloud.userId)
+      throw new Error('Google 账号已变化，未应用云端配置');
+    if (!reusable || Object.keys(versions).length !== Object.keys(cache.versions).length)
+      await chrome.storage.session.set({ [cacheKey]: { userId: cloud.userId, versions, rules: remote, preferences } });
     const local = await readSiteRules();
-    const merged = mergeSiteRules(remote, local);
-    const content = JSON.stringify({ version: 1, rules: merged });
-    // Store remote rules before any cookie discovery; remote opt-outs apply on a new device's first cycle.
-    if (JSON.stringify(merged) !== JSON.stringify(local)) await storeSiteRules(merged);
-    if (content !== JSON.stringify({ version: 1, rules: remote }) || !previous.content)
-      await writeDrive(content, previous);
-  })().finally(() => {
-    syncing = undefined;
-  });
+    const rules = mergeSiteRules(remote, local);
+    if (JSON.stringify(rules) !== JSON.stringify(local)) await storeSiteRules(rules);
+    const merged = await adoptPreferences(preferences);
+    if (JSON.stringify(rules) !== JSON.stringify(remote) || JSON.stringify(merged) !== JSON.stringify(preferences)) {
+      const snapshot = JSON.stringify({ version: 2, rules, preferences: merged });
+      if (snapshot.length > 100000) throw new Error('配置快照过大，已保留本机修改');
+      await cloud.append(snapshot);
+    }
+  })()
+    .catch(error => {
+      throw new Error('Google Drive · 网站名单与扩展设置：' + (error instanceof Error ? error.message : '请求失败'));
+    })
+    .finally(() => {
+      syncing = undefined;
+    });
   return syncing;
 }

@@ -109,7 +109,7 @@ export interface DriveSnapshot {
   etag?: string;
 }
 
-export async function readDrive(fileName: DriveFileName = driveFileName): Promise<DriveSnapshot> {
+async function readDriveFile(fileName: DriveFileName = driveFileName): Promise<DriveSnapshot> {
   const accessToken = await token();
   const userId = await assertAccount(accessToken);
   const id = await findFile(accessToken, userId, fileName);
@@ -118,7 +118,7 @@ export async function readDrive(fileName: DriveFileName = driveFileName): Promis
   return { fileName, userId, id, content: await res.text(), etag: res.headers.get('etag') || undefined };
 }
 
-export async function writeDrive(content: string, previous: DriveSnapshot) {
+async function writeDriveFile(content: string, previous: DriveSnapshot) {
   const fileName = previous.fileName || driveFileName;
   if (![driveFileName, driveSitesFileName].includes(fileName)) throw new Error('无效的 Google Drive 同步文件');
   const accessToken = await token();
@@ -139,20 +139,79 @@ export async function writeDrive(content: string, previous: DriveSnapshot) {
       previous.userId,
     );
   } else {
-    const boundary = `cookiesync_${crypto.randomUUID()}`;
-    const metadata = JSON.stringify({ name: fileName, parents: ['appDataFolder'] });
-    const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${content}\r\n--${boundary}--\r\n`;
-    await request(
-      `${upload}/files?uploadType=multipart&fields=id`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
-        body,
-      },
-      accessToken,
-      previous.userId,
-    );
+    await createFile(fileName, content, accessToken, previous.userId);
     await findFile(accessToken, previous.userId, fileName); // Surface simultaneous first-create duplicates instead of silently selecting one.
   }
   return { success: true, errors: [] };
+}
+
+async function createFile(fileName: string, content: string, accessToken: string, userId: string) {
+  const boundary = `cookiesync_${crypto.randomUUID()}`;
+  const metadata = JSON.stringify({ name: fileName, parents: ['appDataFolder'] });
+  const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${content}\r\n--${boundary}--\r\n`;
+  await request(
+    `${upload}/files?uploadType=multipart&fields=id`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    },
+    accessToken,
+    userId,
+  );
+}
+
+// Only configuration snapshots use append-only writes. Older manifests still own the v1 file.
+const configFileName = 'CookieSync-preferences-v2.json';
+export async function openDriveConfiguration() {
+  const accessToken = await token();
+  const userId = await assertAccount(accessToken);
+  const list = new URLSearchParams({
+    spaces: 'appDataFolder',
+    q: `(name = '${driveSitesFileName}' or name = '${configFileName}') and trashed = false`,
+    fields: 'files(id,name,version),nextPageToken',
+    pageSize: '100',
+  });
+  const files: { id: string; version?: string }[] = [];
+  const seen = new Set<string>();
+  do {
+    const response = await request(`${api}/files?${list}`, { cache: 'no-store' }, accessToken, userId);
+    const page = await response.json();
+    if (!Array.isArray(page.files)) throw new Error('配置文件列表格式错误');
+    for (const file of page.files) {
+      if (file.name !== driveSitesFileName && file.name !== configFileName) throw new Error('配置文件名称异常');
+      if (!file.id || seen.has(file.id)) continue;
+      seen.add(file.id);
+      files.push({ id: file.id, version: file.version });
+    }
+    if (!page.nextPageToken) break;
+    list.set('pageToken', page.nextPageToken);
+  } while (true);
+  return {
+    userId,
+    files,
+    read: async (id: string) =>
+      (
+        await request(`${api}/files/${encodeURIComponent(id)}?alt=media`, { cache: 'no-store' }, accessToken, userId)
+      ).text(),
+    append: (content: string) => createFile(configFileName, content, accessToken, userId),
+  };
+}
+
+function cookieError(error: unknown) {
+  return new Error('Google Drive · Cookie 数据：' + (error instanceof Error ? error.message : '请求失败'));
+}
+export async function readDrive() {
+  try {
+    return await readDriveFile();
+  } catch (error) {
+    throw cookieError(error);
+  }
+}
+export async function writeDrive(content: string, previous: DriveSnapshot) {
+  try {
+    return await writeDriveFile(content, previous);
+  } catch (error) {
+    throw cookieError(error);
+  }
 }

@@ -93,7 +93,7 @@ globalThis.fetch = async (url, init) => {
   if (url.includes('/about?')) return reply({ user: { permissionId: 'owner' } });
   if (init.method === 'POST') {
     const content = init.body.split('Content-Type: text/plain; charset=UTF-8\r\n\r\n')[1].split('\r\n--cookiesync_')[0];
-    const sites = init.body.includes('CookieSync-sites-v1.json');
+    const sites = init.body.includes('CookieSync-preferences-v2.json');
     if (sites) sitePayload = content;
     else {
       payload = content;
@@ -111,7 +111,16 @@ globalThis.fetch = async (url, init) => {
     return reply({ id: sites ? 'sites-file' : 'file' });
   }
   if (url.includes('alt=media')) return reply(sites ? sitePayload : payload, 200, { etag: '"fixture"' });
-  return reply({ files: (sites ? sitePayload : payload) ? [{ id: sites ? 'sites-file' : 'file' }] : [] });
+  return reply({
+    files: (sites ? sitePayload : payload)
+      ? [
+          {
+            id: sites ? 'sites-file' : 'file',
+            name: sites ? 'CookieSync-preferences-v2.json' : 'CookieSync-cookies-v1.txt',
+          },
+        ]
+      : [],
+  });
 };
 const { accountStorage } = require('@sync-your-cookie/storage/lib/accountStorage');
 const { driveAccountStorage } = require('@sync-your-cookie/storage/lib/driveStorage');

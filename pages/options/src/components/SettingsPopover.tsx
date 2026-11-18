@@ -1,3 +1,4 @@
+import { editDrivePreference } from '@sync-your-cookie/storage/lib/drivePreferences';
 import { GithubApi, pullCookies, useStorageSuspense } from '@sync-your-cookie/shared';
 import { accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
 import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
@@ -26,6 +27,10 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
       | 'startupPull'
       | 'backgroundSync',
   ) => {
+    if (checkedKey === 'contextMenu') {
+      void editDrivePreference('contextMenu', checked);
+      return;
+    }
     settingsStorage.update({
       [checkedKey]: checked,
     });
@@ -135,7 +140,7 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
                   onChange={event => {
                     const value = Number(event.target.value);
                     if (Number.isFinite(value) && value >= 1 && value <= 60)
-                      void settingsStorage.update({ syncIntervalMinutes: value });
+                      void editDrivePreference('syncIntervalMinutes', value);
                   }}
                 />
               </div>
