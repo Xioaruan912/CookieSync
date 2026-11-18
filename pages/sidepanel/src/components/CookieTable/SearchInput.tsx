@@ -1,43 +1,32 @@
 import { Input } from '@sync-your-cookie/ui';
 import { Search, X } from 'lucide-react';
-import { FC, useState } from 'react';
+import { useState } from 'react';
 
-export interface SearchInputProps {
-  onEnter?: (val: string) => void;
-}
-
-export const SearchInput: FC<SearchInputProps> = props => {
-  const { onEnter } = props;
-  const [searchVal, setSearchVal] = useState('');
+export function SearchInput({ onEnter, label }: { onEnter: (value: string) => void; label: string }) {
+  const [value, setValue] = useState('');
+  const update = (next: string) => {
+    setValue(next);
+    onEnter(next.trim());
+  };
   return (
-    <div className="flex relative ">
-      <Search size={18} className="absolute top-[11px] left-[10px]" />
+    <div className="relative">
+      <Search size={17} aria-hidden className="pointer-events-none absolute left-3 top-2.5 text-muted-foreground" />
       <Input
-        value={searchVal}
-        onChange={evt => {
-          setSearchVal(evt.target.value);
-        }}
-        onBlur={() => {
-          onEnter?.(searchVal.trim());
-        }}
-        onKeyDown={evt => {
-          if (evt.key === 'Enter' || evt.code === 'Enter') {
-            onEnter?.(searchVal.trim());
-          }
-        }}
-        className="bg-gray-100 pl-[36px]"
-        placeholder="筛选"
+        value={value}
+        onChange={event => update(event.target.value)}
+        className="bg-card pl-9 pr-10"
+        aria-label={label}
+        placeholder={label}
       />
-      {searchVal && (
-        <X
-          onClick={() => {
-            setSearchVal('');
-            onEnter?.('');
-          }}
-          size={16}
-          className="absolute top-[13px] right-[10px] cursor-pointer"
-        />
+      {value && (
+        <button
+          type="button"
+          aria-label="清除搜索"
+          onClick={() => update('')}
+          className="absolute right-1 top-1 rounded-md p-1.5 text-muted-foreground hover:bg-accent">
+          <X size={16} aria-hidden />
+        </button>
       )}
     </div>
   );
-};
+}
