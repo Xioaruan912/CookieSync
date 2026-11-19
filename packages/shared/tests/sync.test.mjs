@@ -323,6 +323,43 @@ test('site auto defaults are enabled and explicit user switches remain respected
   assert.equal((await domainConfigStorage.get()).domainMap['115.com'].autoPush, false);
 });
 
+test('explicit refresh bypasses the in-flight cache and reports read errors', async () => {
+  const { pullCookies, refreshRemoteCookies } = require('../lib/cookie/withStorage.ts');
+  const { domainStatusStorage } = require('@sync-your-cookie/storage/lib/domainStatusStorage');
+  const { cookieStorage } = require('@sync-your-cookie/storage/lib/cookieStorage');
+  let mode = 'ok';
+  const server = createServer((req, res) => {
+    if (mode === 'fail') {
+      res.writeHead(403).end();
+      return;
+    }
+    res.writeHead(200, { ETag: '"1"' }).end(JSON.stringify({ domainCookieMap: { 'fresh.example': { cookies: [] } } }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    await webdavStorage.update({
+      url: `http://127.0.0.1:${server.address().port}/dav/`,
+      username: 'test',
+      password: 'test',
+      path: 'cookies.txt',
+    });
+    await accountStorage.update({ selectedProvider: 'webdav' });
+    await settingsStorage.update({ protobufEncoding: false, encryptionEnabled: false });
+    await cookieStorage.update({ domainCookieMap: { 'cached.example': { cookies: [] } } }, true);
+    await domainStatusStorage.update({ pulling: true });
+    const cached = await pullCookies();
+    assert.ok(cached.domainCookieMap['cached.example'], 'background pulls may serve the in-flight cache');
+    mode = 'fail';
+    await assert.rejects(refreshRemoteCookies(), /403/, 'an explicit refresh must surface remote read errors');
+    mode = 'ok';
+    const fresh = await refreshRemoteCookies();
+    assert.ok(fresh.domainCookieMap['fresh.example'], 'explicit refresh must read the remote file');
+    await domainStatusStorage.update({ pulling: false });
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test('manual confirmation clears only the original pending revision and preserves later changes', async () => {
   const {
     syncDestinationKey,

@@ -10,6 +10,7 @@ import {
   MessageType,
   pullAndSetCookies,
   pullCookies,
+  refreshRemoteCookies,
   PushCookieMessagePayload,
   pushCookies,
   removeCookieItem,
@@ -146,7 +147,7 @@ function handleMessage(
         callback({ isOk: false, msg: '仅扩展管理页可刷新列表' });
         break;
       }
-      void pullCookies()
+      void refreshRemoteCookies()
         .then(() => callback({ isOk: true, msg: '远程列表已刷新' }))
         .catch(error => callback({ isOk: false, msg: error?.message || '远程列表读取失败，请检查同步设置' }));
       break;

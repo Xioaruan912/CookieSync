@@ -49,15 +49,12 @@ export function AboutSettings() {
 
   return (
     <section className="grid gap-4 text-sm" aria-label="关于与更新">
-      <div className="grid gap-1">
-        <h2 className="section-title">关于与更新</h2>
-        <p className="text-muted-foreground">
-          当前版本 {currentVersion}
-          {status.latestVersion && status.latestVersion !== currentVersion ? ` · 最新发布 ${status.latestVersion}` : ''}
-        </p>
-      </div>
+      <p className="text-muted-foreground">
+        当前版本 {currentVersion}
+        {status.latestVersion && status.latestVersion !== currentVersion ? ` · 最新发布 ${status.latestVersion}` : ''}
+      </p>
 
-      <div className="grid gap-2 rounded-lg bg-muted p-3">
+      <div className="settings-subcard grid gap-2">
         <div className="flex items-center justify-between gap-2">
           <span className="text-muted-foreground text-xs">检查更新</span>
           <span>{time(status.checkedAt)}</span>
@@ -125,7 +122,7 @@ export function AboutSettings() {
         </p>
       </div>
 
-      <div className="flex items-center justify-between gap-2 rounded-lg bg-muted p-3">
+      <div className="settings-subcard flex items-center justify-between gap-2">
         <Label htmlFor="auto-update-download">发现新版本时自动下载并校验</Label>
         <Switch
           id="auto-update-download"

@@ -132,22 +132,29 @@ const Popup = () => {
   return (
     <main className="sync-popup">
       <header className="popup-header">
-        <div className="flex items-center gap-2">
-          <img src={chrome.runtime.getURL('options/logo.png')} className="size-7 object-contain" alt="" />
-          <span className="font-semibold tracking-tight">CookieSync</span>
+        <div className="popup-brand">
+          <img src={chrome.runtime.getURL('options/logo.png')} className="size-6 object-contain" alt="" />
+          <div>
+            <strong>CookieSync</strong>
+            <small>登录状态同步</small>
+          </div>
         </div>
         <Button variant="ghost" size="icon" aria-label="打开设置" onClick={() => void chrome.runtime.openOptionsPage()}>
-          <Settings size={17} aria-hidden />
+          <Settings size={16} aria-hidden />
         </Button>
       </header>
-      <section className="signal-card" aria-labelledby="current-site">
+      <section
+        className="signal-card"
+        data-state={listed && connected ? (healthEntry?.state === 'invalid' ? 'warn' : 'live') : 'idle'}
+        aria-labelledby="current-site">
         <div className="signal-top">
-          <span>当前网站</span>
-          <span>{legacy ? '旧后端待迁移' : connected ? 'WebDAV' : '尚未配置连接'}</span>
+          <span className="signal-dot" aria-hidden="true" />
+          <span className="signal-tag">{legacy ? '旧后端待迁移' : connected ? 'WebDAV' : '尚未配置连接'}</span>
         </div>
         <h1 id="current-site">{loading ? '正在识别网站…' : domain || '当前页面不支持同步'}</h1>
+        <p className="signal-state">{domain ? (policy ? siteState : '正在读取名单…') : '同步目的地'}</p>
         <div className="signal-route" aria-hidden="true">
-          <Laptop size={18} />
+          <Laptop size={16} />
           <span className="signal-line">
             <i
               data-moving={action}
@@ -160,11 +167,7 @@ const Popup = () => {
               }
             />
           </span>
-          <Cloud size={21} />
-        </div>
-        <div className="signal-bottom">
-          <span>此电脑</span>
-          <span>{domain ? (policy ? siteState : '正在读取名单…') : '同步目的地'}</span>
+          <Cloud size={18} />
         </div>
       </section>
       {domain && policy && (

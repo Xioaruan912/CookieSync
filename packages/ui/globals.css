@@ -3,70 +3,77 @@
 @tailwind utilities;
 
 /*
- * Brand: "cobalt-on-sand", dealt with tasteskill 2.5 for a developer tool
- * (software kind, sharp radius, IBM Plex type). Extensions run offline, so the
- * faces resolve from the local system and fall back to the platform stack.
+ * Brand: "offwhite-bottle-yellow", dealt with tasteskill 2.5 for a developer
+ * tool (software kind, sharp radius, Geist pairing). Off-white paper ground,
+ * bottle-green ink, caution yellow used only as a functional accent — an
+ * instrument, not a landing page. Extensions run offline, so Geist resolves
+ * from the local system and falls back to the platform stack.
  */
 @layer base {
   :root {
-    /* sand ground, cobalt ink (two-tone palette) */
-    --background: 39 18% 84%;
-    --foreground: 223 92% 28%;
-    --card: 38 24% 80%;
-    --card-foreground: 223 92% 28%;
-    --popover: 38 24% 80%;
-    --popover-foreground: 223 92% 28%;
-    --primary: 223 92% 28%;
-    --primary-foreground: 39 18% 84%;
-    --secondary: 39 30% 74%;
-    --secondary-foreground: 223 92% 24%;
-    --muted: 38 26% 76%;
-    --muted-foreground: 222 53% 42%;
-    --accent: 38 32% 72%;
-    --accent-foreground: 223 92% 24%;
+    --background: 0 0% 97%;
+    --foreground: 151 15% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 151 15% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 151 15% 11%;
+    --primary: 151 15% 11%;
+    --primary-foreground: 0 0% 97%;
+    --secondary: 0 0% 93%;
+    --secondary-foreground: 151 15% 13%;
+    --muted: 0 0% 94%;
+    --muted-foreground: 151 8% 38%;
+    --accent: 54 93% 53%;
+    --accent-foreground: 151 15% 11%;
     --destructive: 0 72% 42%;
-    --destructive-foreground: 39 18% 90%;
-    --border: 43 33% 68%;
-    --input: 43 33% 64%;
-    --ring: 223 92% 34%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89%;
+    --input: 0 0% 86%;
+    --ring: 151 15% 25%;
     --radius: 0.25rem;
-    --chart-1: 223 92% 28%;
-    --chart-2: 222 53% 42%;
-    --chart-3: 39 30% 45%;
-    --chart-4: 43 33% 55%;
+    --chart-1: 151 15% 11%;
+    --chart-2: 151 8% 38%;
+    --chart-3: 54 93% 53%;
+    --chart-4: 0 0% 89%;
     --chart-5: 0 72% 42%;
-    --font-display: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", system-ui, sans-serif;
-    --font-text: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", system-ui, sans-serif;
-    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+    --font-display: 'Geist', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif;
+    --font-text: 'Geist', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif;
+    --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
     --display-weight: 500;
-    --display-tracking: -0.025em;
+    --display-tracking: -0.03em;
+    --display-tracking-xl: -0.045em;
+    /* Motion layer: one easing family, two durations, one lift. */
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+    --dur-1: 140ms;
+    --dur-2: 220ms;
+    --lift: -2px;
   }
 
-  /* inverse scheme: cobalt ground, sand ink */
   .dark {
-    --background: 223 92% 28%;
-    --foreground: 39 18% 84%;
-    --card: 222 74% 32%;
-    --card-foreground: 39 18% 84%;
-    --popover: 222 74% 32%;
-    --popover-foreground: 39 18% 84%;
-    --primary: 39 18% 84%;
-    --primary-foreground: 223 92% 28%;
-    --secondary: 222 60% 38%;
-    --secondary-foreground: 39 18% 84%;
-    --muted: 222 55% 35%;
-    --muted-foreground: 221 12% 70%;
-    --accent: 221 50% 42%;
-    --accent-foreground: 39 18% 90%;
+    --background: 151 15% 8%;
+    --foreground: 0 0% 94%;
+    --card: 151 12% 11%;
+    --card-foreground: 0 0% 94%;
+    --popover: 151 12% 11%;
+    --popover-foreground: 0 0% 94%;
+    --primary: 0 0% 94%;
+    --primary-foreground: 151 15% 9%;
+    --secondary: 151 10% 17%;
+    --secondary-foreground: 0 0% 94%;
+    --muted: 151 9% 15%;
+    --muted-foreground: 151 8% 62%;
+    --accent: 54 80% 55%;
+    --accent-foreground: 151 15% 9%;
     --destructive: 0 62% 52%;
-    --destructive-foreground: 39 18% 90%;
-    --border: 221 45% 40%;
-    --input: 221 45% 44%;
-    --ring: 39 18% 84%;
-    --chart-1: 39 18% 84%;
-    --chart-2: 221 12% 70%;
-    --chart-3: 43 33% 68%;
-    --chart-4: 222 53% 42%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 151 8% 21%;
+    --input: 151 8% 25%;
+    --ring: 0 0% 88%;
+    --chart-1: 0 0% 94%;
+    --chart-2: 151 8% 62%;
+    --chart-3: 54 80% 55%;
+    --chart-4: 151 8% 21%;
     --chart-5: 0 62% 52%;
   }
 }
@@ -75,42 +82,99 @@
   * {
     @apply border-border;
   }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-text);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
   }
   h1,
   h2,
   h3 {
     font-family: var(--font-display);
-    font-weight: var(--display-weight, 500);
+    font-weight: var(--display-weight);
     letter-spacing: var(--display-tracking);
   }
   code,
   kbd,
-  pre {
+  pre,
+  samp {
     font-family: var(--font-mono);
+  }
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+  }
+  /* Quiet scrollbars, one step quieter than the page. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
   }
 }
 
 /*
- * Quiet motion layer (tasteskill rule 5): buttons and links answer the pointer,
- * nothing tilts or parallaxes, everything rests under reduced motion.
+ * Motion layer (tasteskill rule 5): buttons step on hover and press on click,
+ * linked cards lift 2px, underlines draw, status dots breathe on a 3s loop.
+ * Nothing tilts, nothing parallaxes. Everything rests under reduced motion.
  */
 @layer base {
   a {
-    transition: color 0.16s ease, text-underline-offset 0.16s ease;
+    transition:
+      color var(--dur-1) var(--ease-out),
+      background-size var(--dur-2) var(--ease-out);
   }
   button:enabled,
-  [role='button']:enabled,
-  label:has(> input[type='checkbox']),
-  label:has(> input[type='radio']) {
-    transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+  [role='button'] {
+    transition:
+      transform var(--dur-1) var(--ease-out),
+      background-color var(--dur-1) var(--ease-out),
+      border-color var(--dur-1) var(--ease-out),
+      color var(--dur-1) var(--ease-out),
+      box-shadow var(--dur-1) var(--ease-out),
+      opacity var(--dur-1) var(--ease-out);
   }
   @media (prefers-reduced-motion: no-preference) {
+    button:enabled:hover,
+    [role='button']:hover {
+      transform: translateY(-1px);
+    }
     button:enabled:active,
-    [role='button']:enabled:active {
-      transform: translateY(1px);
+    [role='button']:active {
+      transform: translateY(0.5px) scale(0.995);
+    }
+    .lift-card {
+      transition:
+        transform var(--dur-2) var(--ease-out),
+        box-shadow var(--dur-2) var(--ease-out),
+        border-color var(--dur-1) var(--ease-out);
+    }
+    .lift-card:hover {
+      transform: translateY(var(--lift));
+      box-shadow: 0 14px 28px -22px hsl(151 15% 11% / 0.45);
+    }
+    .dot-live {
+      animation: dot-pulse 3s var(--ease-in-out) infinite;
+    }
+  }
+  @keyframes dot-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 hsl(var(--accent) / 0.45);
+    }
+    50% {
+      box-shadow: 0 0 0 4px hsl(var(--accent) / 0);
     }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -120,6 +184,27 @@
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
     }
+    button:enabled:hover,
+    [role='button']:hover,
+    .lift-card:hover {
+      transform: none !important;
+      box-shadow: none !important;
+    }
+  }
+}
+
+@layer components {
+  /* Underline that draws in, for quiet text links. */
+  .link-draw {
+    background-image: linear-gradient(currentColor, currentColor);
+    background-repeat: no-repeat;
+    background-position: 0 100%;
+    background-size: 0% 1px;
+    transition: background-size var(--dur-2) var(--ease-out);
+  }
+  .link-draw:hover {
+    background-size: 100% 1px;
   }
 }

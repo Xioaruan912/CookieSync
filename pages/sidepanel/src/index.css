@@ -2,16 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Inverse scheme manager header: cobalt ground, sand ink. */
+body {
+  background: hsl(var(--background));
+}
+
+/* Manager header: a quiet sticky instrument bar, not a colored block. */
 .manager-header {
-  color: hsl(39 18% 84%);
-  background: radial-gradient(ellipse at 100% 0%, hsl(222 74% 32%), transparent 70%), hsl(223 92% 28%);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  color: hsl(var(--foreground));
+  background: hsl(var(--background) / 0.88);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  border-bottom: 1px solid hsl(var(--border));
+}
+.manager-header h2 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 .manager-header button {
   color: hsl(var(--foreground));
 }
+.manager-header button:enabled {
+  transition: transform var(--dur-1) var(--ease-out);
+}
 @media (prefers-reduced-motion: no-preference) {
+  .manager-header button:enabled:hover {
+    transform: translateY(-1px);
+  }
   .manager-header button:enabled:active {
-    transform: translateY(1px);
+    transform: translateY(0.5px);
   }
 }
