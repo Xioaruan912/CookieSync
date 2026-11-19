@@ -2,9 +2,6 @@ import fs from 'node:fs';
 
 const packageJson = JSON.parse(fs.readFileSync('../package.json', 'utf8'));
 const google = JSON.parse(fs.readFileSync('./google-config.json', 'utf8'));
-const googleClientId = (process.env.GOOGLE_CLIENT_ID || google.clientId || '').trim();
-if (googleClientId && !/^[\w-]+\.apps\.googleusercontent\.com$/.test(googleClientId))
-  throw new Error('Invalid GOOGLE_CLIENT_ID');
 
 const isFirefox = process.env.__FIREFOX__ === 'true';
 
@@ -22,10 +19,9 @@ const sidePanelConfig = {
 const manifest = Object.assign(
   {
     manifest_version: 3,
+    // The public key keeps the extension ID stable so Chrome Sync data (settings,
+    // site rules, WebDAV configuration) keeps working across updates.
     key: google.publicKey,
-    ...(googleClientId && {
-      oauth2: { client_id: googleClientId, scopes: ['https://www.googleapis.com/auth/drive.appdata'] },
-    }),
     default_locale: 'zh_CN',
     /**
      * if you want to support multiple languages, you can use the following reference
@@ -33,8 +29,10 @@ const manifest = Object.assign(
      */
     name: 'CookieSync · 登录状态同步',
     version: packageJson.version,
-    description: '通过 Google Drive、WebDAV、Cloudflare KV 或 GitHub Gist 同步 Cookie 与 LocalStorage。',
-    permissions: ['cookies', 'activeTab', 'tabs', 'storage', 'identity', 'alarms'].concat(sidePanelConfig.permissions),
+    description: '通过 WebDAV 同步 Cookie 与 LocalStorage；配置可随 Chrome 账号或 WebDAV 传递。',
+    permissions: ['cookies', 'activeTab', 'tabs', 'storage', 'alarms', 'downloads'].concat(
+      sidePanelConfig.permissions,
+    ),
     host_permissions: ['<all_urls>'],
     options_page: 'options/index.html',
     background: {
@@ -45,10 +43,6 @@ const manifest = Object.assign(
       default_popup: 'popup/index.html',
       default_icon: 'icon-34.png',
     },
-    // key: key,
-    // chrome_url_overrides: {
-    //   newtab: 'newtab/index.html',
-    // },
     icons: {
       128: 'icon-128.png',
     },
@@ -59,7 +53,6 @@ const manifest = Object.assign(
         run_at: 'document_start',
       },
     ],
-    // devtools_page: 'devtools/index.html',
     web_accessible_resources: [
       {
         resources: ['*.js', '*.css', '*.svg', 'icon-128.png', 'icon-34.png'],

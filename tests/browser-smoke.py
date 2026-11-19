@@ -8,7 +8,8 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(tempfile.mkdtemp(prefix='cookiesync-smoke-'))
-EXT = Path(__file__).resolve().parents[1] / 'dist'
+# The repository stays source-only; load the freshly built unpacked release by default.
+EXT = Path(os.environ.get('COOKIESYNC_DIST') or Path(__file__).resolve().parents[1] / 'dist')
 files = {}
 version = 0
 requests = []
@@ -67,14 +68,6 @@ with sync_playwright() as p:
     assert extension_id == 'mlgghgdchflafjaegkneinnockfeboei', 'Extension ID must stay identical across computers'
     options = context.new_page(); options.on('pageerror', lambda error: errors.append(str(error)))
     options.goto(f'chrome-extension://{extension_id}/options/index.html')
-    options.get_by_role('button', name='Google Drive', exact=True).click()
-    if not options.evaluate('!!chrome.runtime.getManifest().oauth2?.client_id'):
-        assert options.get_by_role('button', name='使用 Google 登录', exact=True).is_disabled()
-        options.get_by_role('status').filter(has_text='尚未由维护者开通').wait_for()
-        print('google_oauth_unconfigured_state_is_explicit')
-    else:
-        assert options.get_by_role('button', name='使用 Google 登录', exact=True).is_enabled()
-    options.get_by_role('button', name='WebDAV', exact=True).click()
     options.locator('#webdav-url').fill(base + '/dav/')
     options.locator('#webdav-username').fill('local-test')
     options.locator('#webdav-password').fill('dummy-app-password')
@@ -83,7 +76,7 @@ with sync_playwright() as p:
     options.get_by_text('连接测试成功：已验证临时文件的创建、覆盖、读取和删除', exact=True).wait_for()
     assert not files, 'probe must be removed'
     options.get_by_role('button', name='保存并使用 WebDAV', exact=True).click()
-    options.get_by_text('当前后端：WebDAV', exact=True).wait_for()
+    options.get_by_text('WebDAV 配置已保存', exact=True).wait_for()
     assert options.evaluate('async () => (await chrome.storage.local.get("webdav-local-settings"))["webdav-local-settings"].password') == 'dummy-app-password'
     assert not options.evaluate('async () => (await chrome.storage.sync.get("webdav-local-settings"))["webdav-local-settings"] || null')
     cloud_toggle = options.locator('label').filter(has_text='使用 Chrome / Google 账号同步').get_by_role('checkbox')
@@ -126,7 +119,7 @@ with sync_playwright() as p:
     manager.get_by_role('button', name='刷新远程列表', exact=True).wait_for()
     options.locator('label').filter(has_text='AList / OpenList').get_by_role('checkbox').check()
     options.get_by_role('button', name='保存并使用 WebDAV', exact=True).click()
-    options.get_by_text('WebDAV 配置已保存，已切换同步后端', exact=True).wait_for()
+    options.get_by_text('WebDAV 配置已保存', exact=True).wait_for()
     site.bring_to_front()
     recovered = options.evaluate('(message) => chrome.runtime.sendMessage(message)', payload)
     assert recovered['isOk'], recovered
@@ -282,11 +275,10 @@ with sync_playwright() as p:
     rw = receiver.service_workers[0] if receiver.service_workers else receiver.wait_for_event('serviceworker')
     rid = rw.url.split('/')[2]
     ro = receiver.new_page(); ro.goto(f'chrome-extension://{rid}/options/index.html')
-    ro.get_by_role('button',name='WebDAV',exact=True).click()
     ro.locator('#webdav-url').fill(base+'/dav/'); ro.locator('#webdav-username').fill('local-test')
     ro.locator('#webdav-password').fill('dummy-app-password'); ro.locator('#webdav-path').fill('cookies.txt')
     ro.get_by_role('button',name='保存并使用 WebDAV',exact=True).click()
-    ro.get_by_text('当前后端：WebDAV',exact=True).wait_for()
+    ro.get_by_text('WebDAV 配置已保存',exact=True).wait_for()
     ro.evaluate('''async () => { const key='settings-storage-key'; const saved=(await chrome.storage.sync.get(key))[key]; await chrome.storage.sync.set({[key]:{...saved, startupPull:true, backgroundSync:false, protobufEncoding:true, encryptionEnabled:true, encryptionPassword:'dummy-test-passphrase'}}); }''')
     assert not receiver.cookies('https://www.115.com/')
     receiver.close()
@@ -310,7 +302,6 @@ with sync_playwright() as p:
     sid = sw.url.split('/')[2]
     seed.add_cookies([{'name':'auto_seed_session','value':'synthetic-seed','domain':'www.115.com','path':'/','secure':True,'httpOnly':True,'sameSite':'Lax'}])
     so = seed.new_page(); so.goto(f'chrome-extension://{sid}/options/index.html')
-    so.get_by_role('button',name='WebDAV',exact=True).click()
     so.locator('#webdav-url').fill(base+'/dav/'); so.locator('#webdav-username').fill('local-test')
     so.locator('#webdav-password').fill('dummy-app-password'); so.locator('#webdav-path').fill('automatic-first-seed.txt')
     so.get_by_role('button',name='保存并使用 WebDAV',exact=True).click()

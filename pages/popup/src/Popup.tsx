@@ -1,7 +1,7 @@
 import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
-import { accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
+import { accountStorage, isLegacyProvider } from '@sync-your-cookie/storage/lib/accountStorage';
 import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
-import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage';
+import { updateStatusStorage } from '@sync-your-cookie/storage/lib/updateStatusStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { isSiteAllowed } from '@sync-your-cookie/storage/lib/commonSites';
@@ -18,6 +18,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Cloud,
+  Download,
   Globe2,
   Laptop,
   PanelRightOpen,
@@ -33,7 +34,7 @@ const Popup = () => {
   const status = useStorageSuspense(autoSyncStatusStorage);
   const settings = useStorageSuspense(settingsStorage);
   const account = useStorageSuspense(accountStorage);
-  const drive = useStorageSuspense(driveAccountStorage);
+  const update = useStorageSuspense(updateStatusStorage);
   const webdav = useStorageSuspense(webdavStorage);
   const policy = useSyncExternalStore(sitePolicyStorage.subscribe, sitePolicyStorage.getSnapshot);
   const config = useStorageSuspense(domainConfigStorage);
@@ -57,23 +58,8 @@ const Popup = () => {
       .finally(() => setLoading(false));
   }, [setDomain]);
 
-  const provider = account.selectedProvider;
-  const connected =
-    provider === 'google-drive'
-      ? drive.connected
-      : provider === 'webdav'
-        ? !!webdav.url
-        : provider === 'github'
-          ? !!account.githubAccessToken
-          : !!(account.accountId && account.namespaceId && account.token);
-  const destination =
-    provider === 'google-drive'
-      ? 'Google Drive'
-      : provider === 'webdav'
-        ? 'WebDAV'
-        : provider === 'github'
-          ? 'GitHub Gist'
-          : 'Cloudflare KV';
+  const legacy = isLegacyProvider(account);
+  const connected = !legacy && !!webdav.url;
   const listed = !!domain && !!policy && isSiteAllowed(domain, policy);
   const background = settings.backgroundSync !== false;
   const registered = !!config.domainMap[domain];
@@ -144,7 +130,7 @@ const Popup = () => {
       <section className="signal-card" aria-labelledby="current-site">
         <div className="signal-top">
           <span>当前网站</span>
-          <span>{connected ? destination : '尚未配置同步连接'}</span>
+          <span>{legacy ? '旧后端待迁移' : connected ? 'WebDAV' : '尚未配置连接'}</span>
         </div>
         <h1 id="current-site">{loading ? '正在识别网站…' : domain || '当前页面不支持同步'}</h1>
         <div className="signal-route" aria-hidden="true">
@@ -270,7 +256,23 @@ const Popup = () => {
           </div>
         </section>
       )}
-      {!connected && <Button onClick={() => void chrome.runtime.openOptionsPage()}>配置同步连接</Button>}
+      {!connected && (
+        <Button onClick={() => void chrome.runtime.openOptionsPage()}>
+          {legacy ? '旧后端已移除，配置 WebDAV' : '配置同步连接'}
+        </Button>
+      )}
+      {(update.state === 'available' || update.state === 'ready') && (
+        <button
+          type="button"
+          className="popup-update"
+          onClick={() => void chrome.runtime.openOptionsPage()}>
+          <Download size={15} aria-hidden="true" />
+          <span>
+            新版本 {update.latestVersion}
+            {update.state === 'ready' ? '已下载，待完成更新' : '已发布'}
+          </span>
+        </button>
+      )}
       <footer className="popup-footer">
         <div className="min-w-0" role="status">
           <div className="font-medium">

@@ -1,6 +1,6 @@
-import { editDrivePreference } from '@sync-your-cookie/storage/lib/drivePreferences';
 import { useStorageSuspense } from '@lib/hooks/useStorageSuspense';
 import { themeStorage } from '@sync-your-cookie/storage/lib/themeStorage';
+import { editRemotePreference } from '@sync-your-cookie/storage/lib/remotePreferences';
 import { createContext, useEffect } from 'react';
 
 type Theme = 'dark' | 'light' | 'system';
@@ -41,9 +41,7 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
   const value = {
     theme,
     setTheme: (theme: Theme) => {
-      // localStorage.setItem(storageKey, theme);
-      void editDrivePreference('theme', theme);
-      //   setTheme(theme);
+      void editRemotePreference('theme', theme);
     },
   };
 

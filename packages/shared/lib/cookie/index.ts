@@ -1,4 +1,4 @@
-export * from './withCloudflare';
+export * from './withRemote';
 export * from './withStorage';
 export * from './restore';
 

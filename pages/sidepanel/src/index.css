@@ -2,11 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Inverse scheme manager header: cobalt ground, sand ink. */
 .manager-header {
-  color: #ecfff6;
-  background: radial-gradient(ellipse at 100% 0%, #295c4b, transparent 70%), #15392f;
+  color: hsl(39 18% 84%);
+  background: radial-gradient(ellipse at 100% 0%, hsl(222 74% 32%), transparent 70%), hsl(223 92% 28%);
 }
-.manager-header button { color: hsl(var(--foreground)); }
+.manager-header button {
+  color: hsl(var(--foreground));
+}
 @media (prefers-reduced-motion: no-preference) {
-  .manager-header button:enabled:active { transform: translateY(1px); }
+  .manager-header button:enabled:active {
+    transform: translateY(1px);
+  }
 }

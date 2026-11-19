@@ -51,6 +51,7 @@ export function AutoSyncStatus() {
           <dd>{time(status.lastSuccess)}</dd>
         </div>
       </dl>
+      {status.note ? <p role="status">{status.note}</p> : null}
       {(status.error || message) && (
         <p role="alert" className="text-destructive break-words">
           {message || status.error}
@@ -64,7 +65,7 @@ export function AutoSyncStatus() {
         {busy ? '检查中…' : '立即检查并同步'}
       </Button>
       <p className="text-muted-foreground">
-        连接后自动检查，随后每 {settings.syncIntervalMinutes || 2} 分钟比对。SHA-256 内容一致时跳过上传。
+        连接后自动检查，随后每 {settings.syncIntervalMinutes || 2} 分钟比对；内容一致跳过上传，两端都变化时保留较新一侧。
       </p>
     </div>
   );

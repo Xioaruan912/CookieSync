@@ -1,20 +1,16 @@
-import { editDrivePreference } from '@sync-your-cookie/storage/lib/drivePreferences';
-import { GithubApi, pullCookies, useStorageSuspense } from '@sync-your-cookie/shared';
-import { accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
-import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
-import { domainStatusStorage } from '@sync-your-cookie/storage/lib/domainStatusStorage';
+import { editRemotePreference } from '@sync-your-cookie/storage/lib/remotePreferences';
+import { useStorageSuspense } from '@sync-your-cookie/shared';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { Input, Label, Popover, PopoverContent, PopoverTrigger, Switch, SyncTooltip } from '@sync-your-cookie/ui';
-import { Eye, EyeOff, Info, Lock, SquareArrowOutUpRight } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
-import { StorageSelect } from './StorageSelect';
-interface SettingsPopover {
+import { Eye, EyeOff, Info, Lock } from 'lucide-react';
+import React, { useState } from 'react';
+
+interface SettingsPopoverProps {
   trigger: React.ReactNode;
 }
 
-export function SettingsPopover({ trigger }: SettingsPopover) {
+export function SettingsPopover({ trigger }: SettingsPopoverProps) {
   const settingsInfo = useStorageSuspense(settingsStorage);
-  const [selectOpen, setSelectOpen] = useState(false);
   const [openEye, setOpenEye] = useState(false);
 
   const handleCheckChange = (
@@ -28,7 +24,7 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
       | 'backgroundSync',
   ) => {
     if (checkedKey === 'contextMenu') {
-      void editDrivePreference('contextMenu', checked);
+      void editRemotePreference('contextMenu', checked);
       return;
     }
     settingsStorage.update({
@@ -42,73 +38,18 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
     });
   };
 
-  const handleValueChange = (value: string) => {
-    settingsStorage.update({
-      storageKey: value,
-    });
-  };
-
-  const reset = async () => {
-    await domainStatusStorage.resetState();
-    await cookieStorage.reset();
-    try {
-      await pullCookies();
-    } catch {
-      /* Configuration may not be complete yet. */
-    }
-  };
-
-  useEffect(() => {
-    reset();
-  }, [settingsInfo.storageKey]);
   const handleToggleEye = () => {
     setOpenEye(!openEye);
   };
-  const handleOpenChange = (open: boolean) => {
-    if (selectOpen) return;
-    // if (open === false && (settingsInfo.storageKey !== storageKey || !storageKey)) {
-    //   console.log('open', open);
-    //   settingsStorage.update({
-    //     storageKey: storageKey || defaultKey,
-    //   });
-    //   domainConfigStorage.resetState();
-    // }
-  };
-
-  const handleSelectOpenChange = (open: boolean) => {
-    setSelectOpen(open);
-  };
-
-  const handleAddStorageKey = async (key: string) => {
-    const accountStorageInfo = await accountStorage.getSnapshot();
-    if (accountStorageInfo?.selectedProvider === 'github') {
-      const gistId = settingsInfo.storageKeyGistId;
-      await GithubApi.instance.addGistFile(gistId!, key);
-      await GithubApi.instance.initStorageKeyList();
-    } else {
-      await settingsStorage.addStorageKey(key);
-    }
-  };
-
-  const handleRemoveStorageKey = async (key: string) => {
-    const accountStorageInfo = await accountStorage.getSnapshot();
-    if (accountStorageInfo?.selectedProvider === 'github') {
-      const gistId = settingsInfo.storageKeyGistId;
-      await GithubApi.instance.deleteGistFile(gistId!, key);
-      await GithubApi.instance.initStorageKeyList();
-    } else {
-      await settingsStorage.removeStorageKey(key);
-    }
-  };
 
   return (
-    <Popover onOpenChange={handleOpenChange}>
+    <Popover>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent align="start" className="w-[360px] max-h-[80vh] overflow-y-auto">
         <div className="grid gap-4">
           <div className="space-y-2">
             <h3 className="leading-none font-medium text-base">高级设置</h3>
-            <p className="text-muted-foreground text-sm">设置存储格式、数据范围与加密。 </p>
+            <p className="text-muted-foreground text-sm">设置同步节奏、数据范围与加密。</p>
           </div>
           <div className="gap-2">
             <div className="mb-4 space-y-3 border-b pb-4">
@@ -140,41 +81,13 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
                   onChange={event => {
                     const value = Number(event.target.value);
                     if (Number.isFinite(value) && value >= 1 && value <= 60)
-                      void editDrivePreference('syncIntervalMinutes', value);
+                      void editRemotePreference('syncIntervalMinutes', value);
                   }}
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                默认每 2 分钟合并改动，启动时立即拉取；不依赖关闭事件，也不弹同步通知。
+                默认每 2 分钟合并改动，启动时立即拉取；两端同时变化时保留较新一侧。
               </p>
-            </div>
-            <div className="flex items-center gap-4 mb-4">
-              <Label className="w-[136px] block text-right" htmlFor="storage-key">
-                <div className="flex gap-2 justify-end">
-                  存储键
-                  {settingsInfo.gistHtmlUrl ? (
-                    <a href={settingsInfo.gistHtmlUrl} target="_blank" rel="noreferrer">
-                      <SquareArrowOutUpRight size={16} />
-                    </a>
-                  ) : null}
-                </div>
-              </Label>
-              {/* <Input
-                onChange={handleKeyInputChange}
-                id="storage-key"
-                value={storageKey}
-                className="h-8 flex-1"
-                placeholder={defaultKey}
-              /> */}
-              <StorageSelect
-                options={settingsInfo.storageKeyList}
-                open={selectOpen}
-                onOpenChange={handleSelectOpenChange}
-                value={settingsInfo.storageKey || ''}
-                onAdd={handleAddStorageKey}
-                onRemove={handleRemoveStorageKey}
-                onValueChange={handleValueChange}
-              />
             </div>
             <div className="flex items-center gap-4 mb-4">
               <Label className="whitespace-nowrap block w-[136px] justify-end text-right" htmlFor="encoding">
@@ -189,7 +102,7 @@ export function SettingsPopover({ trigger }: SettingsPopover) {
 
             <div className="flex items-center gap-4 mb-4">
               <Label
-                className="items-center  whitespace-nowrap flex w-[136px] justify-end text-right"
+                className="items-center whitespace-nowrap flex w-[136px] justify-end text-right"
                 htmlFor="include">
                 包含 LocalStorage
               </Label>

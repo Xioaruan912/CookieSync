@@ -94,12 +94,12 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
         }}
         className=" flex min-w-[80px] mr-2 mt-1 ">
         {key && (
-          <span className="inline-block w-12 flex-shrink-0 bg-slate-200 h-[28px] leading-7 mr-1 text-center rounded-sm ">
+          <span className="inline-block w-12 flex-shrink-0 bg-muted h-[28px] leading-7 mr-1 text-center rounded-sm ">
             {key}:
           </span>
         )}
         {nameSearchFlag ? (
-          <span className=" inline-block  max-h-[320px] overflow-auto p-1 rounded-sm bg-[#f4f4f5] text-[#ea580c] ">
+          <span className=" inline-block  max-h-[320px] overflow-auto p-1 rounded-sm bg-muted text-destructive ">
             <span>
               {value.slice(0, startIndex)}
               <span className="text-primary font-bold">{currentSearchStr}</span>
@@ -107,7 +107,7 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
             </span>
           </span>
         ) : (
-          <p className=" min-w-[80px] inline-block max-h-[320px] overflow-auto  p-1 rounded-sm bg-[#f4f4f5] text-[#ea580c] ">
+          <p className=" min-w-[80px] inline-block max-h-[320px] overflow-auto  p-1 rounded-sm bg-muted text-destructive ">
             {value}
           </p>
         )}

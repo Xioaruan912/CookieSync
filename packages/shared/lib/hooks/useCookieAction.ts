@@ -16,7 +16,6 @@ export const catchHandler = (err: any, scene: 'push' | 'pull' | 'remove' | 'dele
   const code = err?.code;
   const settingErrors = [
     MessageErrorCode.AccountCheck,
-    MessageErrorCode.CloudflareNotFoundRoute,
     MessageErrorCode.DecodeFailed,
     MessageErrorCode.DecryptFailed,
   ];

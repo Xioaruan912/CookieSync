@@ -6,7 +6,6 @@ import {
   syncDestinationKey,
   editSyncJobs,
   waitSyncJobEdits,
-  canRestoreAtStartup,
   matchesSyncDomain,
   canonicalSiteHost,
   matchesSitePage,
@@ -25,11 +24,10 @@ import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
 import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
-import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage';
 import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
 import { isSiteAllowed, isAutomaticCookieAllowed } from '@sync-your-cookie/storage/lib/commonSites';
 import { readSiteRules, sitePolicyStorage } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
-import { syncSitePolicy } from '@sync-your-cookie/shared/lib/drive/sitePolicy';
+import { syncWebdavConfig } from '@sync-your-cookie/shared/lib/webdav/configSync';
 
 type ILocalStorageItem = PendingSyncJob['localStorageItems'][number];
 
@@ -204,6 +202,7 @@ async function captureNow(host: string, observed?: ILocalStorageItem[], skipEmpt
     localStorageItems: items,
     userAgent: navigator.userAgent,
     revision: crypto.randomUUID(),
+    capturedAt: Date.now(),
     baseHash: pending?.baseHash || baseline,
   };
   const digest = await domainContentHash(job);
@@ -239,8 +238,13 @@ export async function flushAutomaticSync(force = false): Promise<void> {
     if (settings.backgroundSync === false && !force) return;
     const key = await queueKey();
     try {
-      // A cloud opt-out must be known before replaying any legacy pending jobs.
-      await syncSitePolicy();
+      // The optional WebDAV config channel runs beside cookie uploads; its failure
+      // is reported without blocking this cycle's cookie reconciliation.
+      try {
+        await syncWebdavConfig();
+      } catch (configError) {
+        await autoSyncStatusStorage.update({ error: errorMessage(configError) });
+      }
       await waitSyncJobEdits();
       const sent = await getActiveJobs(key);
       if (!Object.keys(sent).length) return;
@@ -254,22 +258,31 @@ export async function flushAutomaticSync(force = false): Promise<void> {
       const result = await pushMultipleDomainCookies(Object.values(sent), (cookie, host) =>
         cookieAllowed(cookie, host, rules),
       );
-      if (!('success' in result ? result.success : (result as unknown as { status?: number }).status === 200)) {
+      if (!result.success) {
         throw new Error('自动同步上传失败');
       }
+      // Newer-wins: domains whose remote copy is newer keep their pending job and
+      // baseline; the next reconciliation applies the remote state locally.
+      const adoptedDomains = new Set(result.adopted.map(item => item.domain));
+      const acknowledged = Object.fromEntries(
+        Object.entries(sent).filter(([host]) => !adoptedDomains.has(host)),
+      );
       const writtenHashes = Object.fromEntries(
         await Promise.all(
-          Object.entries(sent).map(async ([host, job]) => [
+          Object.entries(acknowledged).map(async ([host, job]) => [
             host,
             (await getSyncBaseline(host)) || (await domainContentHash(job)),
           ]),
         ),
       );
-      await editJobs(key, jobs => acknowledgeJobs(jobs, sent, writtenHashes));
+      await editJobs(key, jobs => acknowledgeJobs(jobs, acknowledged, writtenHashes));
       await autoSyncStatusStorage.update({
         phase: 'idle',
         lastSuccess: Date.now(),
         error: '',
+        note: adoptedDomains.size
+          ? `云端较新，已保留 ${[...adoptedDomains].join('、')} 的云端数据，稍后自动应用`
+          : undefined,
         pendingCount: Object.keys(await getActiveJobs(key)).length,
       });
     } catch (error) {
@@ -298,7 +311,7 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
     const settings = await settingsStorage.get();
     if (periodic ? settings.backgroundSync === false : settings.startupPull === false) {
       try {
-        await syncSitePolicy();
+        await syncWebdavConfig();
       } catch (error) {
         await autoSyncStatusStorage.update({ error: errorMessage(error) });
       }
@@ -306,8 +319,13 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
     }
     await domainConfigStorage.ensureDefaults();
     await autoSyncStatusStorage.update({ phase: 'checking', lastCheck: Date.now(), error: '' });
+    const adoptedRemote: string[] = [];
     try {
-      await syncSitePolicy();
+      try {
+        await syncWebdavConfig();
+      } catch (configError) {
+        await autoSyncStatusStorage.update({ error: errorMessage(configError) });
+      }
       const rules = await readSiteRules();
       await discoverOpenSites();
       // Capture against the last applied local cache before pullCookies replaces it.
@@ -324,21 +342,39 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
         const item = config.domainMap[domain];
         await captures.get(domain)?.catch(() => {});
         const pending = await getJobs(await queueKey());
-        if (pending[domain]) continue;
         await domainConfigStorage.updateItem(domain, {
           autoPull: item?.autoPull ?? true,
           autoPush: item?.autoPush ?? true,
         });
         try {
-          if (!remote.domainCookieMap?.[domain]) {
+          const remoteEntry = remote.domainCookieMap?.[domain];
+          if (!remoteEntry) {
+            if (pending[domain]) continue;
             await setSyncBaseline(domain, await domainContentHash());
             await captureAutomaticSync(domain, undefined, true);
             continue;
           }
-          if (!canRestoreAtStartup(domain, item?.autoPull, pending)) {
-            // Send-only devices still need a remote baseline before their first push.
+          const pendingJob = pending[domain];
+          // Newer wins: when both sides changed and the remote write is newer than
+          // the local capture, drop the pending job and take the remote copy.
+          const adoptRemote =
+            !!pendingJob &&
+            item?.autoPull !== false &&
+            typeof pendingJob.capturedAt === 'number' &&
+            Number.isFinite(pendingJob.capturedAt) &&
+            (Number(remoteEntry.updateTime) || 0) > pendingJob.capturedAt;
+          if (adoptRemote) {
+            await editJobs(await queueKey(), jobs => {
+              const next = { ...jobs };
+              delete next[domain];
+              return next;
+            });
+            adoptedRemote.push(domain);
+          } else if (pendingJob || item?.autoPull === false) {
+            // Local pending changes win here; send-only devices still need a remote
+            // baseline before their first push.
             if (item?.autoPush !== false && !(await getSyncBaseline(domain))) {
-              await setSyncBaseline(domain, await domainContentHash(remote.domainCookieMap[domain]));
+              await setSyncBaseline(domain, await domainContentHash(remoteEntry));
               await captureAutomaticSync(domain, undefined, true);
             }
             continue;
@@ -353,10 +389,13 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
       }
       // Upload newly discovered data in this cycle, rather than waiting for a second alarm.
       if (settings.backgroundSync !== false) await flushAutomaticSync(force || !periodic);
-      await autoSyncStatusStorage.update({
+      const finalStatus: { phase: 'idle'; pendingCount: number; note?: string } = {
         phase: 'idle',
         pendingCount: Object.keys(await getActiveJobs(await queueKey())).length,
-      });
+      };
+      if (adoptedRemote.length)
+        finalStatus.note = `本机修改较早，已采用 ${adoptedRemote.join('、')} 的云端数据`;
+      await autoSyncStatusStorage.update(finalStatus);
     } catch (error) {
       await autoSyncStatusStorage.update({ phase: 'idle', error: errorMessage(error) });
     }
@@ -372,9 +411,6 @@ export function initAutomaticSync() {
   accountStorage.subscribe(reconcileConnection);
   webdavStorage.subscribe(() => {
     if (accountStorage.getSnapshot()?.selectedProvider === 'webdav') reconcileConnection();
-  });
-  driveAccountStorage.subscribe(() => {
-    if (driveAccountStorage.getSnapshot()?.connected) reconcileConnection();
   });
   const configureAlarm = async () => {
     const interval = automaticIntervalMs((await settingsStorage.get()).syncIntervalMinutes) / 60000;

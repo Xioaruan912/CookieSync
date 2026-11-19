@@ -1,17 +1,11 @@
 import { cookiesMapContentHash, domainContentHash } from './fingerprint';
-import { readDrive, writeDrive, type DriveSnapshot } from '../drive/api';
-import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { buildWebdavUrl, readWebdav, writeWebdav, type WebdavSnapshot } from '../webdav/api';
 
-import { accountStorage, type AccountInfo } from '@sync-your-cookie/storage/lib/accountStorage';
-import { getActiveStorageItem, settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
+import { accountStorage, isLegacyProvider, type AccountInfo } from '@sync-your-cookie/storage/lib/accountStorage';
+import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 
-import { readCloudflareKV, writeCloudflareKV, WriteResponse } from '../cloudflare/api';
-
-import { GithubApi } from '@lib/github';
 import { MessageErrorCode } from '@lib/message';
-import { RestEndpointMethodTypes } from '@octokit/rest';
 import {
   arrayBufferToBase64,
   base64ToArrayBuffer,
@@ -25,69 +19,59 @@ import {
   isBase64Encrypted,
 } from '@sync-your-cookie/protobuf';
 
+export interface WriteResponse {
+  success: boolean;
+  errors: {
+    code: number;
+    message: string;
+  }[];
+  unchanged?: boolean;
+}
+
+/** A pending domain kept locally because the remote copy is newer (newer-wins). */
+export interface RemoteAdoption {
+  domain: string;
+  remoteHash: string;
+  remoteUpdateTime: number;
+}
+
+export interface PendingDomainCookie {
+  domain: string;
+  cookies: ICookie[];
+  localStorageItems: ILocalStorageItem[];
+  userAgent?: string;
+  /** Content hash the job was captured against. */
+  baseHash?: string;
+  /** Wall clock (ms) when the local change was captured; drives newer-wins. */
+  capturedAt?: number;
+}
+
 const remoteDigests = new WeakMap<ICookiesMap, Promise<string>>();
 const remotePayloads = new WeakMap<ICookiesMap, string>();
 const webdavSnapshots = new WeakMap<ICookiesMap, { url: string; snapshot: WebdavSnapshot }>();
-const driveSnapshots = new WeakMap<ICookiesMap, DriveSnapshot>();
 
 export const check = async (accountInfo?: AccountInfo) => {
-  const cloudflareAccountInfo = accountInfo || (await accountStorage.get());
-  if (cloudflareAccountInfo?.selectedProvider === 'webdav') {
-    buildWebdavUrl(await webdavStorage.get());
-  } else if (cloudflareAccountInfo?.selectedProvider === 'google-drive') {
-    if (!(await driveAccountStorage.get()).connected) throw new Error('请在设置中使用 Google 登录连接云端硬盘');
-  } else if (cloudflareAccountInfo?.selectedProvider === 'github') {
-    if (!cloudflareAccountInfo.githubAccessToken) {
-      return Promise.reject({
-        message: '请配置 GitHub 访问令牌',
-        code: MessageErrorCode.AccountCheck,
-      });
-    }
-  } else {
-    if (!cloudflareAccountInfo?.accountId || !cloudflareAccountInfo.namespaceId || !cloudflareAccountInfo.token) {
-      let message = '请配置 Cloudflare 账号 ID';
-      if (!cloudflareAccountInfo?.namespaceId) {
-        message = '请配置命名空间 ID';
-      } else if (!cloudflareAccountInfo.token) {
-        message = '请配置访问令牌';
-      }
-
-      return Promise.reject({
-        message,
-        code: MessageErrorCode.AccountCheck,
-      });
-    }
-  }
-  return cloudflareAccountInfo;
+  const info = accountInfo || (await accountStorage.get());
+  if (isLegacyProvider(info))
+    return Promise.reject({
+      message: '检测到旧版后端（GitHub / Cloudflare / Google Drive 已移除），请在设置中改用 WebDAV',
+      code: MessageErrorCode.AccountCheck,
+    });
+  // The only cookie transport is WebDAV; validate the destination early.
+  buildWebdavUrl(await webdavStorage.get());
+  return info;
 };
 
 export const readCookiesMap = async (accountInfo: AccountInfo): Promise<ICookiesMap> => {
-  let content = '';
-  let webdavRead: { url: string; snapshot: WebdavSnapshot } | undefined;
-  let driveRead: DriveSnapshot | undefined;
-  if (accountInfo.selectedProvider === 'webdav') {
-    const config = await webdavStorage.get();
-    const snapshot = await readWebdav(config);
-    webdavRead = { url: buildWebdavUrl(config), snapshot };
-    content = snapshot.content;
-  } else if (accountInfo.selectedProvider === 'google-drive') {
-    driveRead = await readDrive();
-    content = driveRead.content;
-  } else if (accountInfo.selectedProvider === 'github') {
-    const activeStorageItem = getActiveStorageItem();
-    if (activeStorageItem?.rawUrl) {
-      content = await GithubApi.instance.fetchRawContent(activeStorageItem.rawUrl);
-    }
-  } else {
-    await check(accountInfo);
-    content = await readCloudflareKV(accountInfo.accountId!, accountInfo.namespaceId!, accountInfo.token!);
-  }
+  const config = await webdavStorage.get();
+  const snapshot = await readWebdav(config);
+  const webdavRead = { url: buildWebdavUrl(config), snapshot };
+  const content = snapshot.content;
 
   const remember = (map: ICookiesMap) => {
     remotePayloads.set(map, content);
     remoteDigests.set(map, cookiesMapContentHash(map));
-    if (webdavRead) webdavSnapshots.set(map, webdavRead);
-    if (driveRead) driveSnapshots.set(map, driveRead);
+    webdavSnapshots.set(map, webdavRead);
     return map;
   };
   if (content) {
@@ -109,8 +93,7 @@ export const readCookiesMap = async (accountInfo: AccountInfo): Promise<ICookies
         }
         try {
           processedContent = await decryptBase64(content, encryptionPassword);
-        } catch (decryptError) {
-          // throw new Error('数据解密失败，请检查两台电脑的加密密码是否一致。');
+        } catch {
           return Promise.reject({
             message: '数据解密失败，请检查两台电脑的加密密码是否一致。',
             code: MessageErrorCode.DecryptFailed,
@@ -130,7 +113,6 @@ export const readCookiesMap = async (accountInfo: AccountInfo): Promise<ICookies
       }
     } catch (error) {
       // Do not log remote cookie payloads.
-      // return {};
       return Promise.reject({
         message: '同步数据解码或解密失败，请检查远程文件、编码设置和加密密码',
         code: MessageErrorCode.DecodeFailed,
@@ -159,15 +141,12 @@ export const writeCookiesMap = async (
   const formatMatches =
     !!raw && (protobufEncoding ? !raw.startsWith('{') && remoteEncrypted === !!encryptionEnabled : raw.startsWith('{'));
   if (formatMatches && (await cookiesMapContentHash(cookiesMap)) === (await remoteDigests.get(previousMap))) {
-    if (accountInfo.selectedProvider === 'github')
-      return { status: 200, headers: {}, url: '', data: {} } as RestEndpointMethodTypes['gists']['update']['response'];
     return { success: true, errors: [], unchanged: true };
   }
   let encodingStr = '';
   if (protobufEncoding) {
     const buffered = await encodeCookiesMap(cookiesMap);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    encodingStr = arrayBufferToBase64(buffered as any);
+    encodingStr = arrayBufferToBase64(buffered);
 
     // Encrypt the data if encryption is enabled
     if (encryptionEnabled && encryptionPassword) {
@@ -176,33 +155,13 @@ export const writeCookiesMap = async (
   } else {
     encodingStr = JSON.stringify(cookiesMap);
   }
-  if (accountInfo.selectedProvider === 'webdav') {
-    const config = await webdavStorage.get();
-    const url = buildWebdavUrl(config);
-    const previous = webdavSnapshots.get(previousMap);
-    if (!previous || previous.url !== url) throw new Error('请先拉取 WebDAV 文件后再写入');
-    const result = await writeWebdav(config, encodingStr, previous.snapshot);
-    webdavSnapshots.delete(previousMap);
-    return result;
-  } else if (accountInfo.selectedProvider === 'google-drive') {
-    const previous = driveSnapshots.get(previousMap);
-    if (!previous) throw new Error('请先拉取 Google Drive 文件后再写入');
-    const result = await writeDrive(encodingStr, previous);
-    driveSnapshots.delete(previousMap);
-    return result;
-  } else if (accountInfo.selectedProvider === 'github') {
-    const storageKeyGistId = settingsInfo?.storageKeyGistId;
-    const storageKey = settingsInfo?.storageKey;
-    return await GithubApi.instance.updateGist(storageKeyGistId!, storageKey!, encodingStr);
-  } else {
-    const res = await writeCloudflareKV(
-      encodingStr,
-      accountInfo.accountId!,
-      accountInfo.namespaceId!,
-      accountInfo.token!,
-    );
-    return res;
-  }
+  const config = await webdavStorage.get();
+  const url = buildWebdavUrl(config);
+  const previous = webdavSnapshots.get(previousMap);
+  if (!previous || previous.url !== url) throw new Error('请先拉取 WebDAV 文件后再写入');
+  const result = await writeWebdav(config, encodingStr, previous.snapshot);
+  webdavSnapshots.delete(previousMap);
+  return result;
 };
 
 export const mergeAndWriteCookies = async (
@@ -212,7 +171,7 @@ export const mergeAndWriteCookies = async (
   localStorageItems: ILocalStorageItem[] = [],
   userAgent = '',
   oldCookieMap: ICookiesMap = {},
-): Promise<[WriteResponse | RestEndpointMethodTypes['gists']['update']['response'], ICookiesMap]> => {
+): Promise<[WriteResponse, ICookiesMap]> => {
   await check(accountInfo);
   const cookiesMap: ICookiesMap = {
     updateTime: Date.now(),
@@ -234,30 +193,45 @@ export const mergeAndWriteCookies = async (
 };
 
 export const mergeAndWriteMultipleDomainCookies = async (
-  cloudflareAccountInfo: AccountInfo,
-  domainCookies: {
-    domain: string;
-    cookies: ICookie[];
-    localStorageItems: ILocalStorageItem[];
-    userAgent?: string;
-    baseHash?: string;
-  }[],
+  accountInfo: AccountInfo,
+  domainCookies: PendingDomainCookie[],
   oldCookieMap: ICookiesMap = {},
-): Promise<[WriteResponse, ICookiesMap]> => {
-  await check(cloudflareAccountInfo);
+): Promise<[WriteResponse, ICookiesMap, RemoteAdoption[]]> => {
+  await check(accountInfo);
 
+  const adopted: RemoteAdoption[] = [];
+  const writes: PendingDomainCookie[] = [];
   for (const item of domainCookies) {
-    if (!item.baseHash) continue;
-    const remoteHash = await domainContentHash(oldCookieMap.domainCookieMap?.[item.domain]);
-    const localHash = await domainContentHash(item);
-    if (remoteHash !== item.baseHash && remoteHash !== localHash) {
-      throw new Error(`两端数据均已变化（${item.domain}），已保留本机队列并停止覆盖，请确认后手动推送或拉取`);
+    if (!item.baseHash) {
+      writes.push(item);
+      continue;
     }
+    const remoteEntry = oldCookieMap.domainCookieMap?.[item.domain];
+    const remoteHash = await domainContentHash(remoteEntry);
+    if (remoteHash === item.baseHash) {
+      // The remote copy is unchanged since the job's baseline: the local edit wins.
+      writes.push(item);
+      continue;
+    }
+    const localHash = await domainContentHash(item);
+    if (remoteHash === localHash) continue; // Already identical; keep the remote timestamp.
+    // Both sides changed since the pending job was captured.
+    if (typeof item.capturedAt !== 'number' || !Number.isFinite(item.capturedAt))
+      throw new Error(`两端数据均已变化（${item.domain}），请手动推送或拉取以确认本机修改`);
+    const remoteUpdated = Number(remoteEntry?.updateTime) || 0;
+    if (remoteUpdated > item.capturedAt) {
+      // Newer wins: keep the cloud copy; the local job stays queued and the next
+      // reconciliation applies the remote state to this browser.
+      adopted.push({ domain: item.domain, remoteHash, remoteUpdateTime: remoteUpdated });
+      continue;
+    }
+    writes.push(item);
   }
+
   const newDomainCookieMap = {
     ...(oldCookieMap.domainCookieMap || {}),
   };
-  for (const { domain, cookies, localStorageItems, userAgent } of domainCookies) {
+  for (const { domain, cookies, localStorageItems, userAgent } of writes) {
     newDomainCookieMap[domain] = {
       updateTime: Date.now(),
       createTime: oldCookieMap.domainCookieMap?.[domain]?.createTime || Date.now(),
@@ -272,17 +246,17 @@ export const mergeAndWriteMultipleDomainCookies = async (
     domainCookieMap: newDomainCookieMap,
   };
 
-  const res = await writeCookiesMap(cloudflareAccountInfo, cookiesMap, oldCookieMap);
-  return [res, cookiesMap];
+  const res = await writeCookiesMap(accountInfo, cookiesMap, oldCookieMap);
+  return [res, cookiesMap, adopted];
 };
 
 export const removeAndWriteCookies = async (
-  cloudflareAccountInfo: AccountInfo,
+  accountInfo: AccountInfo,
   domain: string,
   oldCookieMap: ICookiesMap = {},
   id?: string,
 ): Promise<[WriteResponse, ICookiesMap]> => {
-  await check(cloudflareAccountInfo);
+  await check(accountInfo);
   const cookiesMap: ICookiesMap = {
     updateTime: Date.now(),
     createTime: oldCookieMap?.createTime || Date.now(),
@@ -296,8 +270,7 @@ export const removeAndWriteCookies = async (
         const oldLength = cookiesMap.domainCookieMap[domain]?.cookies?.length || 0;
         cookiesMap.domainCookieMap[domain].cookies =
           cookiesMap.domainCookieMap[domain].cookies?.filter(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (cookie: any) => `${cookie.domain}_${cookie.name}` !== id,
+            (cookie: ICookie) => `${cookie.domain}_${cookie.name}` !== id,
           ) || [];
         const newLength = cookiesMap.domainCookieMap[domain]?.cookies?.length || 0;
         if (oldLength === newLength) {
@@ -309,18 +282,18 @@ export const removeAndWriteCookies = async (
     }
   }
 
-  const res = await writeCookiesMap(cloudflareAccountInfo, cookiesMap, oldCookieMap);
+  const res = await writeCookiesMap(accountInfo, cookiesMap, oldCookieMap);
   return [res, cookiesMap];
 };
 
 export const editAndWriteCookies = async (
-  cloudflareAccountInfo: AccountInfo,
+  accountInfo: AccountInfo,
   host: string,
   oldCookieMap: ICookiesMap = {},
   oldItem: ICookie,
   newItem: ICookie,
 ): Promise<[WriteResponse, ICookiesMap]> => {
-  await check(cloudflareAccountInfo);
+  await check(accountInfo);
   const cookiesMap: ICookiesMap = {
     updateTime: Date.now(),
     createTime: oldCookieMap?.createTime || Date.now(),
@@ -333,8 +306,7 @@ export const editAndWriteCookies = async (
     for (let i = 0; i < cookieLength; i++) {
       const cookieItem = cookiesMap.domainCookieMap[host]?.cookies?.[i];
       if (cookieItem?.name === oldItem.name && cookieItem?.domain === oldItem.domain) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (cookiesMap.domainCookieMap[host].cookies as any)[i] = {
+        (cookiesMap.domainCookieMap[host].cookies as ICookie[])[i] = {
           ...cookieItem,
           ...newItem,
         };
@@ -343,6 +315,6 @@ export const editAndWriteCookies = async (
     }
   }
 
-  const res = await writeCookiesMap(cloudflareAccountInfo, cookiesMap, oldCookieMap);
+  const res = await writeCookiesMap(accountInfo, cookiesMap, oldCookieMap);
   return [res, cookiesMap];
 };

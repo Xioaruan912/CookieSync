@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 if (!globalThis.navigator)
@@ -34,27 +35,21 @@ const events = () => {
 };
 const openTabs = [];
 let pageLocalItems = [];
-let sitePayload = '';
 let payload = '',
   writes = 0,
-  failRead = false,
-  reads = 0;
+  reads = 0,
+  failRead = false;
+let etag = 0;
 const cookies = [{ name: 'sid', value: 'synthetic-login', domain: '.115.com', path: '/', session: true }];
 globalThis.chrome = {
   storage: { local: area(), sync: area(), session: area() },
   runtime: {
     id: 'fixture',
     getURL: path => `chrome-extension://fixture/${path}`,
-    getManifest: () => ({ oauth2: { client_id: 'fixture.apps.googleusercontent.com' } }),
+    getManifest: () => ({ version: '1.0.0' }),
     onStartup: events(),
     onMessage: events(),
-  },
-  identity: {
-    getAuthToken: (details, callback) => {
-      assert.equal(details.interactive, false);
-      callback('fixture');
-    },
-    removeCachedAuthToken: async () => {},
+    onInstalled: events(),
   },
   cookies: {
     getAll: async ({ domain, url }) =>
@@ -84,62 +79,49 @@ globalThis.chrome = {
   tabs: { query: async () => openTabs, sendMessage: async () => ({ isOk: true, result: pageLocalItems }) },
   alarms: { get: async () => ({ periodInMinutes: 2 }), create: async () => {}, onAlarm: events() },
 };
-function reply(value, status = 200, headers = {}) {
-  return new Response(typeof value === 'string' ? value : JSON.stringify(value), { status, headers });
-}
-globalThis.fetch = async (url, init) => {
-  if (url.includes('/about?')) reads++;
-  if (failRead) return reply('', 503);
-  if (url.includes('/about?')) return reply({ user: { permissionId: 'owner' } });
-  if (init.method === 'POST') {
-    const content = init.body.split('Content-Type: text/plain; charset=UTF-8\r\n\r\n')[1].split('\r\n--cookiesync_')[0];
-    const sites = init.body.includes('CookieSync-preferences-v2.json');
-    if (sites) sitePayload = content;
-    else {
-      payload = content;
-      writes++;
+const server = createServer(async (req, res) => {
+  if (req.method === 'GET') {
+    reads++;
+    if (failRead) {
+      res.writeHead(503).end();
+      return;
     }
-    return reply({ id: sites ? 'sites-file' : 'file' });
+    res.writeHead(payload ? 200 : 404, { ETag: `"${etag}"` }).end(payload);
+    return;
   }
-  const sites = url.includes('/sites-file') || decodeURIComponent(url).includes('CookieSync-sites-v1.json');
-  if (init.method === 'PATCH') {
-    if (sites) sitePayload = init.body;
-    else {
-      payload = init.body;
-      writes++;
-    }
-    return reply({ id: sites ? 'sites-file' : 'file' });
+  if (req.headers['if-match'] && req.headers['if-match'] !== `"${etag}"`) {
+    res.writeHead(412).end();
+    return;
   }
-  if (url.includes('alt=media')) return reply(sites ? sitePayload : payload, 200, { etag: '"fixture"' });
-  return reply({
-    files: (sites ? sitePayload : payload)
-      ? [
-          {
-            id: sites ? 'sites-file' : 'file',
-            name: sites ? 'CookieSync-preferences-v2.json' : 'CookieSync-cookies-v1.txt',
-          },
-        ]
-      : [],
-  });
-};
+  let body = '';
+  for await (const chunk of req) body += chunk;
+  payload = body;
+  etag++;
+  writes++;
+  res.writeHead(204).end();
+});
+await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+const davUrl = `http://127.0.0.1:${server.address().port}/dav/`;
+
 const { accountStorage } = require('@sync-your-cookie/storage/lib/accountStorage');
-const { driveAccountStorage } = require('@sync-your-cookie/storage/lib/driveStorage');
+const { webdavStorage } = require('@sync-your-cookie/storage/lib/webdavStorage');
 const { settingsStorage } = require('@sync-your-cookie/storage/lib/settingsStorage');
 const { domainConfigStorage } = require('@sync-your-cookie/storage/lib/domainConfigStorage');
 const { cookieStorage } = require('@sync-your-cookie/storage/lib/cookieStorage');
 const { sitePolicyStorage } = require('@sync-your-cookie/storage/lib/sitePolicyStorage');
-const { setSyncBaseline, domainContentHash } = require('../dist/index.js');
+const { setSyncBaseline, domainContentHash, syncDestinationKey, editSyncJobs } = require('../dist/index.js');
 const automatic = require('../../../chrome-extension/lib/background/automaticSync.ts');
 
-test('fresh Drive destination uploads existing cookies in its first automatic cycle and skips identical content', async () => {
-  await accountStorage.update({ selectedProvider: 'google-drive' });
-  await driveAccountStorage.set({ connected: true, userId: 'owner' });
+test('fresh WebDAV destination uploads existing cookies in its first automatic cycle and skips identical content', async () => {
+  await webdavStorage.update({ url: davUrl, username: 'test', password: 'test', path: 'cookies.txt' });
+  await accountStorage.update({ selectedProvider: 'webdav' });
   await settingsStorage.update({
     backgroundSync: true,
     startupPull: true,
     syncIntervalMinutes: 2,
     protobufEncoding: false,
     encryptionEnabled: false,
+    configChannel: 'chrome-sync',
   });
   await domainConfigStorage.ensureDefaults();
   await automatic.restoreAtStartup(true);
@@ -149,8 +131,9 @@ test('fresh Drive destination uploads existing cookies in its first automatic cy
   assert.equal(writes, 1, 'same semantic hash must not upload');
 });
 
-test('push-only site bootstraps against an empty Drive without enabling auto pull', async () => {
+test('push-only site bootstraps against an empty destination without enabling auto pull', async () => {
   payload = '';
+  etag++;
   writes = 0;
   for (const key of Object.keys(chrome.storage.local.data))
     if (key.startsWith('cookiesync-pending-')) delete chrome.storage.local.data[key];
@@ -195,6 +178,7 @@ test('mixed persistent cookies and cached LocalStorage do not turn lost session 
   const entry = { cookies: [session, persistent], localStorageItems: [{ key: 'fixture-token', value: 'cached' }] };
   const map = { domainCookieMap: { '115.com': entry } };
   payload = JSON.stringify(map);
+  etag++;
   await cookieStorage.update(map, true);
   await setSyncBaseline('115.com', await domainContentHash(entry));
   const previousWrites = writes;
@@ -241,14 +225,15 @@ test('explicit check waits for an in-flight cycle then performs its own fresh co
   assert.ok(reads >= previousReads + 2, 'manual check must not just acknowledge an older running cycle');
 });
 
-test('connecting a backend starts discovery without restarting Chrome or waiting for an alarm', async () => {
+test('connecting a WebDAV destination starts discovery without restarting Chrome or waiting for an alarm', async () => {
   payload = '';
+  etag++;
   writes = 0;
   for (const key of Object.keys(chrome.storage.local.data))
     if (key.startsWith('cookiesync-pending-')) delete chrome.storage.local.data[key];
   automatic.initAutomaticSync();
-  await driveAccountStorage.set({ connected: true, userId: 'owner' });
-  await accountStorage.update({ selectedProvider: 'google-drive' });
+  // Saving a WebDAV destination (as the options page does) must start initial upload.
+  await webdavStorage.update({ url: davUrl, username: 'test', password: 'test', path: 'cookies.txt' });
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline && writes === 0) await new Promise(resolve => originalTimeout(resolve, 50));
   assert.equal(writes, 1, 'save/connect event must start initial upload');
@@ -387,6 +372,51 @@ test('unlisted legacy sites stop automatic capture and upload without deleting t
   assert.equal((await domainConfigStorage.get()).domainMap['legacy-unlisted.example'].autoPush, true);
 });
 
+test('newer-wins: a cloud write newer than the pending capture adopts the remote copy locally', async () => {
+  // Both sides changed for newer-wins.example; the remote write is newer than the local capture.
+  await domainConfigStorage.updateItem('newer-wins.example', { autoPush: true, autoPull: true });
+  await sitePolicyStorage.setRule('newer-wins.example', true);
+  const remoteEntry = {
+    updateTime: Date.now() + 90000,
+    cookies: [{ name: 'sid', value: 'cloud-newer', domain: '.newer-wins.example', path: '/', session: true }],
+    localStorageItems: [],
+  };
+  const map = JSON.parse(payload || '{}');
+  map.domainCookieMap ||= {};
+  map.domainCookieMap['newer-wins.example'] = remoteEntry;
+  payload = JSON.stringify(map);
+  etag++;
+  const key = await syncDestinationKey();
+  // Simulate a pending local change captured before the remote write.
+  await editSyncJobs(key, async jobs => ({
+    ...jobs,
+    'newer-wins.example': {
+      domain: 'newer-wins.example',
+      cookies: [{ name: 'sid', value: 'local-older', domain: '.newer-wins.example', path: '/', session: true }],
+      localStorageItems: [],
+      userAgent: 'synthetic-browser',
+      revision: 'local-pending',
+      capturedAt: Date.now(),
+      baseHash: await domainContentHash({ cookies: [], localStorageItems: [] }),
+    },
+  }));
+  cookies.push({ name: 'sid', value: 'local-older', domain: '.newer-wins.example', path: '/', session: true });
+  await setSyncBaseline('newer-wins.example', await domainContentHash({ cookies: [], localStorageItems: [] }));
+  await automatic.restoreAtStartup(true, true);
+  const statusAfter = chrome.storage.local.data['cookiesync-auto-status'];
+  assert.ok(
+    (statusAfter?.note || '').includes('newer-wins.example'),
+    'adoption must be reported to the user',
+  );
+  // The local pending job for the domain is gone: the cloud copy won.
+  const jobs = chrome.storage.local.data[key];
+  assert.equal(jobs?.['newer-wins.example'], undefined);
+  assert.ok(cookies.some(c => c.value === 'cloud-newer'), 'remote cookie must be applied locally');
+  const previousWrites = writes;
+  await automatic.flushAutomaticSync(true);
+  assert.equal(writes, previousWrites, 'adopted domain must not be re-uploaded');
+});
+
 test('denied child cookies never piggyback on an allowed parent during auto push or pull; existing backups remain', async () => {
   await settingsStorage.update({ backgroundSync: false });
   await sitePolicyStorage.setRule('parent.example', true);
@@ -403,6 +433,7 @@ test('denied child cookies never piggyback on an allowed parent during auto push
   const map = JSON.parse(payload);
   map.domainCookieMap['parent.example'] = { cookies: [rootCookie, privateCookie], localStorageItems: [] };
   payload = JSON.stringify(map);
+  etag++;
   await cookieStorage.update(map, true);
   await domainConfigStorage.updateItem('parent.example', { autoPush: true, autoPull: true });
   await setSyncBaseline('parent.example', await domainContentHash(map.domainCookieMap['parent.example']));
@@ -434,4 +465,8 @@ test('denied child cookies never piggyback on an allowed parent during auto push
     cookies.some(c => c.name === 'private_sid' && c.value === 'private-backup'),
     'explicit manual pull remains unrestricted',
   );
+});
+
+test('after suite', async () => {
+  await new Promise(resolve => server.close(resolve));
 });
