@@ -285,6 +285,7 @@ const Popup = () => {
           <Download size={15} aria-hidden="true" />
           <span>
             新版本 {update.latestVersion}
+            {update.latestBuild ? `（build ${update.latestBuild}）` : ''}
             {update.state === 'ready' ? '已下载，待完成更新' : '已发布'}
           </span>
         </button>

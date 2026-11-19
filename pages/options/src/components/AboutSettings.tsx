@@ -1,6 +1,7 @@
 import {
   checkLatestRelease,
   downloadRelease,
+  installedBuildNumber,
   openExtensionsPage,
   releasesPageUrl,
   useStorageSuspense,
@@ -19,6 +20,9 @@ export function AboutSettings() {
   const settings = useStorageSuspense(settingsStorage);
   const [busy, setBusy] = useState<'check' | 'download' | undefined>();
   const currentVersion = chrome.runtime.getManifest().version;
+  const currentBuild = installedBuildNumber();
+  const versionLabel = (version?: string, build?: number) =>
+    version ? `${version}${build ? `（build ${build}）` : ''}` : '';
   const hasUpdate = status.state === 'available' || status.state === 'downloading' || status.state === 'ready';
 
   const check = async () => {
@@ -26,7 +30,8 @@ export function AboutSettings() {
     try {
       await checkLatestRelease();
       const latest = await updateStatusStorage.get();
-      if (latest.state === 'available') toast.success(`发现新版本 ${latest.latestVersion}`);
+      if (latest.state === 'available')
+        toast.success(`发现新版本 ${versionLabel(latest.latestVersion, latest.latestBuild)}`);
       else if (latest.state === 'ready') toast.info('安装包已下载，按下方步骤完成更新');
       else if (latest.error) toast.error(latest.error);
       else toast.success('已是最新版本');
@@ -50,8 +55,10 @@ export function AboutSettings() {
   return (
     <section className="grid gap-4 text-sm" aria-label="关于与更新">
       <p className="text-muted-foreground">
-        当前版本 {currentVersion}
-        {status.latestVersion && status.latestVersion !== currentVersion ? ` · 最新发布 ${status.latestVersion}` : ''}
+        当前版本 {versionLabel(currentVersion, currentBuild)}
+        {status.latestVersion && status.latestVersion !== currentVersion
+          ? ` · 最新发布 ${versionLabel(status.latestVersion, status.latestBuild)}`
+          : ''}
       </p>
 
       <div className="settings-subcard grid gap-2">
@@ -68,7 +75,7 @@ export function AboutSettings() {
           <div className="grid gap-2">
             <p className="flex items-center gap-2 font-medium">
               <BadgeCheck size={16} aria-hidden="true" />
-              新版本 {status.latestVersion} 已发布
+              新版本 {versionLabel(status.latestVersion, status.latestBuild)} 已发布
             </p>
             {status.state === 'ready' ? (
               <p className="text-muted-foreground">

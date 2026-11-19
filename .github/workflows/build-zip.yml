@@ -19,6 +19,8 @@ jobs:
         with:
           node-version-file: .nvmrc
       - name: Build and verify outside the source checkout
+        env:
+          COOKIESYNC_BUILD: ${{ github.run_number }}
         run: node scripts/workspace.mjs verify --cache "$RUNNER_TEMP/cookiesync-cache" --output "$RUNNER_TEMP/cookiesync-release"
       - uses: actions/upload-artifact@v4
         with:
@@ -95,7 +97,7 @@ jobs:
 
           默认仅自动发现内置 300 个网站和自定义允许名单内的普通页面。设置中可搜索、增删域名。名单外旧站点与队列暂停自动收发，保留本地和云端数据；手动操作仍可用。不能准确识别登录状态，名单内未登录数据也可能同步。更新后重新加载扩展，并刷新已打开网页。
 
-          每天及启动时自动检查更新，发现新版本后自动下载并校验安装 ZIP；按设置页“关于与更新”的三步指引完成覆盖与重新加载。
+          每天及启动时自动检查更新：发现语义版本升级或同版本新构建（包含构建号提示）后，自动下载并校验安装 ZIP；按设置页“关于与更新”的三步指引完成覆盖与重新加载。
 
           115 网站专属适配：恢复后自动验证会话是否有效（登录要素完整性、失效原因、浏览器特征提示），设置页提供官网同款扫码修复入口。115 的设备风控属服务器端行为，无法绕过，扩展只承诺把状态讲清楚。
 

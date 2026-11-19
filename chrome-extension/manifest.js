@@ -16,6 +16,9 @@ const sidePanelConfig = {
  * After changing, please reload the extension at `chrome://extensions`
  * @type {chrome.runtime.ManifestV3}
  */
+// CI embeds the run number so update checks can tell same-version builds apart.
+const buildNumber = (process.env.COOKIESYNC_BUILD || '').trim();
+
 const manifest = Object.assign(
   {
     manifest_version: 3,
@@ -29,6 +32,7 @@ const manifest = Object.assign(
      */
     name: 'CookieSync · 登录状态同步',
     version: packageJson.version,
+    ...(buildNumber ? { version_name: `${packageJson.version} (build ${buildNumber})` } : {}),
     description: '通过 WebDAV 同步 Cookie 与 LocalStorage；配置可随 Chrome 账号或 WebDAV 传递。',
     permissions: ['cookies', 'activeTab', 'tabs', 'storage', 'alarms', 'downloads'].concat(
       sidePanelConfig.permissions,
