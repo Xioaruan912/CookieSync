@@ -12,6 +12,7 @@ CookieSync 为用户自己的电脑同步 Cookie 与可选的 LocalStorage。这
 - Cookie 缓存及尚未上传的同步队列保存在本机扩展存储中。
 - 通用设置（包括数据加密密码）使用 Chrome 同步存储，可能随 Chrome 账号同步。1.12.0 起扩展不再向 GitHub、Cloudflare 或 Google Drive 传输任何数据，也没有 Google API 授权。
 - 用户配置后，扩展仅向所选 WebDAV 读写 Cookie 与 LocalStorage 同步数据；检查更新时访问 `api.github.com` 与 `github.com` 读取发布信息并下载安装包，不附带任何账户信息。
+- 115 专属功能（1.13.0 起）会在恢复后、手动验证或每日一次时访问 `my.115.com` 的只读用户信息接口，仅携带该网站自身的 Cookie 询问登录状态；选择“会话修复”时访问 `qrcodeapi.115.com` 与 `passportapi.115.com` 走官网同款扫码登录。绝不用会登出其他设备的 `check/sso` 类端点。
 - 启用数据加密后，上传数据使用原项目的 AES-256-GCM 加密流程。未启用时，同步文件可能包含明文登录凭据；Protobuf 与 Base64 不提供保密性。
 
 扩展没有自建的同步服务器。第三方服务和 Chrome 账号各自的隐私、保留与访问规则仍适用。本机扩展存储不是系统保险箱，能够访问浏览器资料的本机用户或恶意软件可能读取其中的数据。

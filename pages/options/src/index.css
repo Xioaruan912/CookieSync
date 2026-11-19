@@ -156,6 +156,93 @@ body {
   line-height: 1.6;
 }
 
+/* Site health cards: one card family, quiet state colors, hidden repair entry. */
+.site-health {
+  display: grid;
+  gap: 10px;
+}
+.site-health-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius, 0.25rem);
+  background: hsl(var(--card));
+}
+.site-health-card[data-state='ok'] {
+  border-color: hsl(150 60% 30% / 0.45);
+}
+.site-health-card[data-state='invalid'] {
+  border-color: hsl(var(--destructive) / 0.55);
+}
+.site-health-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.site-health-badge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 500;
+}
+.site-health-state {
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+}
+.site-health-repair summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  width: fit-content;
+}
+.site-health-repair[open] summary {
+  margin-bottom: 8px;
+}
+.site-health-repair p {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0 0 10px;
+}
+
+/* QR repair overlay: centered, dimmed, keyboard-dismissable. */
+.qr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: hsl(223 92% 28% / 0.55);
+}
+.qr-panel {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  padding: 24px;
+  border-radius: var(--radius, 0.25rem);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  max-width: calc(100% - 48px);
+}
+.qr-panel h3 {
+  margin: 0;
+}
+.qr-panel img {
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius, 0.25rem);
+  background: #fff;
+}
+.qr-status {
+  font-size: 13px;
+  color: hsl(var(--muted-foreground));
+  margin: 0;
+}
+
 .provider-current {
   color: hsl(var(--muted-foreground));
   font-size: 13px;

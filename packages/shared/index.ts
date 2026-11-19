@@ -7,6 +7,8 @@ export * from './lib/Providers';
 export * from './lib/message';
 export * from './lib/utils';
 
+export * from './lib/siteProfiles';
+
 export * from './lib/update';
 
 export * from './lib/webdav/api';
