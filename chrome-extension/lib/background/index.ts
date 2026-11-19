@@ -3,10 +3,8 @@ import { initAutomaticSync, flushAutomaticSync, setAutomaticSyncReady, startAuto
 import 'webextension-polyfill';
 
 import {
-  initGithubApi,
   pullAndSetCookies,
   pullCookies,
-  pushMultipleDomainCookies,
   syncCookieDomain,
   matchesSyncDomain,
 } from '@sync-your-cookie/shared';
@@ -17,6 +15,7 @@ import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { initContextMenu } from './contextMenu';
 import { refreshListen } from './listen';
 import { initSubscribe } from './subscribe';
+import { initUpdateChecks } from './update';
 
 const ping = () => {
   chrome.tabs.query({ active: true, currentWindow: true }, async function (tabs) {
@@ -52,6 +51,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 initAutomaticSync();
+initUpdateChecks();
 
 chrome.tabs.onActivated.addListener(async function () {
   const domainStatus = await domainStatusStorage.get();
@@ -62,7 +62,6 @@ chrome.tabs.onActivated.addListener(async function () {
 });
 
 // MV3 restarts the worker; listeners/subscriptions must be restored every time.
-initGithubApi(true);
 const backgroundReady = init();
 setAutomaticSyncReady(backgroundReady);
 void backgroundReady.then(() => startAutomaticSession()).then(() => flushAutomaticSync());

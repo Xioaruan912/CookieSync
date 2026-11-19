@@ -19,8 +19,6 @@ jobs:
         with:
           node-version-file: .nvmrc
       - name: Build and verify outside the source checkout
-        env:
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
         run: node scripts/workspace.mjs verify --cache "$RUNNER_TEMP/cookiesync-cache" --output "$RUNNER_TEMP/cookiesync-release"
       - uses: actions/upload-artifact@v4
         with:
@@ -74,13 +72,11 @@ jobs:
               hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n', encoding='utf-8')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'version={version}\n')
-              output.write(f'drive_configured={str(bool(manifest.get("oauth2", {}).get("client_id"))).lower()}\n')
           PY
       - name: Publish verified installation package to GitHub Releases
         shell: bash
         env:
           VERSION: ${{ steps.package.outputs.version }}
-          DRIVE_CONFIGURED: ${{ steps.package.outputs.drive_configured }}
         run: |
           set -euo pipefail
           if [[ "$(gh api "repos/$GH_REPO/commits/main" --jq .sha)" != "$GITHUB_SHA" ]]; then
@@ -88,22 +84,18 @@ jobs:
             exit 0
           fi
           TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
-          DRIVE_STATUS="Google Drive 一键登录已配置，首次点击连接授权后使用。"
-          if [[ "$DRIVE_CONFIGURED" != "true" ]]; then
-            DRIVE_STATUS="Google Drive 后端代码已包含，但此包尚未开通 Google 登录；维护者需配置 GOOGLE_CLIENT_ID 后重新发布。WebDAV 及其 Chrome 账号配置同步可正常使用。"
-          fi
           cat > release-notes.md <<EOF
           下载下方 CookieSync-chrome-${VERSION}.zip，解压后在 chrome://extensions 开启开发者模式，加载包含 manifest.json 的目录。
 
           更新时覆盖原安装目录并重新加载，保留本机配置。Source code 是源码，请下载安装 ZIP。
 
-          本包已通过构建、类型检查与测试。默认自动推送、自动拉取，每 2 分钟检查变化。
+          本包已通过构建、类型检查与测试。默认自动推送、自动拉取，每 2 分钟检查变化；两端同时变化时保留较新一侧。
 
-          默认仅自动发现内置 300 个网站和自定义允许名单内的普通页面。设置中可搜索、增删域名；名单覆盖规则随 Chrome 配置及已连接的 Google Drive 合并同步。名单外旧站点与队列暂停自动收发，保留本地和云端数据，手动操作仍可用。不能准确识别登录状态，名单内未登录数据也可能同步。更新后重新加载扩展，并刷新已打开网页。
+          Cookie 与 LocalStorage 仅通过 WebDAV 同步；GitHub Gist、Cloudflare KV 与 Google Drive 的 Cookie 后端已移除。配置可随 Chrome 账号同步，或改用 WebDAV 配置文件通道（不含凭据与加密密码）。从旧后端迁移：配置 WebDAV 后手动推送／拉取各一次。
 
-          ${DRIVE_STATUS}
+          默认仅自动发现内置 300 个网站和自定义允许名单内的普通页面。设置中可搜索、增删域名。名单外旧站点与队列暂停自动收发，保留本地和云端数据；手动操作仍可用。不能准确识别登录状态，名单内未登录数据也可能同步。更新后重新加载扩展，并刷新已打开网页。
 
-          从 1.6.x 首次升级到 1.7.0 及以后：为支持跨电脑配置同步，新版采用固定扩展 ID，旧身份的配置需迁移一次。升级前记录 WebDAV 配置与加密密码并备份远程文件，避免新旧扩展同时自动同步。迁移后开启 Chrome 配置同步；后续版本保持此 ID。
+          每天及启动时自动检查更新，发现新版本后自动下载并校验安装 ZIP；按设置页“关于与更新”的三步指引完成覆盖与重新加载。
 
           Cookie / LocalStorage 可能等同登录凭据，请使用私人 HTTPS WebDAV 和数据加密；网站设备风控或会话过期仍可能要求重新登录。
 

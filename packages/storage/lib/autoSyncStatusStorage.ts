@@ -7,6 +7,8 @@ interface AutoSyncStatus {
   lastAttempt?: number;
   pendingCount?: number;
   error?: string;
+  /** Human-readable outcome of the newest reconciliation, e.g. newer-wins adoption. */
+  note?: string;
 }
 const storage = createStorage<AutoSyncStatus>(
   'cookiesync-auto-status',

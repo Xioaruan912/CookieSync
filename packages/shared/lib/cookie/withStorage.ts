@@ -1,4 +1,4 @@
-import { cookieContentHash, domainContentHash, localStorageContentHash } from './fingerprint';
+import { domainContentHash, cookieContentHash, localStorageContentHash } from './fingerprint';
 import { setSyncBaseline, getPendingRevision, settleManualSync } from './syncIdentity';
 import { cookieSetDetails, syncCookieDomain } from './restore';
 import { ICookie, ICookiesMap, ILocalStorageItem } from '@sync-your-cookie/protobuf';
@@ -9,16 +9,16 @@ import { AccountInfo, accountStorage } from '@sync-your-cookie/storage/lib/accou
 
 import { MessageType } from '@lib/message';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
-import { RestEndpointMethodTypes } from '@octokit/rest';
-import { OctokitResponse } from '@octokit/types';
-import { WriteResponse } from '../cloudflare';
 import {
   editAndWriteCookies,
   mergeAndWriteCookies,
   mergeAndWriteMultipleDomainCookies,
   readCookiesMap,
   removeAndWriteCookies,
-} from './withCloudflare';
+  type PendingDomainCookie,
+  type RemoteAdoption,
+  type WriteResponse,
+} from './withRemote';
 
 // One queue per extension context keeps background reads and writes from racing.
 let cookieOperations: Promise<unknown> = Promise.resolve();
@@ -28,30 +28,16 @@ function withCookieOperation<T>(operation: () => Promise<T>): Promise<T> {
   return result;
 }
 
-export const readCookiesMapWithStatus = async (cloudflareInfo: AccountInfo) => {
+export type PushMultipleResult = WriteResponse & { adopted: RemoteAdoption[] };
+
+export const readCookiesMapWithStatus = async (accountInfo: AccountInfo) => {
   // WebDAV mutations must read the current remote state, not a stale UI cache.
-  if (cloudflareInfo.selectedProvider === 'webdav' || cloudflareInfo.selectedProvider === 'google-drive')
-    return readCookiesMap(cloudflareInfo);
-  let cookieMap: Cookie | null = null;
-  const domainStatus = await domainStatusStorage.get();
-  if (domainStatus.pushing) {
-    cookieMap = await cookieStorage.getSnapshot();
-  }
-  if (cookieMap && Object.keys(cookieMap.domainCookieMap || {}).length > 0) {
-    return cookieMap;
-  }
-  return await readCookiesMap(cloudflareInfo);
+  return readCookiesMap(accountInfo);
 };
 
 const pullCookiesImpl = async (isInit = false): Promise<Cookie> => {
-  const cloudflareInfo = await accountStorage.get();
-  if (
-    isInit &&
-    cloudflareInfo.selectedProvider !== 'github' &&
-    cloudflareInfo.selectedProvider !== 'webdav' &&
-    cloudflareInfo.selectedProvider !== 'google-drive' &&
-    (!cloudflareInfo.accountId || !cloudflareInfo.namespaceId || !cloudflareInfo.token)
-  ) {
+  const accountInfo = await accountStorage.get();
+  if (isInit && accountInfo.selectedProvider !== 'webdav') {
     return {};
   }
   try {
@@ -65,7 +51,7 @@ const pullCookiesImpl = async (isInit = false): Promise<Cookie> => {
     await domainStatusStorage.update({
       pulling: true,
     });
-    const cookieMap = await readCookiesMapWithStatus(cloudflareInfo);
+    const cookieMap = await readCookiesMapWithStatus(accountInfo);
     const res = await cookieStorage.update(cookieMap, true);
     await domainStatusStorage.update({
       pulling: false,
@@ -204,7 +190,6 @@ const restoreCookieMap = async (
     if (isReload && (cookiesChanged || storageChanged)) {
       chrome.tabs.query({}, function (tabs) {
         tabs.forEach(function (tab) {
-          // 使用字符串匹配
           if (tab.url && tab.url.includes(host) && tab.id) {
             chrome.tabs.reload(tab.id);
           }
@@ -215,24 +200,15 @@ const restoreCookieMap = async (
   return cookieMap;
 };
 
-export type GistUpdateResponse = RestEndpointMethodTypes['gists']['update']['response'];
-
-export type PushCookiesResponse = WriteResponse | GistUpdateResponse;
+export type PushCookiesResponse = WriteResponse;
 
 const checkSuccessAndUpdate = async (
-  accountInfo: AccountInfo,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  res: WriteResponse | OctokitResponse<any>,
+  res: WriteResponse | any,
   cookieMap: ICookiesMap,
 ) => {
-  if (accountInfo.selectedProvider === 'github') {
-    if ((res as unknown as GistUpdateResponse)?.status?.toString()?.startsWith('2')) {
-      await cookieStorage.update(cookieMap);
-    }
-  } else {
-    if ((res as WriteResponse).success) {
-      await cookieStorage.update(cookieMap);
-    }
+  if ((res as WriteResponse).success) {
+    await cookieStorage.update(cookieMap);
   }
 };
 
@@ -260,8 +236,8 @@ const pushCookiesImpl = async (
       oldCookie,
     );
 
-    await checkSuccessAndUpdate(accountInfo, res, cookieMap);
-    if ('success' in res ? res.success : String(res.status).startsWith('2')) {
+    await checkSuccessAndUpdate(res, cookieMap);
+    if (res.success) {
       const digest = await domainContentHash(cookieMap.domainCookieMap?.[domain]);
       await setSyncBaseline(domain, digest);
       await settleManualSync(domain, pendingRevision, digest);
@@ -279,15 +255,9 @@ const pushCookiesImpl = async (
 };
 
 const pushMultipleDomainCookiesImpl = async (
-  domainCookies: {
-    domain: string;
-    cookies: ICookie[];
-    localStorageItems: ILocalStorageItem[];
-    userAgent?: string;
-    baseHash?: string;
-  }[],
+  domainCookies: PendingDomainCookie[],
   cookieFilter?: (cookie: ICookie, host: string) => boolean,
-): Promise<WriteResponse> => {
+): Promise<PushMultipleResult> => {
   const accountInfo = await accountStorage.get();
   try {
     const domainStatus = await domainStatusStorage.get();
@@ -307,16 +277,23 @@ const pushMultipleDomainCookiesImpl = async (
           ],
         }))
       : domainCookies;
-    const [res, cookieMap] = await mergeAndWriteMultipleDomainCookies(accountInfo, filtered, oldCookie);
+    const [res, cookieMap, adopted] = await mergeAndWriteMultipleDomainCookies(accountInfo, filtered, oldCookie);
     await domainStatusStorage.update({
       pushing: false,
     });
-    await checkSuccessAndUpdate(accountInfo, res, cookieMap);
-    if ('success' in res ? res.success : String((res as unknown as GistUpdateResponse).status).startsWith('2')) {
-      for (const item of domainCookies)
+    await checkSuccessAndUpdate(res, cookieMap);
+    const adoptedDomains = new Set(adopted.map(item => item.domain));
+    if (res.success) {
+      for (const item of domainCookies) {
+        if (adoptedDomains.has(item.domain)) {
+          // Newer-wins: keep the old baseline and the pending job so the next
+          // reconciliation applies the remote copy to this browser.
+          continue;
+        }
         await setSyncBaseline(item.domain, await domainContentHash(cookieMap.domainCookieMap?.[item.domain]));
+      }
     }
-    return res;
+    return { ...res, adopted };
   } catch (e) {
     await domainStatusStorage.update({
       pushing: false,
@@ -333,13 +310,12 @@ const removeCookiesImpl = async (domain: string): Promise<WriteResponse> => {
     await domainStatusStorage.update({
       pushing: true,
     });
-    // const oldCookie = await cookieStorage.get();
     const oldCookie = await readCookiesMapWithStatus(accountInfo);
     const [res, cookieMap] = await removeAndWriteCookies(accountInfo, domain, oldCookie);
     await domainStatusStorage.update({
       pushing: false,
     });
-    await checkSuccessAndUpdate(accountInfo, res, cookieMap);
+    await checkSuccessAndUpdate(res, cookieMap);
     return res;
   } catch (e) {
     await domainStatusStorage.update({
@@ -357,13 +333,12 @@ const removeCookieItemImpl = async (domain: string, id: string): Promise<WriteRe
     await domainStatusStorage.update({
       pushing: true,
     });
-    // const oldCookie = await cookieStorage.get();
     const oldCookie = await readCookiesMapWithStatus(accountInfo);
     const [res, cookieMap] = await removeAndWriteCookies(accountInfo, domain, oldCookie, id);
     await domainStatusStorage.update({
       pushing: false,
     });
-    await checkSuccessAndUpdate(accountInfo, res, cookieMap);
+    await checkSuccessAndUpdate(res, cookieMap);
     return res;
   } catch (e) {
     await domainStatusStorage.update({
@@ -381,13 +356,12 @@ const editCookieItemImpl = async (domain: string, name: string): Promise<WriteRe
     await domainStatusStorage.update({
       pushing: true,
     });
-    // const oldCookie = await cookieStorage.get();
     const oldCookie = await readCookiesMapWithStatus(accountInfo);
     const [res, cookieMap] = await removeAndWriteCookies(accountInfo, domain, oldCookie, name);
     await domainStatusStorage.update({
       pushing: false,
     });
-    await checkSuccessAndUpdate(accountInfo, res, cookieMap);
+    await checkSuccessAndUpdate(res, cookieMap);
     return res;
   } catch (e) {
     await domainStatusStorage.update({
@@ -399,10 +373,10 @@ const editCookieItemImpl = async (domain: string, name: string): Promise<WriteRe
 
 export class CookieOperator {
   static async prepare() {
-    const cloudflareInfo = await accountStorage.get();
+    const accountInfo = await accountStorage.get();
     const domainStatus = await domainStatusStorage.get();
     if (domainStatus.pushing) return Promise.reject('the cookie is pushing');
-    return { cloudflareInfo };
+    return { accountInfo };
   }
 
   static async setPushing(open: boolean) {
@@ -417,13 +391,13 @@ export class CookieOperator {
 
   private static async editCookieItemImpl(host: string, oldItem: ICookie, newItem: ICookie) {
     try {
-      const { cloudflareInfo } = await this.prepare();
+      const { accountInfo } = await this.prepare();
       await this.setPushing(true);
-      const oldCookie = await readCookiesMapWithStatus(cloudflareInfo);
-      const [res, cookieMap] = await editAndWriteCookies(cloudflareInfo, host, oldCookie, oldItem, newItem);
+      const oldCookie = await readCookiesMapWithStatus(accountInfo);
+      const [res, cookieMap] = await editAndWriteCookies(accountInfo, host, oldCookie, oldItem, newItem);
       await this.setPushing(false);
 
-      await checkSuccessAndUpdate(cloudflareInfo, res, cookieMap);
+      await checkSuccessAndUpdate(res, cookieMap);
 
       return res;
     } catch (e) {
@@ -447,9 +421,8 @@ export const pushMultipleDomainCookies = (
 export const removeCookies = (...args: Parameters<typeof removeCookiesImpl>): ReturnType<typeof removeCookiesImpl> =>
   withCookieOperation(() => removeCookiesImpl(...args));
 
-export const removeCookieItem = (
-  ...args: Parameters<typeof removeCookieItemImpl>
-): ReturnType<typeof removeCookieItemImpl> => withCookieOperation(() => removeCookieItemImpl(...args));
+export const removeCookieItem = (...args: Parameters<typeof removeCookieItemImpl>): ReturnType<typeof removeCookieItemImpl> =>
+  withCookieOperation(() => removeCookieItemImpl(...args));
 
 export const editCookieItem = (...args: Parameters<typeof editCookieItemImpl>): ReturnType<typeof editCookieItemImpl> =>
   withCookieOperation(() => editCookieItemImpl(...args));

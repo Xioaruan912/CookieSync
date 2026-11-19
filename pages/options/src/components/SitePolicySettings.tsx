@@ -1,15 +1,15 @@
 import { useStorageSuspense } from '@sync-your-cookie/shared';
 import { commonSites, isSiteAllowed } from '@sync-your-cookie/storage/lib/commonSites';
+import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { sitePolicyStorage } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
 import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
-import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage';
 import { Button, Input } from '@sync-your-cookie/ui';
 import { useState, useSyncExternalStore } from 'react';
 
 export function SitePolicySettings() {
   const rules = useSyncExternalStore(sitePolicyStorage.subscribe, sitePolicyStorage.getSnapshot) || {};
   const config = useStorageSuspense(domainConfigStorage);
-  const drive = useStorageSuspense(driveAccountStorage);
+  const settings = useStorageSuspense(settingsStorage);
   const [search, setSearch] = useState('');
   const [domain, setDomain] = useState('');
   const [busy, setBusy] = useState(false);
@@ -21,6 +21,12 @@ export function SitePolicySettings() {
   const filtered = commonSites.filter(site =>
     `${site.name} ${site.domain} ${site.category}`.toLowerCase().includes(search.toLowerCase()),
   );
+  const channel =
+    settings.configChannel === 'webdav'
+      ? '名单随 Chrome 账号同步，并经 WebDAV 配置文件在两台电脑间合并。'
+      : settings.configChannel === 'off'
+        ? '配置同步已关闭，名单仅保存在本机。'
+        : '名单随 Chrome 账号同步。';
   const save = async (host: string, enabled: boolean, added = false) => {
     setPendingRule({ host, enabled });
     setBusy(true);
@@ -28,7 +34,7 @@ export function SitePolicySettings() {
     try {
       await sitePolicyStorage.setRule(host, enabled);
       if (added) setDomain('');
-      setMessage('名单已保存，Chrome 配置同步已提交；已连接 Google Drive 时会自动合并同步。');
+      setMessage('名单已保存；' + channel);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '名单保存失败');
     } finally {
@@ -46,11 +52,7 @@ export function SitePolicySettings() {
       <p className="text-muted-foreground">
         无法准确识别登录状态，名单内的未登录站点数据也可能同步。精选名单不是流量排名，也不保证网站登录状态可以跨设备恢复。
       </p>
-      <p>
-        {drive.connected
-          ? 'Google Drive 已连接：名单随自动检查合并同步。'
-          : '名单随 Chrome 账号同步；连接 Google Drive 后，也会在两台电脑间同步。'}
-      </p>
+      <p className="text-muted-foreground">{channel}</p>
       <form
         className="flex gap-2"
         onSubmit={event => {

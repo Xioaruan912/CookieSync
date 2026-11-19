@@ -40,7 +40,7 @@ export function WebdavSettings() {
         setDirty(false);
         await cookieStorage.reset();
         await accountStorage.update({ selectedProvider: 'webdav' });
-        toast.success('WebDAV 配置已保存，已切换同步后端');
+        toast.success('WebDAV 配置已保存');
       } else {
         await testWebdavConnection(normalized);
         toast.success('连接测试成功：已验证临时文件的创建、覆盖、读取和删除');
@@ -55,7 +55,7 @@ export function WebdavSettings() {
   return (
     <CardContent className="grid gap-4">
       <p className="text-sm text-muted-foreground">
-        填写 WebDAV 目录的最终 HTTPS 地址。远程路径相对于此目录，父目录需提前创建。
+        Cookie 与 LocalStorage 仅通过 WebDAV 同步。填写 WebDAV 目录的最终 HTTPS 地址，远程路径相对于此目录，父目录需提前创建。
       </p>
       <div className="grid gap-2">
         <Label htmlFor="webdav-url">WebDAV URL</Label>
@@ -98,13 +98,13 @@ export function WebdavSettings() {
           onChange={e => update('path', e.target.value)}
           placeholder="CookieSync/cookies.txt"
         />
-        <p className="text-xs text-muted-foreground">两台电脑填写相同路径；此路径独立于高级设置中的存储键。</p>
+        <p className="text-xs text-muted-foreground">两台电脑填写相同路径；配置文件会生成在同目录下。</p>
       </div>
       <div className="flex gap-2">
-        <Button variant="outline" disabled={busy} onClick={() => run(false)}>
+        <Button variant="outline" disabled={busy} onClick={() => void run(false)}>
           测试连接
         </Button>
-        <Button disabled={busy} onClick={() => run(true)}>
+        <Button disabled={busy} onClick={() => void run(true)}>
           {busy ? '处理中…' : '保存并使用 WebDAV'}
         </Button>
       </div>

@@ -27,21 +27,13 @@ globalThis.chrome = { storage: { sync: storageArea(), local: storageArea(), sess
 const { accountStorage } = require('@sync-your-cookie/storage/lib/accountStorage');
 const { webdavStorage } = require('@sync-your-cookie/storage/lib/webdavStorage');
 const { settingsStorage } = require('@sync-your-cookie/storage/lib/settingsStorage');
-const sync = require('../lib/cookie/withCloudflare.ts');
-const { GithubApi } = require('../lib/github/api.ts');
+const sync = require('../lib/cookie/withRemote.ts');
 const { isBase64Encrypted } = require('@sync-your-cookie/protobuf');
 
-test('provider integration: domain merge, batch auto-push, encryption, malformed data, delete and backend routing', async () => {
+test('webdav integration: domain merge, batch auto-push, encryption, malformed data, delete and newer-wins', async () => {
   let content = '';
   let etag = 0;
-  let calls = 0;
   const server = createServer(async (req, res) => {
-    calls++;
-    if (req.url.includes('/client/v4/')) {
-      if (req.method === 'GET') res.writeHead(200).end('{"domainCookieMap":{}}');
-      else res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"success":true,"errors":[]}');
-      return;
-    }
     if (req.method === 'GET') {
       res.writeHead(content ? 200 : 404, { ETag: `"${etag}"` }).end(content);
       return;
@@ -127,39 +119,6 @@ test('provider integration: domain merge, batch auto-push, encryption, malformed
     assert.equal(content, encrypted);
     content = '<html>login required</html>';
     await assert.rejects(sync.readCookiesMap(account), error => error.code === 'DecodeFailed');
-
-    // Existing GitHub branch remains reachable and does not call WebDAV.
-    await settingsStorage.update({
-      protobufEncoding: false,
-      encryptionEnabled: false,
-      storageKey: 'key',
-      storageKeyGistId: 'gist',
-      storageKeyList: [{ value: 'key', label: 'key', rawUrl: 'https://gist.test/raw' }],
-    });
-    let gistWrite;
-    GithubApi.instance = {
-      fetchRawContent: async () => '{"domainCookieMap":{}}',
-      updateGist: async (...args) => {
-        gistWrite = args;
-        return { status: 200 };
-      },
-    };
-    const before = calls;
-    assert.deepEqual(await sync.readCookiesMap({ selectedProvider: 'github' }), { domainCookieMap: {} });
-    await sync.writeCookiesMap({ selectedProvider: 'github' }, { domainCookieMap: {} });
-    assert.equal(gistWrite[0], 'gist');
-    assert.equal(calls, before);
-    // Route Cloudflare requests to the same local server for real HTTP verification.
-    const realFetch = globalThis.fetch;
-    globalThis.fetch = (url, options) =>
-      realFetch(String(url).replace('https://api.cloudflare.com', config.url.replace('/dav/', '')), options);
-    try {
-      const cloudflare = { selectedProvider: 'cloudflare', accountId: 'id', namespaceId: 'ns', token: 'token' };
-      assert.deepEqual(await sync.readCookiesMap(cloudflare), { domainCookieMap: {} });
-      assert.equal((await sync.writeCookiesMap(cloudflare, {})).success, true);
-    } finally {
-      globalThis.fetch = realFetch;
-    }
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
@@ -238,6 +197,8 @@ test('manual push and background push serialize and retain both domains', async 
     const baseHash = await domainContentHash(data.domainCookieMap['xiaohongshu.com']);
     data.domainCookieMap['xiaohongshu.com'].cookies[0].value = 'REMOTE';
     version++;
+
+    // A legacy pending job without capturedAt still requires manual confirmation.
     await assert.rejects(
       pushMultipleDomainCookies([
         {
@@ -250,6 +211,37 @@ test('manual push and background push serialize and retain both domains', async 
       /两端数据均已变化/,
     );
     assert.equal(data.domainCookieMap['xiaohongshu.com'].cookies[0].value, 'REMOTE');
+
+    // Newer wins: a remote write newer than the local capture keeps the cloud copy.
+    data.domainCookieMap['xiaohongshu.com'].updateTime = Date.now() + 60000;
+    version++;
+    const cloudNewer = await pushMultipleDomainCookies([
+      {
+        domain: 'xiaohongshu.com',
+        cookies: [{ name: 'session', value: 'LOCAL', domain: '.xiaohongshu.com', session: true }],
+        localStorageItems: [],
+        baseHash,
+        capturedAt: Date.now(),
+      },
+    ]);
+    assert.ok(cloudNewer.success);
+    assert.deepEqual(cloudNewer.adopted.map(item => item.domain), ['xiaohongshu.com']);
+    assert.equal(data.domainCookieMap['xiaohongshu.com'].cookies[0].value, 'REMOTE');
+
+    // A local capture newer than the remote write overwrites the cloud copy.
+    const localNewer = await pushMultipleDomainCookies([
+      {
+        domain: 'xiaohongshu.com',
+        cookies: [{ name: 'session', value: 'LOCAL', domain: '.xiaohongshu.com', session: true }],
+        localStorageItems: [],
+        baseHash,
+        capturedAt: Date.now() + 120000,
+      },
+    ]);
+    assert.ok(localNewer.success);
+    assert.deepEqual(localNewer.adopted, []);
+    assert.equal(data.domainCookieMap['xiaohongshu.com'].cookies[0].value, 'LOCAL');
+
     let fresh = await sync.readCookiesMap({ selectedProvider: 'webdav' });
     const oldCookie = { ...fresh.domainCookieMap['xiaohongshu.com'].cookies[0] };
     await sync.editAndWriteCookies({ selectedProvider: 'webdav' }, 'xiaohongshu.com', fresh, oldCookie, {

@@ -2,10 +2,11 @@ body {
   margin: 0;
   width: 390px;
   max-width: 100%;
-  font-family: 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
+  font-family: var(--font-text, 'Segoe UI', 'Microsoft YaHei UI', sans-serif);
   -webkit-font-smoothing: antialiased;
 }
 
+/* Brand: cobalt-on-sand (tasteskill, sharp radius). */
 .sync-popup {
   width: 100%;
   box-sizing: border-box;
@@ -27,12 +28,14 @@ body {
   padding-top: 10px;
   border-top: 1px solid hsl(var(--border));
 }
+
+/* Inverse scheme signal card: cobalt ground, sand ink. */
 .signal-card {
-  border-radius: 12px;
+  border-radius: var(--radius, 0.25rem);
   padding: 16px;
-  color: #ebfff5;
-  background-color: #12392e;
-  background-image: radial-gradient(ellipse at 100% 0%, #295c4b, transparent 70%);
+  color: hsl(39 18% 84%);
+  background-color: hsl(223 92% 28%);
+  background-image: radial-gradient(ellipse at 100% 0%, hsl(222 74% 32%), transparent 70%);
 }
 .signal-top,
 .signal-bottom {
@@ -40,13 +43,14 @@ body {
   justify-content: space-between;
   gap: 8px;
   font-size: 11px;
-  color: #ade6cc;
+  color: hsl(221 12% 70%);
 }
 .signal-card h1 {
   margin: 7px 0 17px;
   font-size: 22px;
   line-height: 1.2;
-  font-weight: 700;
+  font-weight: var(--display-weight, 500);
+  letter-spacing: var(--display-tracking, -0.025em);
   overflow-wrap: anywhere;
 }
 .signal-route {
@@ -54,11 +58,11 @@ body {
   align-items: center;
   gap: 12px;
   margin-bottom: 8px;
-  color: #bcf4d6;
+  color: hsl(221 30% 78%);
 }
 .signal-line {
   height: 1px;
-  background: #8df2bd60;
+  background: hsl(39 18% 84% / 0.38);
   flex: 1;
   position: relative;
 }
@@ -70,11 +74,11 @@ body {
   height: 7px;
   translate: -50% -50%;
   border-radius: 50%;
-  background: #a7c5b8;
+  background: hsl(221 12% 70%);
 }
 .signal-line i[data-active='true'] {
-  background: #a6ffb2;
-  box-shadow: 0 0 0 4px #a6ffb230;
+  background: hsl(39 18% 84%);
+  box-shadow: 0 0 0 4px hsl(39 18% 84% / 0.19);
 }
 .signal-line i[data-moving='push'] {
   animation: signal-push 1.2s ease-in-out infinite;
@@ -108,12 +112,31 @@ body {
   padding: 9px 10px;
   font-size: 12px;
   border: 1px solid hsl(var(--border));
-  border-radius: 10px;
+  border-radius: var(--radius, 0.25rem);
   background: hsl(var(--card));
 }
 .popup-note button {
   flex-shrink: 0;
 }
+
+/* Update hint: quiet, one line, opens the options page. */
+.popup-update {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border: 1px solid hsl(var(--primary) / 0.45);
+  border-radius: var(--radius, 0.25rem);
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  cursor: pointer;
+}
+.popup-update:hover {
+  border-color: hsl(var(--primary));
+}
+
 @media (prefers-reduced-motion: reduce) {
   .signal-line i,
   .sync-popup .animate-spin {
@@ -130,11 +153,26 @@ body {
   width: fit-content;
 }
 
-.popup-directions label { white-space: nowrap; }
-.popup-footer { display: grid; grid-template-columns: 1fr; }
-.popup-footer button { justify-self: start; }
-.popup-footer [role="status"] { overflow-wrap: anywhere; }
+.popup-directions label {
+  white-space: nowrap;
+}
+.popup-footer {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+.popup-footer button {
+  justify-self: start;
+}
+.popup-footer [role='status'] {
+  overflow-wrap: anywhere;
+}
 @container (max-width: 315px) {
-  .popup-directions, .popup-controls > .grid { grid-template-columns: minmax(0, 1fr); }
-  .popup-modes > div, .popup-note { flex-wrap: wrap; }
+  .popup-directions,
+  .popup-controls > .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .popup-modes > div,
+  .popup-note {
+    flex-wrap: wrap;
+  }
 }

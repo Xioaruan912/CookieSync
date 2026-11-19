@@ -5,8 +5,10 @@ const defaults = { theme: 'light', contextMenu: false, syncIntervalMinutes: 2 } 
 type Key = keyof typeof defaults;
 type Value = string | number | boolean;
 type Entry = { value: Value; updatedAt: number; revision: string };
-export type DrivePreferences = Partial<Record<Key, Entry>>;
-const journal = 'cookiesync-drive-preferences-v1';
+export type RemotePreferences = Partial<Record<Key, Entry>>;
+// Renamed from the Drive journal; older local installs keep their entries.
+const journal = 'cookiesync-remote-preferences-v1';
+const legacyJournal = 'cookiesync-drive-preferences-v1';
 const keys = Object.keys(defaults) as Key[];
 
 function valid(key: Key, value: unknown) {
@@ -15,8 +17,8 @@ function valid(key: Key, value: unknown) {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 60;
 }
 
-export function mergePreferences(...sources: DrivePreferences[]): DrivePreferences {
-  const result: DrivePreferences = {};
+export function mergePreferences(...sources: RemotePreferences[]): RemotePreferences {
+  const result: RemotePreferences = {};
   for (const source of sources) {
     if (!source || typeof source !== 'object' || Array.isArray(source)) throw new Error('扩展设置格式错误');
     for (const key of Object.keys(source) as Key[]) {
@@ -57,29 +59,38 @@ function locked<T>(action: () => Promise<T>): Promise<T> {
   return result;
 }
 
+async function readJournal(): Promise<RemotePreferences> {
+  const data = await chrome.storage.local.get([journal, legacyJournal]);
+  return mergePreferences(data[journal] ?? data[legacyJournal] ?? {});
+}
+
+async function writeJournal(preferences: RemotePreferences): Promise<void> {
+  await chrome.storage.local.set({ [journal]: preferences });
+}
+
 async function apply(key: Key, value: Value) {
   if (key === 'theme') await themeStorage.set(value as 'light' | 'dark' | 'system');
   else if (key === 'contextMenu') await settingsStorage.update({ contextMenu: value as boolean });
   else await settingsStorage.update({ syncIntervalMinutes: value as number });
 }
 
-export function editDrivePreference(key: Key, value: Value) {
+export function editRemotePreference(key: Key, value: Value) {
   return locked(async () => {
     if (!valid(key, value)) throw new Error('扩展设置值无效');
-    const local = mergePreferences((await chrome.storage.local.get(journal))[journal] ?? {});
+    const local = await readJournal();
     local[key] = {
       value,
       updatedAt: Math.max(Date.now(), (local[key]?.updatedAt ?? 0) + 1),
       revision: crypto.randomUUID(),
     };
-    await chrome.storage.local.set({ [journal]: local });
+    await writeJournal(local);
     await apply(key, value);
   });
 }
 
-export function adoptPreferences(remote: DrivePreferences) {
+export function adoptPreferences(remote: RemotePreferences) {
   return locked(async () => {
-    const local = mergePreferences((await chrome.storage.local.get(journal))[journal] ?? {});
+    const local = await readJournal();
     const settings = await settingsStorage.get();
     const actual = {
       theme: await themeStorage.get(),
@@ -91,8 +102,9 @@ export function adoptPreferences(remote: DrivePreferences) {
         local[key] = { value: actual[key], updatedAt: 1, revision: 'migration' };
     }
     const merged = mergePreferences(remote, local);
-    if (JSON.stringify(merged) !== JSON.stringify((await chrome.storage.local.get(journal))[journal] ?? {}))
-      await chrome.storage.local.set({ [journal]: merged });
+    const stored = await chrome.storage.local.get([journal, legacyJournal]);
+    if (JSON.stringify(merged) !== JSON.stringify(stored[journal] ?? stored[legacyJournal] ?? {}))
+      await writeJournal(merged);
     for (const key of keys) {
       const entry = merged[key];
       if (entry && actual[key] !== entry.value) await apply(key, entry.value);

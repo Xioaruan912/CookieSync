@@ -1,15 +1,12 @@
 import { BaseStorage, createStorage, StorageType } from './base';
 
 export interface AccountInfo {
-  accountId?: string;
-  namespaceId?: string;
-  token?: string;
-  selectedProvider?: 'cloudflare' | 'github' | 'webdav' | 'google-drive';
-  githubAccessToken?: string;
-  avatarUrl?: string;
-  name?: string | null;
-  bio?: string | null;
-  email?: string | null;
+  /**
+   * Cookies only travel through WebDAV now. Legacy installations may still carry
+   * 'cloudflare' | 'github' | 'google-drive' from Chrome Sync; treat those as
+   * unconfigured and guide the user to the WebDAV settings.
+   */
+  selectedProvider?: 'webdav';
 }
 const key = 'cloudflare-account-storage-key';
 const cacheStorageMap = new Map();
@@ -21,7 +18,7 @@ const initStorage = (): BaseStorage<AccountInfo> => {
   const storage = createStorage<AccountInfo>(
     key,
     {
-      selectedProvider: 'cloudflare',
+      selectedProvider: 'webdav',
     },
     {
       storageType: StorageType.Sync,
@@ -46,3 +43,8 @@ export const accountStorage: AccountInfoStorage = {
     });
   },
 };
+
+/** True when Chrome Sync still carries a removed backend; the UI offers a one-time switch. */
+export function isLegacyProvider(account: AccountInfo | undefined): boolean {
+  return !!account?.selectedProvider && account.selectedProvider !== 'webdav';
+}

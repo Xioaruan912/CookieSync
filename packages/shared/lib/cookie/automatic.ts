@@ -6,6 +6,8 @@ export interface PendingSyncJob {
   localStorageItems: ILocalStorageItem[];
   userAgent: string;
   revision: string;
+  /** Wall clock (ms) when the local change was captured; drives newer-wins resolution. */
+  capturedAt?: number;
   baseHash?: string;
 }
 
@@ -21,14 +23,6 @@ export function acknowledgeJobs(
   );
 }
 
-export function canRestoreAtStartup(
-  domain: string,
-  autoPull: boolean | undefined,
-  pending: Record<string, PendingSyncJob>,
-) {
-  return autoPull !== false && !pending[domain];
-}
-
 export function automaticIntervalMs(minutes?: number): number {
   return Math.min(60, Math.max(1, Number.isFinite(minutes) ? minutes! : 2)) * 60000;
 }
@@ -39,4 +33,17 @@ export function pickAutomaticLocalItems(
   cached: ILocalStorageItem[],
 ) {
   return observed ?? pending?.localStorageItems ?? cached;
+}
+
+/**
+ * True when this domain may be restored from the remote copy in a reconciliation
+ * cycle. Pending local changes always win on this path; newer-wins adoption for
+ * remote changes is decided by the caller with the pending job's capturedAt.
+ */
+export function canRestoreAtStartup(
+  domain: string,
+  autoPull: boolean | undefined,
+  pending: Record<string, PendingSyncJob>,
+) {
+  return autoPull !== false && !pending[domain];
 }

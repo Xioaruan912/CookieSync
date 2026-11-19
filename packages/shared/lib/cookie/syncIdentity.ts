@@ -1,7 +1,4 @@
-import { accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
-import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
-import { driveAccountStorage } from '@sync-your-cookie/storage/lib/driveStorage';
 import type { PendingSyncJob } from './automatic';
 
 type Jobs = Record<string, PendingSyncJob>;
@@ -17,22 +14,10 @@ export function editSyncJobs(key: string, update: (jobs: Jobs) => Jobs | Promise
 }
 
 export async function syncDestinationKey() {
-  const account = await accountStorage.get();
-  const settings = await settingsStorage.get();
-  const dav = account.selectedProvider === 'webdav' ? await webdavStorage.get() : undefined;
-  const destination = JSON.stringify(
-    account.selectedProvider === 'webdav'
-      ? ['webdav', dav?.url, dav?.username, dav?.path]
-      : account.selectedProvider === 'google-drive'
-        ? ['google-drive', chrome.runtime.getManifest().oauth2?.client_id, (await driveAccountStorage.get()).userId]
-        : [
-            account.selectedProvider,
-            account.accountId,
-            account.namespaceId,
-            settings.storageKeyGistId,
-            settings.storageKey,
-          ],
-  );
+  // Cookies travel through WebDAV only; the destination identity is the endpoint
+  // plus the remote file path so switching servers never mixes pending jobs.
+  const dav = await webdavStorage.get();
+  const destination = JSON.stringify(['webdav', dav?.url, dav?.username, dav?.path]);
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(destination));
   return 'cookiesync-pending-' + Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
 }
