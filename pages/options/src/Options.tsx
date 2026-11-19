@@ -2,6 +2,7 @@ import { SitePolicySettings } from './components/SitePolicySettings';
 import { WebdavSettings } from './components/WebdavSettings';
 import { ConfigChannelSettings } from './components/ConfigChannelSettings';
 import { AutoSyncStatus } from './components/AutoSyncStatus';
+import { SiteHealthSettings } from './components/SiteHealthSettings';
 import { AboutSettings } from './components/AboutSettings';
 import { useStorageSuspense, useTheme, withErrorBoundary, withSuspense } from '@sync-your-cookie/shared';
 import { accountStorage, isLegacyProvider } from '@sync-your-cookie/storage/lib/accountStorage';
@@ -94,6 +95,9 @@ const Options = () => {
           <section hidden={section !== 'automation'} aria-label={sections.automation}>
             <h2 className="section-title">自动同步</h2>
             <AutoSyncStatus />
+            <CardContent className="pt-6">
+              <SiteHealthSettings />
+            </CardContent>
           </section>
           <section hidden={section !== 'sites'} aria-label={sections.sites}>
             <CardContent className="pt-6">

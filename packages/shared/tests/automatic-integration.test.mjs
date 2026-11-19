@@ -467,6 +467,71 @@ test('denied child cookies never piggyback on an allowed parent during auto push
   );
 });
 
+test('115 restore verifies login keys and reports an honest health status', async () => {
+  const realFetch = globalThis.fetch;
+  let healthCalls = 0;
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes('my.115.com')) {
+      healthCalls++;
+      return new Response(JSON.stringify({ state: true, data: { user_name: 'fixture-user' } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return realFetch(url, init);
+  };
+  try {
+    const quintet = ['UID', 'CID', 'SEID', 'KID', 'USERSESSIONID'].map(name => ({
+      name,
+      value: `fixture-${name.toLowerCase()}`,
+      domain: '.115.com',
+      path: '/',
+      session: true,
+    }));
+    const entry = { cookies: quintet, localStorageItems: [], updateTime: Date.now(), userAgent: navigator.userAgent };
+    for (let i = cookies.length - 1; i >= 0; i--) if ((cookies[i].domain || '').endsWith('115.com')) cookies.splice(i, 1);
+    cookies.push(...quintet);
+    payload = JSON.stringify({ domainCookieMap: { '115.com': entry } });
+    etag++;
+    await cookieStorage.update({ domainCookieMap: { '115.com': entry } }, true);
+    await setSyncBaseline('115.com', await domainContentHash(entry));
+    for (const key of Object.keys(chrome.storage.local.data))
+      if (key.startsWith('cookiesync-pending-')) delete chrome.storage.local.data[key];
+    await automatic.restoreAtStartup(true, true);
+    const deadline = Date.now() + 5000;
+    let entry115;
+    while (Date.now() < deadline) {
+      entry115 = chrome.storage.local.data['cookiesync-site-health']?.['115.com'];
+      if (entry115?.state) break;
+      await new Promise(resolve => originalTimeout(resolve, 50));
+    }
+    assert.equal(entry115?.state, 'ok', 'a complete login snapshot must be verified live');
+    assert.equal(entry115?.userName, 'fixture-user');
+    assert.ok(healthCalls >= 1, 'the read-only nav endpoint must be the probe');
+    assert.ok(entry115.checkedAt > 0, 'the check time must be recorded');
+    const callsAfterOk = healthCalls;
+
+    // Both sides lose USERSESSIONID: the restore must say why instead of
+    // letting the user find a dead login on the page, without probing.
+    const reduced = { ...entry, cookies: quintet.filter(cookie => cookie.name !== 'USERSESSIONID') };
+    const uidIndex = cookies.findIndex(cookie => cookie.name === 'USERSESSIONID');
+    if (uidIndex >= 0) cookies.splice(uidIndex, 1);
+    payload = JSON.stringify({ domainCookieMap: { '115.com': reduced } });
+    etag++;
+    await cookieStorage.update({ domainCookieMap: { '115.com': reduced } }, true);
+    await setSyncBaseline('115.com', await domainContentHash(reduced));
+    for (const key of Object.keys(chrome.storage.local.data))
+      if (key.startsWith('cookiesync-pending-')) delete chrome.storage.local.data[key];
+    await automatic.restoreAtStartup(true, true);
+    entry115 = chrome.storage.local.data['cookiesync-site-health']?.['115.com'];
+    assert.equal(entry115?.state, 'invalid');
+    assert.match(entry115?.message || '', /USERSESSIONID/);
+    assert.equal(healthCalls, callsAfterOk, 'missing login keys must be diagnosed locally, not via extra probes');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test('after suite', async () => {
   await new Promise(resolve => server.close(resolve));
 });

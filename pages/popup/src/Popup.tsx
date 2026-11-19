@@ -6,6 +6,8 @@ import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { isSiteAllowed } from '@sync-your-cookie/storage/lib/commonSites';
 import { sitePolicyStorage } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
+import { siteHealthStorage } from '@sync-your-cookie/storage/lib/siteHealthStorage';
+import { siteProfileFor } from '@sync-your-cookie/shared';
 import {
   extractDomainAndPort,
   useStorageSuspense,
@@ -37,6 +39,7 @@ const Popup = () => {
   const update = useStorageSuspense(updateStatusStorage);
   const webdav = useStorageSuspense(webdavStorage);
   const policy = useSyncExternalStore(sitePolicyStorage.subscribe, sitePolicyStorage.getSnapshot);
+  const health = useStorageSuspense(siteHealthStorage);
   const config = useStorageSuspense(domainConfigStorage);
   const [tab, setTab] = useState<chrome.tabs.Tab>();
   const [loading, setLoading] = useState(true);
@@ -61,6 +64,16 @@ const Popup = () => {
   const legacy = isLegacyProvider(account);
   const connected = !legacy && !!webdav.url;
   const listed = !!domain && !!policy && isSiteAllowed(domain, policy);
+  const healthProfile = domain ? siteProfileFor(domain) : undefined;
+  const healthEntry = healthProfile ? health[healthProfile.domain] : undefined;
+  const healthText =
+    healthEntry?.state === 'ok'
+      ? '登录有效'
+      : healthEntry?.state === 'invalid'
+        ? '登录已失效'
+        : healthEntry?.state === 'unknown'
+          ? '验证未完成'
+          : '未验证';
   const background = settings.backgroundSync !== false;
   const registered = !!config.domainMap[domain];
   const autoPush = domainItemConfig.autoPush !== false;
@@ -273,6 +286,18 @@ const Popup = () => {
           </span>
         </button>
       )}
+      {healthProfile ? (
+        <button
+          type="button"
+          className="popup-site-health"
+          data-state={healthEntry?.state}
+          onClick={() => void chrome.runtime.openOptionsPage()}>
+          <span>
+            {healthProfile.domain} 会话：{healthText}
+          </span>
+          {healthEntry?.state === 'invalid' ? <span>去修复 →</span> : null}
+        </button>
+      ) : null}
       <footer className="popup-footer">
         <div className="min-w-0" role="status">
           <div className="font-medium">

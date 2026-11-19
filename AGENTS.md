@@ -11,6 +11,7 @@
 - Keep per-destination baselines and preserve pending local data on conflicts. Test in-flight changes, empty reads, individual edits/deletions, and unchanged-data skips.
 - WebDAV conditional writes stay enabled by default. AList/OpenList compatibility is explicit opt-in with its non-atomic limitation documented.
 - Update checks read GitHub Releases only for semantic version bumps; the verified ZIP auto-downloads with the downloads permission, but Chrome never self-replaces an unpacked extension — keep the guided three-step update flow and never claim fully automatic replacement.
+- Site login profiles live in packages/shared/lib/siteProfiles: required login cookie names, a READ-ONLY health endpoint and the QR repair flow. Never point a health check at SSO-style endpoints that log out other devices; keep 115's rotating endpoints in the profile file only.
 - Preserve the MIT license and upstream attribution. Never log cookie/token values or commit actual credentials.
 - Repository destination: https://github.com/Xioaruan912/CookieSync. Preserve upstream and never force-push without explicit instruction.
 - Keep the public manifest key in chrome-extension/google-config.json stable. Changing it breaks cross-device Chrome Sync identity.

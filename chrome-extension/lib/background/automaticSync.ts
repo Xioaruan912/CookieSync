@@ -28,6 +28,9 @@ import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncSta
 import { isSiteAllowed, isAutomaticCookieAllowed } from '@sync-your-cookie/storage/lib/commonSites';
 import { readSiteRules, sitePolicyStorage } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
 import { syncWebdavConfig } from '@sync-your-cookie/shared/lib/webdav/configSync';
+import { missingLoginKeys, siteProfileFor, uaMismatchHint } from '@sync-your-cookie/shared/lib/siteProfiles';
+import { siteHealthStorage } from '@sync-your-cookie/storage/lib/siteHealthStorage';
+import { checkSiteHealth } from './healthCheck';
 
 type ILocalStorageItem = PendingSyncJob['localStorageItems'][number];
 
@@ -205,6 +208,13 @@ async function captureNow(host: string, observed?: ILocalStorageItem[], skipEmpt
     capturedAt: Date.now(),
     baseHash: pending?.baseHash || baseline,
   };
+  // A profile site without its full login cookie set cannot log any machine
+  // in; record that honestly instead of shipping a dead session silently.
+  const profile = siteProfileFor(host);
+  if (profile)
+    await siteHealthStorage.updateDomain(profile.domain, {
+      loginKeysMissing: missingLoginKeys(profile, cookies).length > 0,
+    });
   const digest = await domainContentHash(job);
   if (digest === baseline && !upload) {
     if (pending)
@@ -383,6 +393,27 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
             cookieAllowed(cookie, domain, rules),
           );
           await chrome.storage.session.set({ [`cookiesync-pulled-${domain}`]: Date.now() });
+          // Profile sites: explain the restored session instead of letting the
+          // user discover a dead login on the page.
+          const profile = siteProfileFor(domain);
+          if (profile?.healthCheck) {
+            const missing = missingLoginKeys(profile, remoteEntry.cookies);
+            if (missing.length) {
+              // A local diagnosis, not a server probe: no checkedAt here, so a
+              // later complete restore verifies immediately instead of waiting
+              // out the health-check cooldown.
+              await siteHealthStorage.updateDomain(profile.domain, {
+                state: 'invalid',
+                userName: undefined,
+                loginKeysMissing: false,
+                message: `云端快照缺少登录要素（${missing.join('、')}），请在已登录电脑重新推送`,
+              });
+            } else {
+              const uaHint = profile.uaSensitive ? uaMismatchHint(remoteEntry.userAgent, navigator.userAgent) : undefined;
+              await siteHealthStorage.updateDomain(profile.domain, { loginKeysMissing: false, message: uaHint });
+              void checkSiteHealth(domain);
+            }
+          }
         } catch (error) {
           await autoSyncStatusStorage.update({ error: errorMessage(error) });
         }

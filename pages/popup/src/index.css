@@ -137,6 +137,31 @@ body {
   border-color: hsl(var(--primary));
 }
 
+/* Site login health: quiet status line, opens the options repair page. */
+.popup-site-health {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius, 0.25rem);
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  cursor: pointer;
+}
+.popup-site-health[data-state='ok'] {
+  border-color: hsl(150 60% 30% / 0.4);
+}
+.popup-site-health[data-state='invalid'] {
+  border-color: hsl(var(--destructive) / 0.55);
+  color: hsl(var(--destructive));
+}
+.popup-site-health:hover {
+  border-color: hsl(var(--primary));
+}
+
 @media (prefers-reduced-motion: reduce) {
   .signal-line i,
   .sync-popup .animate-spin {

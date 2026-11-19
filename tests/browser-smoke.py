@@ -24,6 +24,13 @@ def wait_extension(page, predicate):
         time.sleep(0.1)
     raise AssertionError('Timed out waiting for extension storage/UI')
 
+def mock_115_health(ctx):
+    # The read-only login probe must never leave the test machine: intercept it
+    # in every profile from the start, including the background service worker.
+    ctx.route('**my.115.com/**', lambda route: route.fulfill(
+        status=200, content_type='application/json',
+        body=json.dumps({'state': True, 'data': {'user_name': 'fixture-user'}})))
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
     def reply(self, code, data=b'', etag=None):
@@ -66,6 +73,7 @@ with sync_playwright() as p:
     extension_id = worker.url.split('/')[2]
     print('extension_loaded', bool(extension_id))
     assert extension_id == 'mlgghgdchflafjaegkneinnockfeboei', 'Extension ID must stay identical across computers'
+    mock_115_health(context)
     options = context.new_page(); options.on('pageerror', lambda error: errors.append(str(error)))
     options.goto(f'chrome-extension://{extension_id}/options/index.html')
     options.locator('#webdav-url').fill(base + '/dav/')
@@ -274,6 +282,7 @@ with sync_playwright() as p:
         args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'])
     rw = receiver.service_workers[0] if receiver.service_workers else receiver.wait_for_event('serviceworker')
     rid = rw.url.split('/')[2]
+    mock_115_health(receiver)
     ro = receiver.new_page(); ro.goto(f'chrome-extension://{rid}/options/index.html')
     ro.locator('#webdav-url').fill(base+'/dav/'); ro.locator('#webdav-username').fill('local-test')
     ro.locator('#webdav-password').fill('dummy-app-password'); ro.locator('#webdav-path').fill('cookies.txt')
@@ -300,6 +309,7 @@ with sync_playwright() as p:
         args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'])
     sw = seed.service_workers[0] if seed.service_workers else seed.wait_for_event('serviceworker')
     sid = sw.url.split('/')[2]
+    mock_115_health(seed)
     seed.add_cookies([{'name':'auto_seed_session','value':'synthetic-seed','domain':'www.115.com','path':'/','secure':True,'httpOnly':True,'sameSite':'Lax'}])
     so = seed.new_page(); so.goto(f'chrome-extension://{sid}/options/index.html')
     so.locator('#webdav-url').fill(base+'/dav/'); so.locator('#webdav-username').fill('local-test')
@@ -397,5 +407,42 @@ with sync_playwright() as p:
     assert any(c['value']=='changed-but-paused' for c in seed.cookies('https://www.nodeseek.com/'))
     assert not 'legacy-unlisted.example' in saved
     print('allowlist_ui_custom_add_pause_and_unlisted_retention_passed')
+    # 115 profile: honest login health plus a hidden QR repair entry.
+    # Re-registering on the same context wins over the early "ok" handler.
+    seed.route('**my.115.com/**', lambda route: route.fulfill(
+        status=200, content_type='application/json',
+        body=json.dumps({'state': True, 'data': {'user_name': 'fixture-user'}})))
+    quintet = [{'name': name, 'value': f'fixture-{name.lower()}', 'domain': '.115.com', 'path': '/',
+                'secure': True, 'httpOnly': True, 'sameSite': 'Lax'}
+               for name in ('UID', 'CID', 'SEID', 'KID', 'USERSESSIONID')]
+    seed.add_cookies(quintet)
+    so.get_by_text('115.com 登录状态', exact=False).wait_for()
+    so.get_by_role('button', name='立即验证', exact=True).click()
+    so.get_by_text('登录有效', exact=False).wait_for()
+    so.get_by_text('fixture-user', exact=False).wait_for()
+    print('115_health_check_ok_passed')
+    seed.route('**my.115.com/**', lambda route: route.fulfill(
+        status=200, content_type='application/json',
+        body=json.dumps({'state': False, 'error': '登录超时，请重新登录。'})))
+    so.get_by_role('button', name='立即验证', exact=True).click()
+    so.get_by_text('登录已失效', exact=False).wait_for()
+    print('115_health_check_invalid_passed')
+    # QR repair: mocked token → status(2) → login sets cookies through the
+    # body fallback because a fulfilled response carries no Set-Cookie.
+    seed.route('**/api/1.0/web/1.0/token', lambda route: route.fulfill(
+        status=200, content_type='application/json',
+        body=json.dumps({'state': 1, 'data': {'uid': 'tok-fixture', 'time': 1, 'sign': 'sig', 'qrcode': '115.com/scan/dg-fixture'}})))
+    seed.route('**/get/status/**', lambda route: route.fulfill(
+        status=200, content_type='application/json',
+        body=json.dumps({'state': 1, 'data': {'status': 2}})))
+    seed.route('**passportapi.115.com/**', lambda route: route.fulfill(
+        status=200, content_type='application/json',
+        body=json.dumps({'state': 1, 'data': {'cookie': {'cookie': 'UID=99; CID=99; SEID=99; KID=99'}}})))
+    so.get_by_text('115.com 会话修复', exact=False).click()
+    so.get_by_role('button', name='生成二维码', exact=True).click()
+    so.get_by_text('扫码成功，会话已更新并推送', exact=False).wait_for()
+    assert any(c['name'] == 'UID' and c['value'] == '99' for c in seed.cookies('https://115.com/'))
+    so.get_by_role('button', name='关闭', exact=True).click()
+    print('115_qr_repair_fallback_cookies_passed')
     seed.close()
 server.shutdown()
