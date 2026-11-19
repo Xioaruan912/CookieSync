@@ -22,7 +22,7 @@
   "dependencies": {
     "@sync-your-cookie/shared": "workspace:*",
     "@sync-your-cookie/storage": "workspace:*",
-    "eventemitter3": "^5.0.1"
+    "eventemitter3": "^5.0.4"
   },
   "devDependencies": {
     "@sync-your-cookie/tsconfig": "workspace:*"
