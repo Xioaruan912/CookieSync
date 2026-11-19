@@ -30,6 +30,33 @@ export function isNewerVersion(candidate: string, current: string): boolean {
   return false;
 }
 
+/**
+ * The build number embedded in the manifest at CI time. Local builds have no
+ * build number, which counts as unknown: a same-version release then offers
+ * one update so pre-build-number installs can still reach newer code.
+ */
+export function installedBuildNumber(): number | undefined {
+  const versionName = chrome.runtime.getManifest().version_name as string | undefined;
+  const match = /build[.\s]*(\d+)/i.exec(versionName || '');
+  return match ? Number(match[1]) : undefined;
+}
+
+/**
+ * A release is newer when the semantic version increased, or when the version
+ * matches but the build number is newer. Every main push publishes a build, so
+ * same-version build bumps are real code changes and must be offered.
+ */
+export function isNewerRelease(
+  latest: { version: string; build?: number },
+  currentVersion: string,
+  currentBuild?: number,
+): boolean {
+  if (isNewerVersion(latest.version, currentVersion)) return true;
+  if (isNewerVersion(currentVersion, latest.version)) return false;
+  if (latest.build === undefined) return false;
+  return currentBuild === undefined || latest.build > currentBuild;
+}
+
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
@@ -46,12 +73,13 @@ interface LatestRelease {
 }
 
 /**
- * Queries the latest release and records its version. Only semantic version
- * bumps count as updates: same-version republishes (new build numbers) stay
- * silent so day-to-day main pushes never nag installed users.
+ * Queries the latest release and records it. A newer semantic version OR a
+ * newer build number of the same version counts as an update; the installed
+ * build comes from the manifest's version_name embedded at CI time.
  */
 export async function checkLatestRelease(): Promise<void> {
   const current = chrome.runtime.getManifest().version;
+  const currentBuild = installedBuildNumber();
   try {
     const response = await fetch(`${repoApi}/releases/latest`, {
       headers: { Accept: 'application/vnd.github+json' },
@@ -71,18 +99,22 @@ export async function checkLatestRelease(): Promise<void> {
     if (!zip?.browser_download_url) throw new Error('发布中未找到安装 ZIP');
 
     const status = await updateStatusStorage.get();
-    if (!isNewerVersion(tag.version, current)) {
-      if (status.state === 'ready' && status.latestVersion === tag.version) {
-        await updateStatusStorage.update({ latestBuild: tag.build, checkedAt: Date.now(), error: '' });
-        return;
-      }
+    if (!isNewerRelease(tag, current, currentBuild)) {
+      // Nothing newer than what is installed; any guided-download state is moot.
       await updateStatusStorage.update({
         state: 'idle',
         latestVersion: tag.version,
         latestBuild: tag.build,
         checkedAt: Date.now(),
         error: '',
+        downloadedAt: undefined,
+        downloadName: undefined,
       });
+      return;
+    }
+    // Already downloaded this exact release: keep the guided update state.
+    if (status.state === 'ready' && status.latestVersion === tag.version && status.latestBuild === tag.build) {
+      await updateStatusStorage.update({ checkedAt: Date.now(), error: '' });
       return;
     }
     await updateStatusStorage.update({
@@ -93,7 +125,7 @@ export async function checkLatestRelease(): Promise<void> {
       shaUrl: sums?.browser_download_url,
       checkedAt: Date.now(),
       error: '',
-      // A newer version invalidates any previous guided download.
+      // A newer release invalidates any previous guided download.
       downloadedAt: undefined,
       downloadName: undefined,
     });
