@@ -35,14 +35,17 @@ export const readCookiesMapWithStatus = async (accountInfo: AccountInfo) => {
   return readCookiesMap(accountInfo);
 };
 
-const pullCookiesImpl = async (isInit = false): Promise<Cookie> => {
+const pullCookiesImpl = async (isInit = false, force = false): Promise<Cookie> => {
   const accountInfo = await accountStorage.get();
   if (isInit && accountInfo.selectedProvider !== 'webdav') {
     return {};
   }
   try {
     const domainStatus = await domainStatusStorage.get();
-    if (domainStatus.pulling) {
+    // The in-flight short circuit serves the cache to background cycles. An
+    // explicit refresh (force) must read the remote file so read errors are
+    // reported instead of being hidden behind a stale success.
+    if (!force && domainStatus.pulling) {
       const cookieMap = await cookieStorage.getSnapshot();
       if (cookieMap && Object.keys(cookieMap.domainCookieMap || {}).length > 0) {
         return cookieMap;
@@ -409,6 +412,10 @@ export class CookieOperator {
 
 export const pullCookies = (...args: Parameters<typeof pullCookiesImpl>): ReturnType<typeof pullCookiesImpl> =>
   withCookieOperation(() => pullCookiesImpl(...args));
+
+/** Explicit user refresh: a real remote read, never the in-flight cache. */
+export const refreshRemoteCookies = (): ReturnType<typeof pullCookiesImpl> =>
+  withCookieOperation(() => pullCookiesImpl(false, true));
 
 export const pushCookies = (...args: Parameters<typeof pushCookiesImpl>): ReturnType<typeof pushCookiesImpl> =>
   withCookieOperation(() => pushCookiesImpl(...args));
