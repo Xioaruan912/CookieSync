@@ -444,5 +444,11 @@ with sync_playwright() as p:
     assert any(c['name'] == 'UID' and c['value'] == '99' for c in seed.cookies('https://115.com/'))
     so.get_by_role('button', name='关闭', exact=True).click()
     print('115_qr_repair_fallback_cookies_passed')
+    pull_all = so.evaluate('(message) => chrome.runtime.sendMessage(message)', {'type': 'CookieSyncPullAll'})
+    assert pull_all['isOk'], pull_all
+    print('pull_all_message_wired', json.dumps(pull_all.get('result', {}), ensure_ascii=False))
+    push_all = so.evaluate('(message) => chrome.runtime.sendMessage(message)', {'type': 'CookieSyncPushAll'})
+    assert push_all['isOk'], push_all
+    print('push_all_message_wired', json.dumps(push_all.get('result', {}), ensure_ascii=False))
     seed.close()
 server.shutdown()

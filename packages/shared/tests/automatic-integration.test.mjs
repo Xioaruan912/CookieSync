@@ -532,6 +532,99 @@ test('115 restore verifies login keys and reports an honest health status', asyn
   }
 });
 
+test('pull all applies every allowed remote domain, drops its pending job, and skips paused sites', async () => {
+  const { editSyncJobs, syncDestinationKey } = require('../dist/index.js');
+  await sitePolicyStorage.setRule('pull-all.example', true);
+  await sitePolicyStorage.setRule('pull-all-blocked.example', false);
+  await domainConfigStorage.updateItem('pull-all.example', { autoPush: true, autoPull: true });
+  // These edits schedule a reconcile cycle ~1s later; let it finish so it cannot
+  // capture the fixture we arrange below (the test cookie jar does not replace
+  // same-name cookies the way a real browser does).
+  await new Promise(resolve => originalTimeout(resolve, 1500));
+  payload = JSON.stringify({
+    domainCookieMap: {
+      'pull-all.example': {
+        updateTime: Date.now(),
+        cookies: [{ name: 'sid', value: 'cloud-value', domain: '.pull-all.example', path: '/', session: true }],
+        localStorageItems: [],
+      },
+      'pull-all-blocked.example': {
+        updateTime: Date.now(),
+        cookies: [{ name: 'sid', value: 'denied-value', domain: '.pull-all-blocked.example', path: '/', session: true }],
+        localStorageItems: [],
+      },
+    },
+  });
+  etag++;
+  const key = await syncDestinationKey();
+  await editSyncJobs(key, jobs => ({
+    ...jobs,
+    'pull-all.example': {
+      domain: 'pull-all.example',
+      cookies: [{ name: 'sid', value: 'local-stale', domain: '.pull-all.example', path: '/' }],
+      localStorageItems: [],
+      userAgent: 'synthetic-browser',
+      revision: 'stale-local',
+      capturedAt: Date.now(),
+    },
+  }));
+  cookies.push({ name: 'sid', value: 'local-stale', domain: '.pull-all.example', path: '/', session: true });
+  const summary = await automatic.pullAllFromCloud();
+  assert.equal(summary.domains, 1);
+  assert.ok(summary.skipped >= 1, 'paused or unlisted sites are counted as skipped');
+  assert.ok(
+    cookies.some(cookie => cookie.name === 'sid' && cookie.value === 'cloud-value' && cookie.domain === '.pull-all.example'),
+    'the cloud copy must be applied to this browser',
+  );
+  assert.ok(!cookies.some(cookie => cookie.value === 'denied-value'), 'paused sites must never be applied');
+  assert.equal(
+    chrome.storage.local.data[key]?.['pull-all.example'],
+    undefined,
+    'the pending job of a pulled site is dropped (cloud wins)',
+  );
+  assert.ok(summary.cookies >= 1);
+});
+
+test('push all uploads allowed local sites, respects pause rules, and clears pending jobs', async () => {
+  const { editSyncJobs, syncDestinationKey } = require('../dist/index.js');
+  await sitePolicyStorage.setRule('push-all.example', true);
+  await sitePolicyStorage.setRule('push-all-paused.example', false);
+  await domainConfigStorage.updateItem('push-all.example', { autoPush: true, autoPull: true });
+  await domainConfigStorage.updateItem('push-all-paused.example', { autoPush: true, autoPull: true });
+  // Let the reconcile cycle scheduled by these edits finish before arranging.
+  await new Promise(resolve => originalTimeout(resolve, 1500));
+  payload = JSON.stringify({ domainCookieMap: {} });
+  etag++;
+  cookies.push({ name: 'sid', value: 'local-push', domain: '.push-all.example', path: '/', session: true });
+  cookies.push({ name: 'sid', value: 'paused-push', domain: '.push-all-paused.example', path: '/', session: true });
+  const key = await syncDestinationKey();
+  await editSyncJobs(key, jobs => ({
+    ...jobs,
+    'push-all.example': {
+      domain: 'push-all.example',
+      cookies: [{ name: 'sid', value: 'local-push', domain: '.push-all.example', path: '/' }],
+      localStorageItems: [],
+      userAgent: 'synthetic-browser',
+      revision: 'pending-push',
+      capturedAt: Date.now(),
+    },
+  }));
+  const summary = await automatic.pushAllToCloud();
+  assert.ok(summary.domains >= 1, 'allowed sites with local data are uploaded');
+  const saved = JSON.parse(payload).domainCookieMap;
+  assert.ok(
+    saved['push-all.example']?.cookies.some(cookie => cookie.value === 'local-push'),
+    'the local copy must reach the cloud',
+  );
+  assert.equal(saved['push-all-paused.example'], undefined, 'paused sites must never upload');
+  assert.ok(!JSON.stringify(saved).includes('paused-push'));
+  assert.equal(
+    chrome.storage.local.data[key]?.['push-all.example'],
+    undefined,
+    'the pending job is cleared after the bulk push',
+  );
+});
+
 test('after suite', async () => {
   await new Promise(resolve => server.close(resolve));
 });
