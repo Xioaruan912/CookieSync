@@ -119,7 +119,7 @@ test('a missing release ZIP and unparsable tags surface as errors, not updates',
       headers: { 'Content-Type': 'application/json' },
     });
   await update.checkLatestRelease();
-  assert.match((await readStatus()).error || '', /未找到安装 ZIP/);
+  assert.match((await readStatus()).error || '', /无法从发布页面识别版本|未找到安装 ZIP/);
 
   globalThis.fetch = async () =>
     new Response(JSON.stringify(release('nightly-2026-01-01')), {
@@ -127,5 +127,37 @@ test('a missing release ZIP and unparsable tags surface as errors, not updates',
       headers: { 'Content-Type': 'application/json' },
     });
   await update.checkLatestRelease();
-  assert.match((await readStatus()).error || '', /标签格式/);
+  assert.match((await readStatus()).error || '', /无法从发布页面识别版本|标签格式/);
+});
+
+test('a blocked API falls back to the releases page redirect and rebuilds asset URLs', async () => {
+  globalThis.fetch = async url => {
+    if (String(url).includes('api.github.com')) throw new TypeError('Failed to fetch');
+    return {
+      ok: true,
+      status: 200,
+      url: 'https://github.com/Xioaruan912/CookieSync/releases/tag/v1.13.0-build.40',
+    };
+  };
+  await update.checkLatestRelease();
+  const status = await readStatus();
+  assert.equal(status.state, 'available');
+  assert.equal(status.latestVersion, '1.13.0');
+  assert.equal(status.latestBuild, 40);
+  assert.equal(
+    status.zipUrl,
+    'https://github.com/Xioaruan912/CookieSync/releases/download/v1.13.0-build.40/CookieSync-chrome-1.13.0.zip',
+  );
+  assert.equal(
+    status.shaUrl,
+    'https://github.com/Xioaruan912/CookieSync/releases/download/v1.13.0-build.40/SHA256SUMS.txt',
+  );
+});
+
+test('both channels failing leaves an actionable network message', async () => {
+  globalThis.fetch = async () => {
+    throw new TypeError('Failed to fetch');
+  };
+  await update.checkLatestRelease();
+  assert.match((await readStatus()).error || '', /无法连接 GitHub/);
 });

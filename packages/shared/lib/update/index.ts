@@ -72,6 +72,70 @@ interface LatestRelease {
   assets?: ReleaseAsset[];
 }
 
+/** github.com HTML pages usually stay reachable when api.github.com is blocked. */
+const releaseHtmlUrl = `https://github.com/${releaseRepo}/releases/latest`;
+
+interface ReleaseInfo {
+  version: string;
+  build?: number;
+  zipUrl: string;
+  shaUrl?: string;
+}
+
+interface LatestReleaseResponse {
+  ok?: boolean;
+  status?: number;
+  url?: string;
+  json?: () => Promise<LatestRelease>;
+}
+
+/**
+ * Finds the newest release through two independent channels so a blocked
+ * api.github.com (common on mainland networks) is not a dead end:
+ * 1. the GitHub API, 2. the releases/latest redirect (tag parsed from the final
+ * URL, asset URLs reconstructed from the deterministic release naming).
+ */
+async function fetchLatestRelease(): Promise<ReleaseInfo> {
+  try {
+    const response = (await fetch(`${repoApi}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json' },
+      cache: 'no-store',
+      credentials: 'omit',
+      redirect: 'error',
+      signal: AbortSignal.timeout(checkTimeoutMs),
+    })) as LatestReleaseResponse & Response;
+    if (response.ok && response.json) {
+      const data = (await response.json()) as LatestRelease;
+      const tag = parseReleaseTag(String(data?.tag_name || ''));
+      const zip = (data?.assets || []).find(
+        asset => typeof asset.name === 'string' && asset.name.startsWith(zipPrefix) && asset.name.endsWith('.zip'),
+      );
+      const sums = (data?.assets || []).find(asset => asset.name === 'SHA256SUMS.txt');
+      if (tag && zip?.browser_download_url)
+        return { ...tag, zipUrl: zip.browser_download_url, shaUrl: sums?.browser_download_url };
+    }
+  } catch {
+    /* Fall through to the HTML redirect channel. */
+  }
+  const response = (await fetch(releaseHtmlUrl, {
+    cache: 'no-store',
+    credentials: 'omit',
+    redirect: 'follow',
+    signal: AbortSignal.timeout(checkTimeoutMs),
+  })) as LatestReleaseResponse & Response;
+  if (!response.ok) throw new Error(`GitHub HTTP ${response.status}`);
+  const match = /\/releases\/tag\/([^/?#]+)/.exec(response.url || '');
+  const tag = match ? parseReleaseTag(decodeURIComponent(match[1])) : undefined;
+  if (!tag || !match) throw new Error('无法从发布页面识别版本');
+  const tagText = decodeURIComponent(match[1]);
+  const base = `https://github.com/${releaseRepo}/releases/download/${encodeURIComponent(tagText)}`;
+  return {
+    ...tag,
+    zipUrl: `${base}/${zipPrefix}${tag.version}.zip`,
+    shaUrl: `${base}/SHA256SUMS.txt`,
+  };
+}
+
 /**
  * Queries the latest release and records it. A newer semantic version OR a
  * newer build number of the same version counts as an update; the installed
@@ -81,30 +145,14 @@ export async function checkLatestRelease(): Promise<void> {
   const current = chrome.runtime.getManifest().version;
   const currentBuild = installedBuildNumber();
   try {
-    const response = await fetch(`${repoApi}/releases/latest`, {
-      headers: { Accept: 'application/vnd.github+json' },
-      cache: 'no-store',
-      credentials: 'omit',
-      redirect: 'error',
-      signal: AbortSignal.timeout(checkTimeoutMs),
-    });
-    if (!response.ok) throw new Error(`GitHub HTTP ${response.status}`);
-    const data = (await response.json()) as LatestRelease;
-    const tag = parseReleaseTag(String(data.tag_name || ''));
-    if (!tag) throw new Error('发布标签格式无法识别');
-    const zip = (data.assets || []).find(
-      asset => typeof asset.name === 'string' && asset.name.startsWith(zipPrefix) && asset.name.endsWith('.zip'),
-    );
-    const sums = (data.assets || []).find(asset => asset.name === 'SHA256SUMS.txt');
-    if (!zip?.browser_download_url) throw new Error('发布中未找到安装 ZIP');
-
+    const release = await fetchLatestRelease();
     const status = await updateStatusStorage.get();
-    if (!isNewerRelease(tag, current, currentBuild)) {
+    if (!isNewerRelease(release, current, currentBuild)) {
       // Nothing newer than what is installed; any guided-download state is moot.
       await updateStatusStorage.update({
         state: 'idle',
-        latestVersion: tag.version,
-        latestBuild: tag.build,
+        latestVersion: release.version,
+        latestBuild: release.build,
         checkedAt: Date.now(),
         error: '',
         downloadedAt: undefined,
@@ -113,16 +161,16 @@ export async function checkLatestRelease(): Promise<void> {
       return;
     }
     // Already downloaded this exact release: keep the guided update state.
-    if (status.state === 'ready' && status.latestVersion === tag.version && status.latestBuild === tag.build) {
+    if (status.state === 'ready' && status.latestVersion === release.version && status.latestBuild === release.build) {
       await updateStatusStorage.update({ checkedAt: Date.now(), error: '' });
       return;
     }
     await updateStatusStorage.update({
       state: 'available',
-      latestVersion: tag.version,
-      latestBuild: tag.build,
-      zipUrl: zip.browser_download_url,
-      shaUrl: sums?.browser_download_url,
+      latestVersion: release.version,
+      latestBuild: release.build,
+      zipUrl: release.zipUrl,
+      shaUrl: release.shaUrl,
       checkedAt: Date.now(),
       error: '',
       // A newer release invalidates any previous guided download.
@@ -130,7 +178,12 @@ export async function checkLatestRelease(): Promise<void> {
       downloadName: undefined,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '检查更新失败';
+    const message =
+      error instanceof TypeError
+        ? '无法连接 GitHub（网络可能被屏蔽或不可用），请检查网络或代理后重试'
+        : error instanceof Error
+          ? error.message
+          : '检查更新失败';
     await updateStatusStorage.update({ checkedAt: Date.now(), error: message });
   }
 }
@@ -177,7 +230,12 @@ export async function downloadRelease(): Promise<void> {
       error: '',
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '下载更新失败';
+    const message =
+      error instanceof TypeError
+        ? '无法连接 GitHub 下载更新，请检查网络或代理后重试'
+        : error instanceof Error
+          ? error.message
+          : '下载更新失败';
     await updateStatusStorage.update({ state: 'available', error: message });
     throw new Error(message);
   }
