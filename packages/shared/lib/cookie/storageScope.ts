@@ -1,4 +1,5 @@
 import type { ILocalStorageItem } from '@sync-your-cookie/protobuf';
+import type { IndexedDbRecordLike } from './indexedDbCodec';
 
 /**
  * Session storage and origin-tagged localStorage.
@@ -23,6 +24,10 @@ export interface StorageSnapshot {
   localStorageItems: ILocalStorageItem[];
   /** Absent when the reporter does not include session storage at all. */
   sessionStorageItems?: ILocalStorageItem[];
+  /** Absent when the reporter does not include IndexedDB at all. */
+  indexedDBRecords?: IndexedDbRecordLike[];
+  /** Stores dropped because they did not fit the caps, for diagnostics. */
+  skippedIndexedDB?: string[];
   /** Items dropped by the caps above; surfaced as diagnostics, never silently. */
   truncated?: number;
 }
@@ -108,3 +113,6 @@ export function selectScopedItems(items: ILocalStorageItem[] | undefined, origin
 export function sessionStorageEnabled(globalDefault?: boolean, siteValue?: boolean) {
   return siteValue ?? globalDefault ?? false;
 }
+
+/** IndexedDB uses the same opt-in precedence as session storage. */
+export const indexedDbEnabled = sessionStorageEnabled;

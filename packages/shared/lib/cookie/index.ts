@@ -4,5 +4,6 @@ export * from './restore';
 
 export * from './automatic';
 export * from './fingerprint';
+export * from './indexedDbCodec';
 export * from './storageScope';
 export * from './syncIdentity';

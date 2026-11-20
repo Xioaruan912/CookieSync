@@ -691,6 +691,302 @@ export const LocalStorageItem = $root.LocalStorageItem = (() => {
     return LocalStorageItem;
 })();
 
+export const IndexedDBRecord = $root.IndexedDBRecord = (() => {
+
+    /**
+     * Properties of an IndexedDBRecord.
+     * @exports IIndexedDBRecord
+     * @interface IIndexedDBRecord
+     * @property {string|null} [database] IndexedDBRecord database
+     * @property {string|null} [store] IndexedDBRecord store
+     * @property {string|null} [key] IndexedDBRecord key
+     * @property {string|null} [value] IndexedDBRecord value
+     * @property {string|null} [origin] IndexedDBRecord origin
+     */
+
+    /**
+     * Constructs a new IndexedDBRecord.
+     * @exports IndexedDBRecord
+     * @classdesc Represents an IndexedDBRecord.
+     * @implements IIndexedDBRecord
+     * @constructor
+     * @param {IIndexedDBRecord=} [properties] Properties to set
+     */
+    function IndexedDBRecord(properties) {
+        if (properties)
+            for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                if (properties[keys[i]] != null)
+                    this[keys[i]] = properties[keys[i]];
+    }
+
+    /**
+     * IndexedDBRecord database.
+     * @member {string} database
+     * @memberof IndexedDBRecord
+     * @instance
+     */
+    IndexedDBRecord.prototype.database = "";
+
+    /**
+     * IndexedDBRecord store.
+     * @member {string} store
+     * @memberof IndexedDBRecord
+     * @instance
+     */
+    IndexedDBRecord.prototype.store = "";
+
+    /**
+     * IndexedDBRecord key.
+     * @member {string} key
+     * @memberof IndexedDBRecord
+     * @instance
+     */
+    IndexedDBRecord.prototype.key = "";
+
+    /**
+     * IndexedDBRecord value.
+     * @member {string} value
+     * @memberof IndexedDBRecord
+     * @instance
+     */
+    IndexedDBRecord.prototype.value = "";
+
+    /**
+     * IndexedDBRecord origin.
+     * @member {string} origin
+     * @memberof IndexedDBRecord
+     * @instance
+     */
+    IndexedDBRecord.prototype.origin = "";
+
+    /**
+     * Creates a new IndexedDBRecord instance using the specified properties.
+     * @function create
+     * @memberof IndexedDBRecord
+     * @static
+     * @param {IIndexedDBRecord=} [properties] Properties to set
+     * @returns {IndexedDBRecord} IndexedDBRecord instance
+     */
+    IndexedDBRecord.create = function create(properties) {
+        return new IndexedDBRecord(properties);
+    };
+
+    /**
+     * Encodes the specified IndexedDBRecord message. Does not implicitly {@link IndexedDBRecord.verify|verify} messages.
+     * @function encode
+     * @memberof IndexedDBRecord
+     * @static
+     * @param {IIndexedDBRecord} message IndexedDBRecord message or plain object to encode
+     * @param {$protobuf.Writer} [writer] Writer to encode to
+     * @returns {$protobuf.Writer} Writer
+     */
+    IndexedDBRecord.encode = function encode(message, writer) {
+        if (!writer)
+            writer = $Writer.create();
+        if (message.database != null && Object.hasOwnProperty.call(message, "database"))
+            writer.uint32(/* id 1, wireType 2 =*/10).string(message.database);
+        if (message.store != null && Object.hasOwnProperty.call(message, "store"))
+            writer.uint32(/* id 2, wireType 2 =*/18).string(message.store);
+        if (message.key != null && Object.hasOwnProperty.call(message, "key"))
+            writer.uint32(/* id 3, wireType 2 =*/26).string(message.key);
+        if (message.value != null && Object.hasOwnProperty.call(message, "value"))
+            writer.uint32(/* id 4, wireType 2 =*/34).string(message.value);
+        if (message.origin != null && Object.hasOwnProperty.call(message, "origin"))
+            writer.uint32(/* id 5, wireType 2 =*/42).string(message.origin);
+        return writer;
+    };
+
+    /**
+     * Encodes the specified IndexedDBRecord message, length delimited. Does not implicitly {@link IndexedDBRecord.verify|verify} messages.
+     * @function encodeDelimited
+     * @memberof IndexedDBRecord
+     * @static
+     * @param {IIndexedDBRecord} message IndexedDBRecord message or plain object to encode
+     * @param {$protobuf.Writer} [writer] Writer to encode to
+     * @returns {$protobuf.Writer} Writer
+     */
+    IndexedDBRecord.encodeDelimited = function encodeDelimited(message, writer) {
+        return this.encode(message, writer).ldelim();
+    };
+
+    /**
+     * Decodes an IndexedDBRecord message from the specified reader or buffer.
+     * @function decode
+     * @memberof IndexedDBRecord
+     * @static
+     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+     * @param {number} [length] Message length if known beforehand
+     * @returns {IndexedDBRecord} IndexedDBRecord
+     * @throws {Error} If the payload is not a reader or valid buffer
+     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+     */
+    IndexedDBRecord.decode = function decode(reader, length) {
+        if (!(reader instanceof $Reader))
+            reader = $Reader.create(reader);
+        let end = length === undefined ? reader.len : reader.pos + length, message = new $root.IndexedDBRecord();
+        while (reader.pos < end) {
+            let tag = reader.uint32();
+            switch (tag >>> 3) {
+            case 1: {
+                    message.database = reader.string();
+                    break;
+                }
+            case 2: {
+                    message.store = reader.string();
+                    break;
+                }
+            case 3: {
+                    message.key = reader.string();
+                    break;
+                }
+            case 4: {
+                    message.value = reader.string();
+                    break;
+                }
+            case 5: {
+                    message.origin = reader.string();
+                    break;
+                }
+            default:
+                reader.skipType(tag & 7);
+                break;
+            }
+        }
+        return message;
+    };
+
+    /**
+     * Decodes an IndexedDBRecord message from the specified reader or buffer, length delimited.
+     * @function decodeDelimited
+     * @memberof IndexedDBRecord
+     * @static
+     * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+     * @returns {IndexedDBRecord} IndexedDBRecord
+     * @throws {Error} If the payload is not a reader or valid buffer
+     * @throws {$protobuf.util.ProtocolError} If required fields are missing
+     */
+    IndexedDBRecord.decodeDelimited = function decodeDelimited(reader) {
+        if (!(reader instanceof $Reader))
+            reader = new $Reader(reader);
+        return this.decode(reader, reader.uint32());
+    };
+
+    /**
+     * Verifies an IndexedDBRecord message.
+     * @function verify
+     * @memberof IndexedDBRecord
+     * @static
+     * @param {Object.<string,*>} message Plain object to verify
+     * @returns {string|null} `null` if valid, otherwise the reason why it is not
+     */
+    IndexedDBRecord.verify = function verify(message) {
+        if (typeof message !== "object" || message === null)
+            return "object expected";
+        if (message.database != null && message.hasOwnProperty("database"))
+            if (!$util.isString(message.database))
+                return "database: string expected";
+        if (message.store != null && message.hasOwnProperty("store"))
+            if (!$util.isString(message.store))
+                return "store: string expected";
+        if (message.key != null && message.hasOwnProperty("key"))
+            if (!$util.isString(message.key))
+                return "key: string expected";
+        if (message.value != null && message.hasOwnProperty("value"))
+            if (!$util.isString(message.value))
+                return "value: string expected";
+        if (message.origin != null && message.hasOwnProperty("origin"))
+            if (!$util.isString(message.origin))
+                return "origin: string expected";
+        return null;
+    };
+
+    /**
+     * Creates an IndexedDBRecord message from a plain object. Also converts values to their respective internal types.
+     * @function fromObject
+     * @memberof IndexedDBRecord
+     * @static
+     * @param {Object.<string,*>} object Plain object
+     * @returns {IndexedDBRecord} IndexedDBRecord
+     */
+    IndexedDBRecord.fromObject = function fromObject(object) {
+        if (object instanceof $root.IndexedDBRecord)
+            return object;
+        let message = new $root.IndexedDBRecord();
+        if (object.database != null)
+            message.database = String(object.database);
+        if (object.store != null)
+            message.store = String(object.store);
+        if (object.key != null)
+            message.key = String(object.key);
+        if (object.value != null)
+            message.value = String(object.value);
+        if (object.origin != null)
+            message.origin = String(object.origin);
+        return message;
+    };
+
+    /**
+     * Creates a plain object from an IndexedDBRecord message. Also converts values to other types if specified.
+     * @function toObject
+     * @memberof IndexedDBRecord
+     * @static
+     * @param {IndexedDBRecord} message IndexedDBRecord
+     * @param {$protobuf.IConversionOptions} [options] Conversion options
+     * @returns {Object.<string,*>} Plain object
+     */
+    IndexedDBRecord.toObject = function toObject(message, options) {
+        if (!options)
+            options = {};
+        let object = {};
+        if (options.defaults) {
+            object.database = "";
+            object.store = "";
+            object.key = "";
+            object.value = "";
+            object.origin = "";
+        }
+        if (message.database != null && message.hasOwnProperty("database"))
+            object.database = message.database;
+        if (message.store != null && message.hasOwnProperty("store"))
+            object.store = message.store;
+        if (message.key != null && message.hasOwnProperty("key"))
+            object.key = message.key;
+        if (message.value != null && message.hasOwnProperty("value"))
+            object.value = message.value;
+        if (message.origin != null && message.hasOwnProperty("origin"))
+            object.origin = message.origin;
+        return object;
+    };
+
+    /**
+     * Converts this IndexedDBRecord to JSON.
+     * @function toJSON
+     * @memberof IndexedDBRecord
+     * @instance
+     * @returns {Object.<string,*>} JSON object
+     */
+    IndexedDBRecord.prototype.toJSON = function toJSON() {
+        return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+    };
+
+    /**
+     * Gets the default type url for IndexedDBRecord
+     * @function getTypeUrl
+     * @memberof IndexedDBRecord
+     * @static
+     * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+     * @returns {string} The default type url
+     */
+    IndexedDBRecord.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+        if (typeUrlPrefix === undefined) {
+            typeUrlPrefix = "type.googleapis.com";
+        }
+        return typeUrlPrefix + "/IndexedDBRecord";
+    };
+
+    return IndexedDBRecord;
+})();
+
 export const DomainCookie = $root.DomainCookie = (() => {
 
     /**
@@ -704,6 +1000,7 @@ export const DomainCookie = $root.DomainCookie = (() => {
      * @property {string|null} [userAgent] DomainCookie userAgent
      * @property {Array.<ILocalStorageItem>|null} [sessionStorageItems] DomainCookie sessionStorageItems
      * @property {number|null} [schema] DomainCookie schema
+     * @property {Array.<IIndexedDBRecord>|null} [indexedDBRecords] DomainCookie indexedDBRecords
      */
 
     /**
@@ -718,6 +1015,7 @@ export const DomainCookie = $root.DomainCookie = (() => {
         this.cookies = [];
         this.localStorageItems = [];
         this.sessionStorageItems = [];
+        this.indexedDBRecords = [];
         if (properties)
             for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                 if (properties[keys[i]] != null)
@@ -781,6 +1079,14 @@ export const DomainCookie = $root.DomainCookie = (() => {
     DomainCookie.prototype.schema = 0;
 
     /**
+     * DomainCookie indexedDBRecords.
+     * @member {Array.<IIndexedDBRecord>} indexedDBRecords
+     * @memberof DomainCookie
+     * @instance
+     */
+    DomainCookie.prototype.indexedDBRecords = $util.emptyArray;
+
+    /**
      * Creates a new DomainCookie instance using the specified properties.
      * @function create
      * @memberof DomainCookie
@@ -821,6 +1127,9 @@ export const DomainCookie = $root.DomainCookie = (() => {
                 $root.LocalStorageItem.encode(message.sessionStorageItems[i], writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
         if (message.schema != null && Object.hasOwnProperty.call(message, "schema"))
             writer.uint32(/* id 9, wireType 0 =*/72).uint32(message.schema);
+        if (message.indexedDBRecords != null && message.indexedDBRecords.length)
+            for (let i = 0; i < message.indexedDBRecords.length; ++i)
+                $root.IndexedDBRecord.encode(message.indexedDBRecords[i], writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
         return writer;
     };
 
@@ -887,6 +1196,12 @@ export const DomainCookie = $root.DomainCookie = (() => {
                 }
             case 9: {
                     message.schema = reader.uint32();
+                    break;
+                }
+            case 10: {
+                    if (!(message.indexedDBRecords && message.indexedDBRecords.length))
+                        message.indexedDBRecords = [];
+                    message.indexedDBRecords.push($root.IndexedDBRecord.decode(reader, reader.uint32()));
                     break;
                 }
             default:
@@ -963,6 +1278,15 @@ export const DomainCookie = $root.DomainCookie = (() => {
         if (message.schema != null && message.hasOwnProperty("schema"))
             if (!$util.isInteger(message.schema))
                 return "schema: integer expected";
+        if (message.indexedDBRecords != null && message.hasOwnProperty("indexedDBRecords")) {
+            if (!Array.isArray(message.indexedDBRecords))
+                return "indexedDBRecords: array expected";
+            for (let i = 0; i < message.indexedDBRecords.length; ++i) {
+                let error = $root.IndexedDBRecord.verify(message.indexedDBRecords[i]);
+                if (error)
+                    return "indexedDBRecords." + error;
+            }
+        }
         return null;
     };
 
@@ -1030,6 +1354,16 @@ export const DomainCookie = $root.DomainCookie = (() => {
         }
         if (object.schema != null)
             message.schema = object.schema >>> 0;
+        if (object.indexedDBRecords) {
+            if (!Array.isArray(object.indexedDBRecords))
+                throw TypeError(".DomainCookie.indexedDBRecords: array expected");
+            message.indexedDBRecords = [];
+            for (let i = 0; i < object.indexedDBRecords.length; ++i) {
+                if (typeof object.indexedDBRecords[i] !== "object")
+                    throw TypeError(".DomainCookie.indexedDBRecords: object expected");
+                message.indexedDBRecords[i] = $root.IndexedDBRecord.fromObject(object.indexedDBRecords[i]);
+            }
+        }
         return message;
     };
 
@@ -1050,6 +1384,7 @@ export const DomainCookie = $root.DomainCookie = (() => {
             object.cookies = [];
             object.localStorageItems = [];
             object.sessionStorageItems = [];
+            object.indexedDBRecords = [];
         }
         if (options.defaults) {
             if ($util.Long) {
@@ -1094,6 +1429,11 @@ export const DomainCookie = $root.DomainCookie = (() => {
         }
         if (message.schema != null && message.hasOwnProperty("schema"))
             object.schema = message.schema;
+        if (message.indexedDBRecords && message.indexedDBRecords.length) {
+            object.indexedDBRecords = [];
+            for (let j = 0; j < message.indexedDBRecords.length; ++j)
+                object.indexedDBRecords[j] = $root.IndexedDBRecord.toObject(message.indexedDBRecords[j], options);
+        }
         return object;
     };
 

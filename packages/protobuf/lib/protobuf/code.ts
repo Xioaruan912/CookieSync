@@ -32,5 +32,5 @@ export const decodeCookiesMap = async (buffer: Uint8Array, isDeCompress: boolean
   return message;
 };
 
-export type { ICookie, ICookiesMap, ILocalStorageItem } from './proto/cookie';
+export type { ICookie, ICookiesMap, IIndexedDBRecord, ILocalStorageItem } from './proto/cookie';
 

@@ -41,6 +41,10 @@ const {
   domainContentHash,
   localStorageContentHash,
   storageBytes,
+  encodeIndexedDbValue,
+  decodeIndexedDbValue,
+  fitIndexedDbRecords,
+  indexedDbLimits,
 } = require('../dist/index.js');
 const { encodeCookiesMap, decodeCookiesMap } = require('@sync-your-cookie/protobuf');
 
@@ -240,7 +244,10 @@ test('protobuf round trip carries origin, session storage and the schema marker'
         cookies: [{ domain: '.example.com', name: 'sid', value: 'x', session: true, path: '/' }],
         localStorageItems: [{ key: 'token', value: 'v', origin: WWW }],
         sessionStorageItems: [{ key: 'ss', value: 's', origin: APP }],
-        schema: 2,
+        indexedDBRecords: [
+          { database: 'db', store: 'auth', key: '["s","k"]', value: '["s","v"]', origin: WWW },
+        ],
+        schema: 3,
         userAgent: 'ua',
       },
     },
@@ -249,7 +256,9 @@ test('protobuf round trip carries origin, session storage and the schema marker'
   const entry = decoded.domainCookieMap['example.com'];
   assert.equal(entry.localStorageItems[0].origin, WWW);
   assert.equal(entry.sessionStorageItems[0].origin, APP);
-  assert.equal(entry.schema, 2);
+  assert.equal(entry.indexedDBRecords[0].database, 'db');
+  assert.equal(entry.indexedDBRecords[0].origin, WWW);
+  assert.equal(entry.schema, 3);
   assert.deepEqual(
     await domainContentHash(entry),
     await domainContentHash(map.domainCookieMap['example.com']),
@@ -260,6 +269,72 @@ test('protobuf round trip carries origin, session storage and the schema marker'
 test('storageBytes counts both key and value', () => {
   assert.equal(storageBytes([{ key: 'ab', value: 'cd' }]), 8);
   assert.equal(storageBytes(undefined), 0);
+});
+
+test('indexeddb codec round trips structured-clone values without loss', async () => {
+  const values = [
+    null,
+    undefined,
+    true,
+    42,
+    'text',
+    new Date(1700000000000),
+    new Uint8Array([1, 2, 3]),
+    new Map([['a', 1]]),
+    new Set([1, 'b']),
+    { nested: { list: [1, { deep: true }] } },
+  ];
+  for (const value of values) {
+    const encoded = JSON.stringify(await encodeIndexedDbValue(value));
+    assert.deepEqual(decodeIndexedDbValue(JSON.parse(encoded)), value);
+  }
+  assert.ok(Number.isNaN(decodeIndexedDbValue(JSON.parse(JSON.stringify(await encodeIndexedDbValue(NaN))))));
+  const blob = new Blob(['hello'], { type: 'text/plain' });
+  const decodedBlob = decodeIndexedDbValue(JSON.parse(JSON.stringify(await encodeIndexedDbValue(blob))));
+  assert.equal(decodedBlob.type, 'text/plain');
+  assert.equal(await decodedBlob.text(), 'hello');
+  await assert.rejects(encodeIndexedDbValue(() => {}), /不受支持/);
+});
+
+test('indexeddb capture keeps or drops whole stores and never half-captures', () => {
+  const records = [
+    { database: 'db', store: 'auth', key: '["s","k"]', value: '"v"', origin: WWW },
+    { database: 'db', store: 'cache', key: '["s","k2"]', value: 'x'.repeat(indexedDbLimits.maxBytesPerStore), origin: WWW },
+  ];
+  const fitted = fitIndexedDbRecords(records, indexedDbLimits.maxBytesPerOrigin);
+  assert.equal(fitted.records.length, 1);
+  assert.equal(fitted.records[0].store, 'auth');
+  assert.deepEqual(fitted.skipped, ['db/cache']);
+});
+
+test('indexeddb records merge per origin and stay put when not reported', () => {
+  const cached = {
+    localStorageItems: [],
+    indexedDBRecords: [
+      { database: 'db', store: 'auth', key: '["s","a"]', value: '"app"', origin: APP },
+      { database: 'db', store: 'auth', key: '["s","w"]', value: '"old"', origin: WWW },
+    ],
+  };
+  const observed = {
+    origin: WWW,
+    localStorageItems: [],
+    indexedDBRecords: [{ database: 'db', store: 'auth', key: '["s","w"]', value: '"new"', origin: WWW }],
+    truncated: 0,
+  };
+  const merged = pickAutomaticStorage(observed, undefined, cached, false, true, true);
+  assert.deepEqual(
+    merged.indexedDBRecords.map(record => [record.origin, record.value]),
+    [
+      [APP, '"app"'],
+      [WWW, '"new"'],
+    ],
+  );
+
+  const silent = pickAutomaticStorage({ origin: WWW, localStorageItems: [], truncated: 0 }, undefined, cached, false, true, true);
+  assert.deepEqual(silent.indexedDBRecords.map(record => record.origin), [APP, WWW]);
+
+  const disabled = pickAutomaticStorage(observed, undefined, cached, false, true, false);
+  assert.deepEqual(disabled.indexedDBRecords.map(record => record.value), ['"app"', '"old"']);
 });
 
 // End-to-end restoration through the browser mock: each tab receives only its

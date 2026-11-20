@@ -21,13 +21,26 @@ interface OverviewRow {
   autoPush: boolean;
   autoPull: boolean;
   paused: boolean;
-  pending?: { capturedAt?: number; cookies: number; localStorageItems: number; sessionStorageItems: number };
-  cached?: { updateTime?: number; cookies: number; localStorageItems: number; sessionStorageItems: number };
+  pending?: {
+    capturedAt?: number;
+    cookies: number;
+    localStorageItems: number;
+    sessionStorageItems: number;
+    indexedDBRecords: number;
+  };
+  cached?: {
+    updateTime?: number;
+    cookies: number;
+    localStorageItems: number;
+    sessionStorageItems: number;
+    indexedDBRecords: number;
+  };
   health?: { state?: 'ok' | 'invalid' | 'unknown'; message?: string; checkedAt?: number; userName?: string };
   lastPushAt?: number;
   lastPullAt?: number;
   error?: string;
   truncated?: number;
+  indexedDbSkipped?: string[];
   attention: string[];
 }
 
@@ -312,6 +325,13 @@ export function OverviewPanel() {
                       截断 {row.truncated} 项
                     </span>
                   ) : null}
+                  {row.indexedDbSkipped?.length ? (
+                    <span
+                      className="overview-chip is-warn"
+                      title={`IndexedDB 未同步：${row.indexedDbSkipped.slice(0, 6).join('、')}`}>
+                      IDB 跳过 {row.indexedDbSkipped.length} 个仓库
+                    </span>
+                  ) : null}
                   {row.error ? (
                     <span className="overview-chip is-warn" title={row.error}>
                       {row.error}
@@ -327,6 +347,7 @@ export function OverviewPanel() {
                 <span>{row.cached?.cookies ?? 0} Cookie</span>
                 <span>
                   {row.cached?.localStorageItems ?? 0} 本地 · {row.cached?.sessionStorageItems ?? 0} 会话
+                  {row.cached?.indexedDBRecords ? ` · ${row.cached.indexedDBRecords} IDB` : ''}
                 </span>
               </div>
               <div role="cell" className="overview-times">

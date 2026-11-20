@@ -105,8 +105,11 @@ const CookieTable = () => {
     if (value.cookies?.length) {
       totalCookieItem += value.cookies.length;
     }
-    if (value.localStorageItems?.length || value.sessionStorageItems?.length) {
-      totalLocalStorageItem += (value.localStorageItems?.length || 0) + (value.sessionStorageItems?.length || 0);
+    if (value.localStorageItems?.length || value.sessionStorageItems?.length || value.indexedDBRecords?.length) {
+      totalLocalStorageItem +=
+        (value.localStorageItems?.length || 0) +
+        (value.sessionStorageItems?.length || 0) +
+        (value.indexedDBRecords?.length || 0);
     }
     domainList.push({
       id: key,

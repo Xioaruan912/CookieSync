@@ -5,6 +5,8 @@ export interface ISettings {
   includeLocalStorage?: boolean;
   /** Default for session storage; a site switch overrides it. Off by default. */
   includeSessionStorage?: boolean;
+  /** Experimental: capture small IndexedDB object stores. Off by default. */
+  includeIndexedDB?: boolean;
   localStorageGetting?: boolean;
   contextMenu?: boolean;
   encryptionEnabled?: boolean;
@@ -31,6 +33,7 @@ const initStorage = (): BaseStorage<ISettings> => {
       protobufEncoding: false,
       includeLocalStorage: true,
       includeSessionStorage: false,
+      includeIndexedDB: false,
       contextMenu: false,
       startupPull: true,
       backgroundSync: true,

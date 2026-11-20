@@ -6,12 +6,14 @@ import {
   storageLimits,
   type StorageSnapshot,
 } from './storageScope';
+import { fitIndexedDbRecords, indexedDbLimits, type IndexedDbRecordLike } from './indexedDbCodec';
 
 export interface PendingSyncJob {
   domain: string;
   cookies: ICookie[];
   localStorageItems: ILocalStorageItem[];
   sessionStorageItems?: ILocalStorageItem[];
+  indexedDBRecords?: IndexedDbRecordLike[];
   userAgent: string;
   revision: string;
   /** Wall clock (ms) when the local change was captured; drives newer-wins resolution. */
@@ -46,6 +48,8 @@ export function pickAutomaticLocalItems(
 export interface PickedStorage {
   localStorageItems: ILocalStorageItem[];
   sessionStorageItems: ILocalStorageItem[];
+  indexedDBRecords: IndexedDbRecordLike[];
+  skippedIndexedDB: string[];
   truncated: number;
 }
 
@@ -53,23 +57,44 @@ export interface PickedStorage {
  * Merge one page's snapshot into the stored copy for this site. Only the
  * reporting origin is replaced; other origins and paused-site data survive.
  * Without a fresh snapshot the pending job (or the last applied copy) is kept,
- * so a closed tab never erases session storage.
+ * so a closed tab never erases session storage or IndexedDB.
  */
 export function pickAutomaticStorage(
   observed: StorageSnapshot | undefined,
   pending: PendingSyncJob | undefined,
-  cached: { localStorageItems?: ILocalStorageItem[] | null; sessionStorageItems?: ILocalStorageItem[] | null },
+  cached: {
+    localStorageItems?: ILocalStorageItem[] | null;
+    sessionStorageItems?: ILocalStorageItem[] | null;
+    indexedDBRecords?: {
+      origin?: string | null;
+      database?: string | null;
+      store?: string | null;
+      key?: string | null;
+      value?: string | null;
+    }[] | null;
+  },
   sessionEnabled: boolean,
   includeLocalStorage = true,
+  indexedDbEnabled = false,
 ): PickedStorage {
   const cachedLocal = cached.localStorageItems || [];
   const cachedSession = cached.sessionStorageItems || [];
+  const cachedIdb: IndexedDbRecordLike[] = (cached.indexedDBRecords || []).map(record => ({
+    database: record.database || '',
+    store: record.store || '',
+    key: record.key || '',
+    value: record.value || '',
+    origin: record.origin || '',
+  }));
   const pendingLocal = pending?.localStorageItems || cachedLocal;
   const pendingSession = pending?.sessionStorageItems || cachedSession;
+  const pendingIdb = pending?.indexedDBRecords || cachedIdb;
   if (!observed) {
     return {
       localStorageItems: includeLocalStorage ? pendingLocal : cachedLocal,
       sessionStorageItems: sessionEnabled ? pendingSession : cachedSession,
+      indexedDBRecords: indexedDbEnabled ? pendingIdb : cachedIdb,
+      skippedIndexedDB: [],
       truncated: 0,
     };
   }
@@ -85,6 +110,21 @@ export function pickAutomaticStorage(
     ? scopeStorageItems(observed.sessionStorageItems, observed.origin, budget - storageBytes(scoped.items))
     : { items: [], truncated: 0 };
   const sessionReported = sessionEnabled && !!observed.sessionStorageItems;
+  // IndexedDB is whole-store replacement, capped per origin and per store.
+  const idbBudget = Math.max(
+    0,
+    Math.min(
+      indexedDbLimits.maxBytesPerOrigin,
+      storageLimits.maxBytesPerDomain - storageBytes(scoped.items) - storageBytes(session.items),
+    ),
+  );
+  const fitted = indexedDbEnabled && observed.indexedDBRecords
+    ? fitIndexedDbRecords(observed.indexedDBRecords, idbBudget)
+    : { records: [], skipped: [] as string[], bytes: 0 };
+  const idbReported = indexedDbEnabled && !!observed.indexedDBRecords;
+  const idbRecords = idbReported
+    ? [...cachedIdb.filter(record => (record.origin || '') !== observed.origin), ...fitted.records]
+    : cachedIdb;
 
   return {
     localStorageItems: includeLocalStorage
@@ -93,6 +133,8 @@ export function pickAutomaticStorage(
     sessionStorageItems: sessionReported
       ? mergeScopedItems(cachedSession, session.items, observed.origin)
       : cachedSession,
+    indexedDBRecords: idbRecords,
+    skippedIndexedDB: fitted.skipped,
     truncated: scoped.truncated + session.truncated + (observed.truncated || 0),
   };
 }

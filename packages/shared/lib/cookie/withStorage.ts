@@ -1,8 +1,9 @@
 import { domainContentHash, cookieContentHash, localStorageContentHash } from './fingerprint';
 import { setSyncBaseline, getPendingRevision, settleManualSync } from './syncIdentity';
 import { cookieSetDetails, matchesSiteScope, syncCookieDomain } from './restore';
-import { pageOrigin, selectScopedItems, sessionStorageEnabled } from './storageScope';
-import { ICookie, ICookiesMap, ILocalStorageItem } from '@sync-your-cookie/protobuf';
+import { pageOrigin, selectScopedItems, sessionStorageEnabled, indexedDbEnabled } from './storageScope';
+import type { IndexedDbRecordLike } from './indexedDbCodec';
+import { ICookie, ICookiesMap, IIndexedDBRecord, ILocalStorageItem } from '@sync-your-cookie/protobuf';
 import { Cookie, cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
 import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
 import { domainStatusStorage } from '@sync-your-cookie/storage/lib/domainStatusStorage';
@@ -79,11 +80,12 @@ const applyStorageToTab = async (
   origin: string,
   localItems: ILocalStorageItem[],
   sessionItems: ILocalStorageItem[],
+  indexedDbItems: IndexedDbRecordLike[] = [],
 ) => {
   const readCurrent = async (): Promise<PageStorageResult | undefined> => {
     const newer = await chrome.tabs.sendMessage(tabId, {
       type: MessageType.GetPageStorage,
-      payload: { domain: host, origin, includeSessionStorage: true },
+      payload: { domain: host, origin, includeSessionStorage: true, includeIndexedDB: true },
     });
     if (newer?.isOk && newer.result && !Array.isArray(newer.result)) return newer.result as PageStorageResult;
     const legacy = await chrome.tabs.sendMessage(tabId, {
@@ -106,7 +108,16 @@ const applyStorageToTab = async (
   const sessionChanged =
     sessionItems.length > 0 &&
     (!current || (await localStorageContentHash(current.sessionStorageItems || [])) !== (await localStorageContentHash(sessionItems)));
-  if (!localChanged && !sessionChanged) return { localChanged, sessionChanged };
+  const idbSignature = (records: IndexedDbRecordLike[] = []) =>
+    JSON.stringify(
+      [...records]
+        .map(record => [record.database, record.store, record.key, record.value, record.origin || ''])
+        .sort((a, b) => a.join('\0').localeCompare(b.join('\0'))),
+    );
+  const indexedDbChanged =
+    indexedDbItems.length > 0 &&
+    (!current || idbSignature(current.indexedDBRecords as IndexedDbRecordLike[]) !== idbSignature(indexedDbItems));
+  if (!localChanged && !sessionChanged && !indexedDbChanged) return { localChanged, sessionChanged, indexedDbChanged };
 
   const response = await chrome.tabs
     .sendMessage(tabId, {
@@ -116,7 +127,9 @@ const applyStorageToTab = async (
         origin,
         localStorageItems: localChanged ? localItems : undefined,
         sessionStorageItems: sessionChanged ? sessionItems : undefined,
+        indexedDBRecords: indexedDbChanged ? indexedDbItems : undefined,
         replaceSession: true,
+        replaceIndexedDB: true,
       },
     })
     .catch(async (error: unknown) => {
@@ -129,7 +142,7 @@ const applyStorageToTab = async (
       throw error;
     });
   if (response?.isOk === false) throw new Error('页面存储写入失败');
-  return { localChanged, sessionChanged };
+  return { localChanged, sessionChanged, indexedDbChanged };
 };
 
 /**
@@ -142,7 +155,12 @@ export const applyPageStorageToTabs = async (
   host: string,
   localItems: ILocalStorageItem[],
   sessionItems: ILocalStorageItem[] = [],
-  options: { targetTabId?: number; includeSessionStorage?: boolean } = {},
+  options: {
+    targetTabId?: number;
+    includeSessionStorage?: boolean;
+    includeIndexedDB?: boolean;
+    indexedDBRecords?: IndexedDbRecordLike[];
+  } = {},
 ) => {
   const tabs = await chrome.tabs.query({});
   const matching = tabs.filter(tab => {
@@ -157,6 +175,7 @@ export const applyPageStorageToTabs = async (
   });
   let localChanged = false;
   let sessionChanged = false;
+  let indexedDbChanged = false;
   let failed = false;
   const changedTabIds: number[] = [];
   for (const tab of matching) {
@@ -166,17 +185,21 @@ export const applyPageStorageToTabs = async (
     const session = options.includeSessionStorage
       ? selectScopedItems(sessionItems, origin).map(item => ({ ...item, origin }))
       : [];
+    const idb = options.includeIndexedDB
+      ? (options.indexedDBRecords || []).filter(record => !record.origin || record.origin === origin)
+      : [];
     try {
-      const result = await applyStorageToTab(tab.id!, host, origin, local, session);
+      const result = await applyStorageToTab(tab.id!, host, origin, local, session, idb);
       localChanged = localChanged || result.localChanged;
       sessionChanged = sessionChanged || result.sessionChanged;
-      if (result.localChanged || result.sessionChanged) changedTabIds.push(tab.id!);
+      indexedDbChanged = indexedDbChanged || result.indexedDbChanged;
+      if (result.localChanged || result.sessionChanged || result.indexedDbChanged) changedTabIds.push(tab.id!);
     } catch {
       failed = true;
     }
   }
   if (failed) throw new Error('部分页面的 LocalStorage 未恢复，请刷新该网站后重试');
-  return { localChanged, sessionChanged, changedTabIds };
+  return { localChanged, sessionChanged, indexedDbChanged, changedTabIds };
 };
 
 /** LocalStorage-only helper kept for callers that do not carry origins. */
@@ -225,12 +248,22 @@ const restoreCookieMap = async (
   const settingsInfo = await settingsStorage.get();
   const storedLocal = cookieMap?.domainCookieMap?.[host]?.localStorageItems || [];
   const storedSession = cookieMap?.domainCookieMap?.[host]?.sessionStorageItems || [];
+  const storedIdb = (cookieMap?.domainCookieMap?.[host]?.indexedDBRecords || []) as IndexedDbRecordLike[];
   const siteConfig = (await domainConfigStorage.get()).domainMap[host];
   const sessionEnabled = sessionStorageEnabled(settingsInfo.includeSessionStorage, siteConfig?.includeSessionStorage);
+  const idbEnabled = indexedDbEnabled(settingsInfo.includeIndexedDB, siteConfig?.includeIndexedDB);
   const localStorageItems = settingsInfo.includeLocalStorage === false ? [] : storedLocal;
   const sessionItems = sessionEnabled ? storedSession : [];
-  if (cookieFilter && !cookieDetails.length && !localStorageItems.length && !sessionItems.length) return cookieMap;
-  if (cookieDetails.length === 0 && localStorageItems.length === 0 && sessionItems.length === 0) {
+  const idbItems = idbEnabled ? storedIdb : [];
+  if (
+    cookieFilter &&
+    !cookieDetails.length &&
+    !localStorageItems.length &&
+    !sessionItems.length &&
+    !idbItems.length
+  )
+    return cookieMap;
+  if (cookieDetails.length === 0 && localStorageItems.length === 0 && sessionItems.length === 0 && idbItems.length === 0) {
     throw new Error('远程没有该网站的登录数据，请先在已登录电脑推送');
   } else {
     const cookiesPromiseList: Promise<unknown>[] = [];
@@ -260,17 +293,27 @@ const restoreCookieMap = async (
     // Cookie writes complete before page-local state is applied or a tab is refreshed.
     await Promise.all(cookiesPromiseList);
     const pageStorage =
-      localStorageItems.length || sessionItems.length
+      localStorageItems.length || sessionItems.length || idbItems.length
         ? await applyPageStorageToTabs(host, localStorageItems, sessionItems, {
             targetTabId,
             includeSessionStorage: sessionEnabled,
+            includeIndexedDB: idbEnabled,
+            indexedDBRecords: idbItems,
           })
-        : { localChanged: false, sessionChanged: false, changedTabIds: [] as number[] };
+        : {
+            localChanged: false,
+            sessionChanged: false,
+            indexedDbChanged: false,
+            changedTabIds: [] as number[],
+          };
 
-    if (!eligible.length && !localStorageItems.length && !sessionItems.length) {
+    if (!eligible.length && !localStorageItems.length && !sessionItems.length && !idbItems.length) {
       throw new Error('没有匹配且未过期的 Cookie，请在已登录电脑重新推送');
     }
-    if (isReload && (cookiesChanged || pageStorage.localChanged || pageStorage.sessionChanged)) {
+    if (
+      isReload &&
+      (cookiesChanged || pageStorage.localChanged || pageStorage.sessionChanged || pageStorage.indexedDbChanged)
+    ) {
       const changed = new Set(pageStorage.changedTabIds);
       chrome.tabs.query({}, function (tabs) {
         tabs.forEach(function (tab) {
@@ -302,6 +345,7 @@ const pushCookiesImpl = async (
   localStorageItems: ILocalStorageItem[] = [],
   userAgent = '',
   sessionStorageItems: ILocalStorageItem[] = [],
+  indexedDBRecords: IIndexedDBRecord[] = [],
 ): Promise<PushCookiesResponse> => {
   const accountInfo = await accountStorage.get();
   const pendingRevision = await getPendingRevision(domain);
@@ -320,6 +364,7 @@ const pushCookiesImpl = async (
       userAgent,
       oldCookie,
       sessionStorageItems,
+      indexedDBRecords,
     );
 
     await checkSuccessAndUpdate(res, cookieMap);

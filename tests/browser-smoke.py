@@ -148,6 +148,68 @@ with sync_playwright() as p:
     else:
         raise AssertionError('session storage was not restored after the reload')
     print('origin_tagged_localstorage_and_session_storage_passed')
+    # IndexedDB is opt-in and restores whole object stores after a reload.
+    options.evaluate('''async () => {
+        const key='settings-storage-key'; const saved=(await chrome.storage.sync.get(key))[key];
+        await chrome.storage.sync.set({[key]:{...saved, includeIndexedDB:true}});
+    }''')
+    site.evaluate('''() => new Promise((resolve, reject) => {
+        const request = indexedDB.open('cookiesync_fixture', 1);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains('auth')) db.createObjectStore('auth');
+        };
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction('auth', 'readwrite');
+            tx.objectStore('auth').put({ token: 'idb-token', at: 123 }, 'k1');
+            tx.oncomplete = () => { db.close(); resolve(true); };
+            tx.onerror = () => reject(tx.error);
+        };
+    })''')
+    site.bring_to_front()
+    idb_push = options.evaluate('(message) => chrome.runtime.sendMessage(message)', payload)
+    assert idb_push['isOk'], idb_push
+    entry = json.loads(files['/dav/cookies.txt'][0])['domainCookieMap'][f'127.0.0.1:{server.server_port}']
+    idb_records = entry.get('indexedDBRecords') or []
+    assert any(r['database'] == 'cookiesync_fixture' and r['store'] == 'auth' and r['origin'] == base for r in idb_records), idb_records
+    site.evaluate('''() => new Promise((resolve, reject) => {
+        const request = indexedDB.open('cookiesync_fixture');
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction('auth', 'readwrite');
+            tx.objectStore('auth').clear();
+            tx.oncomplete = () => { db.close(); resolve(true); };
+            tx.onerror = () => reject(tx.error);
+        };
+    })''')
+    idb_pull = options.evaluate('(message) => chrome.runtime.sendMessage(message)', {
+        'type':'PullCookie','payload':{'domain':f'127.0.0.1:{server.server_port}','activeTabUrl':base+'/site','reload':True}})
+    assert idb_pull['isOk'], idb_pull
+    site.wait_for_load_state('load')
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        try:
+            value = site.evaluate('''() => new Promise((resolve) => {
+                const request = indexedDB.open('cookiesync_fixture');
+                request.onerror = () => resolve(null);
+                request.onsuccess = () => {
+                    const db = request.result;
+                    if (!db.objectStoreNames.contains('auth')) { db.close(); resolve(null); return; }
+                    const get = db.transaction('auth', 'readonly').objectStore('auth').get('k1');
+                    get.onsuccess = () => { db.close(); resolve(get.result); };
+                    get.onerror = () => { db.close(); resolve(null); };
+                };
+            })''')
+            if value and value.get('token') == 'idb-token': break
+        except Exception:
+            pass
+        time.sleep(0.3)
+    else:
+        raise AssertionError('IndexedDB record was not restored after the reload')
+    print('indexeddb_opt_in_roundtrip_passed')
     # Conditional-PUT gateways must fail visibly, then work only after explicit opt-in.
     context.add_cookies([{'name':'session_test','value':'changed_login','url':base,'httpOnly':True,'sameSite':'Lax'}])
     reject_conditions = True

@@ -87,6 +87,7 @@ const Popup = () => {
   const autoPush = domainItemConfig.autoPush !== false;
   const autoPull = domainItemConfig.autoPull !== false;
   const sessionStorageOn = domainItemConfig.includeSessionStorage ?? settings.includeSessionStorage ?? false;
+  const indexedDbOn = domainItemConfig.includeIndexedDB ?? settings.includeIndexedDB ?? false;
   const busy = !!action || pushing || pulling || !!domainItemStatus.pushing || !!domainItemStatus.pulling;
   const siteState = !listed
     ? '未加入名单'
@@ -265,8 +266,22 @@ const Popup = () => {
                     }
                   />
                 </label>
+                <label>
+                  同步 IndexedDB（实验，此站）
+                  <Switch
+                    aria-label="同步此网站的 IndexedDB"
+                    checked={indexedDbOn}
+                    disabled={saving || busy}
+                    onCheckedChange={checked =>
+                      void changeSite(() =>
+                        domainConfigStorage.updateItem(domain, { includeIndexedDB: checked }),
+                      )
+                    }
+                  />
+                </label>
                 <p className="text-muted-foreground mt-1 text-xs">
                   会话存储按标签页存在，恢复时会刷新此站页面一次；默认关闭以免易变值产生多余上传。
+                  IndexedDB 只同步体积较小的对象仓库，且需要页面已存在同名数据库，超出上限的仓库会跳过。
                 </p>
               </div>
             </details>
