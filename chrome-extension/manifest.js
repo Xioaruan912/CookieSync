@@ -47,6 +47,16 @@ const manifest = Object.assign(
       default_popup: 'popup/index.html',
       default_icon: 'icon-34.png',
     },
+    commands: {
+      'push-current-site': {
+        suggested_key: { default: 'Alt+Shift+U' },
+        description: '推送当前网站到云端',
+      },
+      'pull-current-site': {
+        suggested_key: { default: 'Alt+Shift+D' },
+        description: '从云端拉取当前网站',
+      },
+    },
     icons: {
       128: 'icon-128.png',
     },

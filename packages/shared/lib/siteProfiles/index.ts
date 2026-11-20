@@ -17,6 +17,8 @@
  *   future change is a one-file edit.
  */
 import { profile115 } from './115';
+import { profileDouyin } from './douyin';
+import { profileXiaohongshu } from './xiaohongshu';
 
 export interface SiteHealthCheckConfig {
   url: string;
@@ -85,12 +87,33 @@ export async function checkProfileHealth(profile: SiteProfile): Promise<SiteHeal
       redirect: 'error',
       signal: AbortSignal.timeout(requestTimeoutMs),
     });
-    if (!response.ok) {
-      return { state: response.status >= 400 && response.status < 500 ? 'invalid' : 'unknown', message: `验证请求返回 HTTP ${response.status}` };
+    // Only an explicit application answer proves anything. A WAF challenge page,
+    // a proxy login form or any non-JSON body means "we could not tell", never
+    // "you are logged out".
+    const body = await response.text().catch(() => '');
+    let data: { state?: unknown; error?: unknown; data?: { user_name?: unknown } } | null = null;
+    try {
+      data = body ? JSON.parse(body) : null;
+    } catch {
+      data = null;
     }
-    const data = (await response.json().catch(() => null)) as { state?: unknown; error?: unknown; data?: { user_name?: unknown } } | null;
-    if (data?.state === true) return { state: 'ok', userName: data.data?.user_name ? String(data.data.user_name) : undefined };
-    return { state: 'invalid', message: (typeof data?.error === 'string' && data.error) || '站点报告未登录' };
+    if (!data || typeof data !== 'object') {
+      return {
+        state: 'unknown',
+        message: response.ok
+          ? '验证响应无法识别（不是 JSON），可能被站点风控或代理拦截'
+          : `验证请求返回 HTTP ${response.status}，无法判断登录状态`,
+      };
+    }
+    if (response.ok && data.state === true)
+      return { state: 'ok', userName: data.data?.user_name ? String(data.data.user_name) : undefined };
+    if (data.state === false || typeof data.error === 'string') {
+      return { state: 'invalid', message: (typeof data.error === 'string' && data.error) || '站点报告未登录' };
+    }
+    return {
+      state: 'unknown',
+      message: response.ok ? '验证响应缺少登录状态字段' : `验证请求返回 HTTP ${response.status}`,
+    };
   } catch (error) {
     return { state: 'unknown', message: error instanceof Error ? error.message : '验证请求失败' };
   }
@@ -231,4 +254,4 @@ export async function completeQrLogin(profile: SiteProfile, token: QrToken): Pro
   return { cookies };
 }
 
-export const siteProfiles: SiteProfile[] = [profile115];
+export const siteProfiles: SiteProfile[] = [profile115, profileXiaohongshu, profileDouyin];

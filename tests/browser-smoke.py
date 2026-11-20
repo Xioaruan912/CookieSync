@@ -101,6 +101,11 @@ with sync_playwright() as p:
     print('webdav_google_config_opt_in_remote_restore_and_opt_out_passed')
     options.evaluate('''async () => { const key='settings-storage-key'; const saved=(await chrome.storage.sync.get(key))[key]; await chrome.storage.sync.set({[key]:{...saved, backgroundSync:false, startupPull:false}}); }''')
     options.screenshot(path=str(ROOT / 'settings.png'), full_page=True)
+    # First-run guide: connection and test are done, the first push is not.
+    assert options.locator('.connection-guide').is_visible()
+    assert options.locator('.connection-guide li[data-done="true"]').count() == 2
+    assert options.locator('.connection-guide li[data-done="false"]').count() == 1
+    print('first_run_connection_guide_passed')
     site = context.new_page(); site.goto(base + '/site'); site.bring_to_front()
     context.add_cookies([{'name': 'session_test', 'value': 'dummy_login', 'url': base, 'httpOnly': True, 'sameSite': 'Lax'}])
     payload = {'type': 'PushCookie', 'payload': {'host': f'127.0.0.1:{server.server_port}', 'sourceUrl': base + '/site', 'favIconUrl': ''}}
@@ -453,6 +458,7 @@ with sync_playwright() as p:
         body=json.dumps({'state': False, 'error': '登录超时，请重新登录。'})))
     so.get_by_role('button', name='立即验证', exact=True).click()
     so.get_by_text('登录已失效', exact=False).wait_for()
+    so.get_by_role('button', name='扫码重新登录', exact=True).wait_for()
     print('115_health_check_invalid_passed')
     # QR repair: mocked token → status(2) → login sets cookies through the
     # body fallback because a fulfilled response carries no Set-Cookie.
@@ -465,8 +471,7 @@ with sync_playwright() as p:
     seed.route('**passportapi.115.com/**', lambda route: route.fulfill(
         status=200, content_type='application/json',
         body=json.dumps({'state': 1, 'data': {'cookie': {'cookie': 'UID=99; CID=99; SEID=99; KID=99'}}})))
-    so.get_by_text('115.com 会话修复', exact=False).click()
-    so.get_by_role('button', name='生成二维码', exact=True).click()
+    so.get_by_role('button', name='扫码重新登录', exact=True).click()
     so.get_by_text('扫码成功，会话已更新并推送', exact=False).wait_for()
     assert any(c['name'] == 'UID' and c['value'] == '99' for c in seed.cookies('https://115.com/'))
     so.get_by_role('button', name='关闭', exact=True).click()

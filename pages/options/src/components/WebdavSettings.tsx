@@ -40,9 +40,11 @@ export function WebdavSettings() {
         setDirty(false);
         await cookieStorage.reset();
         await accountStorage.update({ selectedProvider: 'webdav' });
+        await chrome.storage.local.set({ 'cookiesync-webdav-probe-ok': Date.now() });
         toast.success('WebDAV 配置已保存');
       } else {
         await testWebdavConnection(normalized);
+        await chrome.storage.local.set({ 'cookiesync-webdav-probe-ok': Date.now() });
         toast.success('连接测试成功：已验证临时文件的创建、覆盖、读取和删除');
       }
     } catch (error) {

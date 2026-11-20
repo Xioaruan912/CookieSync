@@ -1,8 +1,10 @@
 import {
   buildOverviewRows,
+  canonicalSiteHost,
   check,
   collectSiteCookies,
   editSyncJobs,
+  matchesSiteScope,
   pickAutomaticStorage,
   pullAndSetCookies,
   pushCookies,
@@ -64,7 +66,7 @@ async function requireSite(domain: string) {
   return { config, rules };
 }
 
-async function pushSite(domain: string) {
+export async function pushSite(domain: string) {
   const { config, rules } = await requireSite(domain);
   const settings = await settingsStorage.get();
   const sessionEnabled = sessionStorageEnabled(settings.includeSessionStorage, config.includeSessionStorage);
@@ -105,7 +107,7 @@ async function pushSite(domain: string) {
   };
 }
 
-async function pullSite(domain: string, reload = true) {
+export async function pullSite(domain: string, reload = true) {
   const { config, rules } = await requireSite(domain);
   const url = config.sourceUrl || `https://${domain}`;
   await pullAndSetCookies(url, domain, reload, undefined, undefined, cookie =>
@@ -124,8 +126,7 @@ async function pullSite(domain: string, reload = true) {
 }
 
 export function initOverview() {
-  chrome.runtime.onMessage.addListener((message, sender, reply) => {
-    if (!fromExtensionPage(sender)) return;
+  chrome.runtime.onMessage.addListener((message, sender, reply) => {    if (!fromExtensionPage(sender)) return;
     if (message?.type === 'CookieSyncOverview') {
       void overviewPayload()
         .then(result => reply({ isOk: true, result }))
@@ -146,4 +147,53 @@ export function initOverview() {
     }
     return;
   });
+
+  void syncBadge();
+  chrome.storage.local.onChanged.addListener(changes => {
+    if (changes['cookiesync-auto-status']) void syncBadge();
+  });
+
+  // Alt+Shift+U / Alt+Shift+D act on the active tab's site. Same rules as the
+  // overview buttons: unknown sites are refused instead of guessed.
+  chrome.commands?.onCommand.addListener(command => {
+    if (command !== 'push-current-site' && command !== 'pull-current-site') return;
+    void (async () => {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (!tab?.url?.startsWith('http')) return;
+      let hostname: string;
+      try {
+        hostname = new URL(tab.url).hostname;
+      } catch {
+        return;
+      }
+      const config = await domainConfigStorage.get();
+      const domain =
+        Object.keys(config.domainMap).find(site => matchesSiteScope(site, hostname)) || canonicalSiteHost(hostname);
+      try {
+        if (command === 'push-current-site') await pushSite(domain);
+        else await pullSite(domain);
+        await chrome.action.setBadgeText({ text: '' });
+        await chrome.action.setTitle({ title: 'CookieSync' });
+      } catch (error) {
+        // Never log cookie values; the message is a short, user-facing reason.
+        await chrome.action.setBadgeBackgroundColor({ color: '#B4453C' });
+        await chrome.action.setBadgeText({ text: '!' });
+        await chrome.action.setTitle({
+          title: `CookieSync：${error instanceof Error ? error.message : '操作失败'}`,
+        });
+      }
+    })();
+  });
+}
+
+/** Pending count on the toolbar icon; no extra permission needed. */
+async function syncBadge() {
+  try {
+    const status = await autoSyncStatusStorage.get();
+    const count = status.pendingCount || 0;
+    await chrome.action.setBadgeBackgroundColor({ color: '#C8A24A' });
+    await chrome.action.setBadgeText({ text: count > 0 ? String(Math.min(count, 99)) : '' });
+  } catch {
+    /* Badges are cosmetic. */
+  }
 }
