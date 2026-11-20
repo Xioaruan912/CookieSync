@@ -4,26 +4,39 @@ import { ConfigChannelSettings } from './components/ConfigChannelSettings';
 import { AutoSyncStatus } from './components/AutoSyncStatus';
 import { SiteHealthSettings } from './components/SiteHealthSettings';
 import { AboutSettings } from './components/AboutSettings';
+import { OverviewPanel } from './components/OverviewPanel';
 import { useStorageSuspense, useTheme, withErrorBoundary, withSuspense } from '@sync-your-cookie/shared';
 import { accountStorage, isLegacyProvider } from '@sync-your-cookie/storage/lib/accountStorage';
+import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
 import { Button, CardContent, ThemeDropdown, Toaster } from '@sync-your-cookie/ui';
-import { Activity, Cable, ChevronRight, Globe2, Info, SlidersVertical, TriangleAlert } from 'lucide-react';
+import {
+  Activity,
+  Cable,
+  ChevronRight,
+  Globe2,
+  Info,
+  LayoutDashboard,
+  SlidersVertical,
+  TriangleAlert,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { SettingsPopover } from './components/SettingsPopover';
 
 const sections = {
+  overview: '总览',
   connection: '同步连接',
   automation: '自动同步',
   sites: '网站名单',
   about: '关于与更新',
 } as const;
 const sectionEyebrows = {
+  overview: '同步概况',
   connection: '连接与传输',
   automation: '同步行为',
   sites: '自动同步范围',
   about: '版本与发布',
 } as const;
-const sectionIcons = { connection: Cable, automation: Activity, sites: Globe2, about: Info };
+const sectionIcons = { overview: LayoutDashboard, connection: Cable, automation: Activity, sites: Globe2, about: Info };
 const currentSection = () => {
   const key = window.location.hash.slice(1);
   return Object.keys(sections).includes(key) ? key : 'connection';
@@ -40,6 +53,7 @@ const Options = () => {
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
   const accountInfo = useStorageSuspense(accountStorage);
+  const syncStatus = useStorageSuspense(autoSyncStatusStorage);
 
   const { setTheme } = useTheme();
   const version = chrome.runtime.getManifest().version;
@@ -79,6 +93,11 @@ const Options = () => {
                 <a key={key} href={'#' + key} aria-current={section === key ? 'page' : undefined}>
                   <Icon size={16} aria-hidden="true" />
                   <span>{sections[key]}</span>
+                  {key === 'overview' && syncStatus.pendingCount ? (
+                    <span className="nav-count" aria-label={`${syncStatus.pendingCount} 个网站待上传`}>
+                      {syncStatus.pendingCount}
+                    </span>
+                  ) : null}
                   <ChevronRight size={14} aria-hidden="true" />
                 </a>
               );
@@ -86,6 +105,14 @@ const Options = () => {
           </nav>
         </aside>
         <div className="settings-content">
+          <section hidden={section !== 'overview'} aria-label={sections.overview}>
+            <p className="section-eyebrow">{sectionEyebrows.overview}</p>
+            <h2 className="section-title">总览</h2>
+            <p className="section-lede">
+              所有已登记网站一屏查看：最近同步、待上传、会话状态与页面存储数量。逐站推送或拉取只影响该网站。
+            </p>
+            <OverviewPanel />
+          </section>
           <section hidden={section !== 'connection'} aria-label={sections.connection}>
             <p className="section-eyebrow">{sectionEyebrows.connection}</p>
             <h2 className="section-title">同步连接</h2>
