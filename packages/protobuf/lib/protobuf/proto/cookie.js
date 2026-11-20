@@ -449,6 +449,7 @@ export const LocalStorageItem = $root.LocalStorageItem = (() => {
      * @interface ILocalStorageItem
      * @property {string|null} [key] LocalStorageItem key
      * @property {string|null} [value] LocalStorageItem value
+     * @property {string|null} [origin] LocalStorageItem origin
      */
 
     /**
@@ -483,6 +484,14 @@ export const LocalStorageItem = $root.LocalStorageItem = (() => {
     LocalStorageItem.prototype.value = "";
 
     /**
+     * LocalStorageItem origin.
+     * @member {string} origin
+     * @memberof LocalStorageItem
+     * @instance
+     */
+    LocalStorageItem.prototype.origin = "";
+
+    /**
      * Creates a new LocalStorageItem instance using the specified properties.
      * @function create
      * @memberof LocalStorageItem
@@ -510,6 +519,8 @@ export const LocalStorageItem = $root.LocalStorageItem = (() => {
             writer.uint32(/* id 1, wireType 2 =*/10).string(message.key);
         if (message.value != null && Object.hasOwnProperty.call(message, "value"))
             writer.uint32(/* id 2, wireType 2 =*/18).string(message.value);
+        if (message.origin != null && Object.hasOwnProperty.call(message, "origin"))
+            writer.uint32(/* id 3, wireType 2 =*/26).string(message.origin);
         return writer;
     };
 
@@ -550,6 +561,10 @@ export const LocalStorageItem = $root.LocalStorageItem = (() => {
                 }
             case 2: {
                     message.value = reader.string();
+                    break;
+                }
+            case 3: {
+                    message.origin = reader.string();
                     break;
                 }
             default:
@@ -593,6 +608,9 @@ export const LocalStorageItem = $root.LocalStorageItem = (() => {
         if (message.value != null && message.hasOwnProperty("value"))
             if (!$util.isString(message.value))
                 return "value: string expected";
+        if (message.origin != null && message.hasOwnProperty("origin"))
+            if (!$util.isString(message.origin))
+                return "origin: string expected";
         return null;
     };
 
@@ -612,6 +630,8 @@ export const LocalStorageItem = $root.LocalStorageItem = (() => {
             message.key = String(object.key);
         if (object.value != null)
             message.value = String(object.value);
+        if (object.origin != null)
+            message.origin = String(object.origin);
         return message;
     };
 
@@ -631,11 +651,14 @@ export const LocalStorageItem = $root.LocalStorageItem = (() => {
         if (options.defaults) {
             object.key = "";
             object.value = "";
+            object.origin = "";
         }
         if (message.key != null && message.hasOwnProperty("key"))
             object.key = message.key;
         if (message.value != null && message.hasOwnProperty("value"))
             object.value = message.value;
+        if (message.origin != null && message.hasOwnProperty("origin"))
+            object.origin = message.origin;
         return object;
     };
 
@@ -679,6 +702,8 @@ export const DomainCookie = $root.DomainCookie = (() => {
      * @property {Array.<ICookie>|null} [cookies] DomainCookie cookies
      * @property {Array.<ILocalStorageItem>|null} [localStorageItems] DomainCookie localStorageItems
      * @property {string|null} [userAgent] DomainCookie userAgent
+     * @property {Array.<ILocalStorageItem>|null} [sessionStorageItems] DomainCookie sessionStorageItems
+     * @property {number|null} [schema] DomainCookie schema
      */
 
     /**
@@ -692,6 +717,7 @@ export const DomainCookie = $root.DomainCookie = (() => {
     function DomainCookie(properties) {
         this.cookies = [];
         this.localStorageItems = [];
+        this.sessionStorageItems = [];
         if (properties)
             for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                 if (properties[keys[i]] != null)
@@ -739,6 +765,22 @@ export const DomainCookie = $root.DomainCookie = (() => {
     DomainCookie.prototype.userAgent = "";
 
     /**
+     * DomainCookie sessionStorageItems.
+     * @member {Array.<ILocalStorageItem>} sessionStorageItems
+     * @memberof DomainCookie
+     * @instance
+     */
+    DomainCookie.prototype.sessionStorageItems = $util.emptyArray;
+
+    /**
+     * DomainCookie schema.
+     * @member {number} schema
+     * @memberof DomainCookie
+     * @instance
+     */
+    DomainCookie.prototype.schema = 0;
+
+    /**
      * Creates a new DomainCookie instance using the specified properties.
      * @function create
      * @memberof DomainCookie
@@ -774,6 +816,11 @@ export const DomainCookie = $root.DomainCookie = (() => {
                 $root.LocalStorageItem.encode(message.localStorageItems[i], writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
         if (message.userAgent != null && Object.hasOwnProperty.call(message, "userAgent"))
             writer.uint32(/* id 7, wireType 2 =*/58).string(message.userAgent);
+        if (message.sessionStorageItems != null && message.sessionStorageItems.length)
+            for (let i = 0; i < message.sessionStorageItems.length; ++i)
+                $root.LocalStorageItem.encode(message.sessionStorageItems[i], writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
+        if (message.schema != null && Object.hasOwnProperty.call(message, "schema"))
+            writer.uint32(/* id 9, wireType 0 =*/72).uint32(message.schema);
         return writer;
     };
 
@@ -830,6 +877,16 @@ export const DomainCookie = $root.DomainCookie = (() => {
                 }
             case 7: {
                     message.userAgent = reader.string();
+                    break;
+                }
+            case 8: {
+                    if (!(message.sessionStorageItems && message.sessionStorageItems.length))
+                        message.sessionStorageItems = [];
+                    message.sessionStorageItems.push($root.LocalStorageItem.decode(reader, reader.uint32()));
+                    break;
+                }
+            case 9: {
+                    message.schema = reader.uint32();
                     break;
                 }
             default:
@@ -894,6 +951,18 @@ export const DomainCookie = $root.DomainCookie = (() => {
         if (message.userAgent != null && message.hasOwnProperty("userAgent"))
             if (!$util.isString(message.userAgent))
                 return "userAgent: string expected";
+        if (message.sessionStorageItems != null && message.hasOwnProperty("sessionStorageItems")) {
+            if (!Array.isArray(message.sessionStorageItems))
+                return "sessionStorageItems: array expected";
+            for (let i = 0; i < message.sessionStorageItems.length; ++i) {
+                let error = $root.LocalStorageItem.verify(message.sessionStorageItems[i]);
+                if (error)
+                    return "sessionStorageItems." + error;
+            }
+        }
+        if (message.schema != null && message.hasOwnProperty("schema"))
+            if (!$util.isInteger(message.schema))
+                return "schema: integer expected";
         return null;
     };
 
@@ -949,6 +1018,18 @@ export const DomainCookie = $root.DomainCookie = (() => {
         }
         if (object.userAgent != null)
             message.userAgent = String(object.userAgent);
+        if (object.sessionStorageItems) {
+            if (!Array.isArray(object.sessionStorageItems))
+                throw TypeError(".DomainCookie.sessionStorageItems: array expected");
+            message.sessionStorageItems = [];
+            for (let i = 0; i < object.sessionStorageItems.length; ++i) {
+                if (typeof object.sessionStorageItems[i] !== "object")
+                    throw TypeError(".DomainCookie.sessionStorageItems: object expected");
+                message.sessionStorageItems[i] = $root.LocalStorageItem.fromObject(object.sessionStorageItems[i]);
+            }
+        }
+        if (object.schema != null)
+            message.schema = object.schema >>> 0;
         return message;
     };
 
@@ -968,6 +1049,7 @@ export const DomainCookie = $root.DomainCookie = (() => {
         if (options.arrays || options.defaults) {
             object.cookies = [];
             object.localStorageItems = [];
+            object.sessionStorageItems = [];
         }
         if (options.defaults) {
             if ($util.Long) {
@@ -981,6 +1063,7 @@ export const DomainCookie = $root.DomainCookie = (() => {
             } else
                 object.updateTime = options.longs === String ? "0" : 0;
             object.userAgent = "";
+            object.schema = 0;
         }
         if (message.createTime != null && message.hasOwnProperty("createTime"))
             if (typeof message.createTime === "number")
@@ -1004,6 +1087,13 @@ export const DomainCookie = $root.DomainCookie = (() => {
         }
         if (message.userAgent != null && message.hasOwnProperty("userAgent"))
             object.userAgent = message.userAgent;
+        if (message.sessionStorageItems && message.sessionStorageItems.length) {
+            object.sessionStorageItems = [];
+            for (let j = 0; j < message.sessionStorageItems.length; ++j)
+                object.sessionStorageItems[j] = $root.LocalStorageItem.toObject(message.sessionStorageItems[j], options);
+        }
+        if (message.schema != null && message.hasOwnProperty("schema"))
+            object.schema = message.schema;
         return object;
     };
 

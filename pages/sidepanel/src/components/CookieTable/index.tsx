@@ -105,8 +105,8 @@ const CookieTable = () => {
     if (value.cookies?.length) {
       totalCookieItem += value.cookies.length;
     }
-    if (value.localStorageItems?.length) {
-      totalLocalStorageItem += value.localStorageItems.length;
+    if (value.localStorageItems?.length || value.sessionStorageItems?.length) {
+      totalLocalStorageItem += (value.localStorageItems?.length || 0) + (value.sessionStorageItems?.length || 0);
     }
     domainList.push({
       id: key,
@@ -429,7 +429,7 @@ const CookieTable = () => {
                 {[
                   [domainList.length, '网站'],
                   [totalCookieItem, 'Cookie'],
-                  [totalLocalStorageItem, 'LocalStorage'],
+                  [totalLocalStorageItem, '存储项'],
                 ].map(([count, label]) => (
                   <div key={label} className="min-w-0 px-2">
                     <dt className="break-words text-[11px] text-muted-foreground">{label}</dt>

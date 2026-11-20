@@ -165,6 +165,9 @@ export interface ILocalStorageItem {
 
     /** LocalStorageItem value */
     value?: (string|null);
+
+    /** LocalStorageItem origin */
+    origin?: (string|null);
 }
 
 /** Represents a LocalStorageItem. */
@@ -181,6 +184,9 @@ export class LocalStorageItem implements ILocalStorageItem {
 
     /** LocalStorageItem value. */
     public value: string;
+
+    /** LocalStorageItem origin. */
+    public origin: string;
 
     /**
      * Creates a new LocalStorageItem instance using the specified properties.
@@ -277,6 +283,12 @@ export interface IDomainCookie {
 
     /** DomainCookie userAgent */
     userAgent?: (string|null);
+
+    /** DomainCookie sessionStorageItems */
+    sessionStorageItems?: (ILocalStorageItem[]|null);
+
+    /** DomainCookie schema */
+    schema?: (number|null);
 }
 
 /** Represents a DomainCookie. */
@@ -302,6 +314,12 @@ export class DomainCookie implements IDomainCookie {
 
     /** DomainCookie userAgent. */
     public userAgent: string;
+
+    /** DomainCookie sessionStorageItems. */
+    public sessionStorageItems: ILocalStorageItem[];
+
+    /** DomainCookie schema. */
+    public schema: number;
 
     /**
      * Creates a new DomainCookie instance using the specified properties.

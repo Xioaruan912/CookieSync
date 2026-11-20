@@ -15,7 +15,9 @@ import {
   pushCookies,
   removeCookieItem,
   removeCookies,
-  sendGetLocalStorageMessage,
+  sendPageStorageMessage,
+  pickAutomaticStorage,
+  sessionStorageEnabled,
   SendResponse,
 } from '@sync-your-cookie/shared';
 import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
@@ -52,22 +54,29 @@ const handlePush = async (payload: PushCookieMessagePayload, callback: HandleCal
     const cookies = await chrome.cookies.getAll(condition);
 
     let localStorageItems: NonNullable<Parameters<typeof pushCookies>[2]> = [];
-    const includeLocalStorage = settingsStorage.getSnapshot()?.includeLocalStorage !== false;
-    if (includeLocalStorage) {
-      try {
-        const hostname = sourceUrl ? new URL(sourceUrl).hostname : host;
-        localStorageItems = await sendGetLocalStorageMessage(hostname);
-      } catch (error) {
-        const cookieMap = await cookieStorage.getSnapshot();
-        localStorageItems = cookieMap?.domainCookieMap?.[host]?.localStorageItems || [];
-      }
+    let sessionStorageItems: NonNullable<Parameters<typeof pushCookies>[4]> = [];
+    const settings = await settingsStorage.get();
+    const includeLocalStorage = settings.includeLocalStorage !== false;
+    const sessionEnabled = sessionStorageEnabled(settings.includeSessionStorage, previousConfig?.includeSessionStorage);
+    const cached = (await cookieStorage.getSnapshot())?.domainCookieMap?.[host];
+    let observed: Awaited<ReturnType<typeof sendPageStorageMessage>>;
+    try {
+      const hostname = sourceUrl ? new URL(sourceUrl).hostname : host;
+      observed = await sendPageStorageMessage(hostname, true, sessionEnabled);
+    } catch {
+      /* No open tab: fall back to the last captured copy below. */
+    }
+    if (observed) {
+      const picked = pickAutomaticStorage(observed, undefined, cached || {}, sessionEnabled, includeLocalStorage);
+      localStorageItems = picked.localStorageItems;
+      sessionStorageItems = picked.sessionStorageItems;
     } else {
-      const cookieMap = await cookieStorage.getSnapshot();
-      localStorageItems = cookieMap?.domainCookieMap?.[host]?.localStorageItems || [];
+      localStorageItems = includeLocalStorage ? cached?.localStorageItems || [] : [];
+      sessionStorageItems = sessionEnabled ? cached?.sessionStorageItems || [] : [];
     }
 
-    if (cookies?.length || localStorageItems.length) {
-      const res = await pushCookies(host, cookies, localStorageItems, userAgent);
+    if (cookies?.length || localStorageItems.length || sessionStorageItems.length) {
+      const res = await pushCookies(host, cookies, localStorageItems, userAgent, sessionStorageItems);
       checkResponseAndCallback(res, 'push', reply);
     } else {
       reply({ isOk: false, msg: '未找到 Cookie 或 LocalStorage，请先确认已登录', result: cookies });

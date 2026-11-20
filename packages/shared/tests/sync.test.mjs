@@ -292,6 +292,15 @@ test('unchanged restored content does not set cookies, write localStorage or rel
     query: async () => [{ id: 7, url: 'https://www.115.com/' }],
     sendMessage: async (_id, message) => {
       if (message.type === 'GetLocalStorage') return { isOk: true, result: [{ key: 'token', value: 'same' }] };
+      if (message.type === 'GetPageStorage')
+        return {
+          isOk: true,
+          result: {
+            origin: 'https://www.115.com',
+            localStorageItems: [{ key: 'token', value: 'same' }],
+            sessionStorageItems: [],
+          },
+        };
       writes++;
       return { isOk: true };
     },

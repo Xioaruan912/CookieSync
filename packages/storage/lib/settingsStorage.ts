@@ -3,6 +3,8 @@ import { BaseStorage, createStorage, StorageType } from './base';
 export interface ISettings {
   protobufEncoding?: boolean;
   includeLocalStorage?: boolean;
+  /** Default for session storage; a site switch overrides it. Off by default. */
+  includeSessionStorage?: boolean;
   localStorageGetting?: boolean;
   contextMenu?: boolean;
   encryptionEnabled?: boolean;
@@ -28,6 +30,7 @@ const initStorage = (): BaseStorage<ISettings> => {
     {
       protobufEncoding: false,
       includeLocalStorage: true,
+      includeSessionStorage: false,
       contextMenu: false,
       startupPull: true,
       backgroundSync: true,

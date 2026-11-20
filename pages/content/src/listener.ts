@@ -61,6 +61,10 @@ export class MessageListener {
       // 如果消息类型为设置本地存储
     } else if (message.type === MessageType.SetLocalStorage) {
       this.emit(MessageType.SetLocalStorage, message.payload, sendResponse);
+    } else if (message.type === MessageType.GetPageStorage) {
+      this.emit(MessageType.GetPageStorage, message.payload, sendResponse);
+    } else if (message.type === MessageType.SetPageStorage) {
+      this.emit(MessageType.SetPageStorage, message.payload, sendResponse);
     }
     return true; // keep the channel open
   };
