@@ -471,6 +471,21 @@ with sync_playwright() as p:
     assert any(c['name'] == 'UID' and c['value'] == '99' for c in seed.cookies('https://115.com/'))
     so.get_by_role('button', name='关闭', exact=True).click()
     print('115_qr_repair_fallback_cookies_passed')
+    # Overview: rows come from local records only; per-site actions are confirmed by a second click.
+    overview = so.evaluate('(message) => chrome.runtime.sendMessage(message)', {'type': 'CookieSyncOverview'})
+    assert overview['isOk'], overview
+    overview_rows = {row['domain']: row for row in overview['result']['rows']}
+    assert '115.com' in overview_rows and overview_rows['115.com']['listed'] is True, overview_rows.keys()
+    assert overview_rows['115.com']['health']['state'] == 'invalid'
+    assert 'health' in overview_rows['115.com']['attention']
+    so.get_by_role('navigation', name='设置导航').get_by_role('link', name='总览', exact=True).click()
+    so.locator('.overview-table').wait_for()
+    so.get_by_text('已登记站点', exact=True).wait_for()
+    so.locator('.overview-domain').filter(has_text='115.com').first.wait_for()
+    so.get_by_role('button', name='拉取 115.com', exact=True).click()
+    so.get_by_role('button', name='拉取 115.com', exact=True).click()
+    so.get_by_text('已从云端应用 115.com', exact=False).wait_for()
+    print('overview_panel_rows_and_site_actions_passed')
     pull_all = so.evaluate('(message) => chrome.runtime.sendMessage(message)', {'type': 'CookieSyncPullAll'})
     assert pull_all['isOk'], pull_all
     print('pull_all_message_wired', json.dumps(pull_all.get('result', {}), ensure_ascii=False))

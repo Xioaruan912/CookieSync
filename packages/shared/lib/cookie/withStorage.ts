@@ -6,6 +6,7 @@ import { ICookie, ICookiesMap, ILocalStorageItem } from '@sync-your-cookie/proto
 import { Cookie, cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
 import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
 import { domainStatusStorage } from '@sync-your-cookie/storage/lib/domainStatusStorage';
+import { recordSiteActivity } from '@sync-your-cookie/storage/lib/siteActivityStorage';
 
 import { AccountInfo, accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
 
@@ -200,6 +201,7 @@ export const pullAndSetCookies = async (
     const digest = await domainContentHash(cookieMap.domainCookieMap?.[host]);
     await setSyncBaseline(host, digest);
     await settleManualSync(host, pendingRevision, digest);
+    void recordSiteActivity(host, 'pull');
     return result;
   } finally {
     const remaining = (applyingRemoteHosts.get(scope) || 1) - 1;
@@ -321,6 +323,7 @@ const pushCookiesImpl = async (
     );
 
     await checkSuccessAndUpdate(res, cookieMap);
+    void recordSiteActivity(domain, 'push', !!res.success, res.success ? undefined : '云端未确认写入');
     if (res.success) {
       const digest = await domainContentHash(cookieMap.domainCookieMap?.[domain]);
       await setSyncBaseline(domain, digest);
@@ -330,7 +333,8 @@ const pushCookiesImpl = async (
       pushing: false,
     });
     return res;
-  } catch (e) {
+  } catch (e: unknown) {
+    void recordSiteActivity(domain, 'push', false, e instanceof Error ? e.message : '推送失败');
     await domainStatusStorage.update({
       pushing: false,
     });
@@ -374,6 +378,7 @@ const pushMultipleDomainCookiesImpl = async (
           // reconciliation applies the remote copy to this browser.
           continue;
         }
+        void recordSiteActivity(item.domain, 'push');
         await setSyncBaseline(item.domain, await domainContentHash(cookieMap.domainCookieMap?.[item.domain]));
       }
     }

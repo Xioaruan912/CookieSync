@@ -90,7 +90,7 @@ async function getActiveJobs(key: string): Promise<Jobs> {
 
 const editJobs = editSyncJobs;
 
-async function sessionStorageFor(host: string) {
+export async function sessionStorageFor(host: string) {
   const settings = await settingsStorage.get();
   const config = (await domainConfigStorage.get()).domainMap[host];
   return sessionStorageEnabled(settings.includeSessionStorage, config?.includeSessionStorage);
@@ -100,7 +100,7 @@ async function sessionStorageFor(host: string) {
  * One tab's origin-tagged storage. Falls back to the pre-1.16 message so tabs
  * that still run an older content script keep contributing localStorage.
  */
-async function pageStorage(host: string): Promise<StorageSnapshot | undefined> {
+export async function readPageStorage(host: string): Promise<StorageSnapshot | undefined> {
   const settings = await settingsStorage.get();
   const includeLocal = settings.includeLocalStorage !== false;
   const includeSession = await sessionStorageFor(host);
@@ -201,7 +201,7 @@ async function discoverVisitedSite(rawUrl: string, observed?: StorageSnapshot, s
   }
   if (settings.backgroundSync === false || settings.autoDiscoverSites === false) return;
   const cookies = await collectSiteCookies(sourceUrl);
-  const storage = settings.includeLocalStorage === false && !(await sessionStorageFor(host)) ? undefined : observed ?? (await pageStorage(host));
+  const storage = settings.includeLocalStorage === false && !(await sessionStorageFor(host)) ? undefined : observed ?? (await readPageStorage(host));
   const cached = (await cookieStorage.get()).domainCookieMap?.[host];
   const storageCount = (storage?.localStorageItems.length || 0) + (storage?.sessionStorageItems?.length || 0);
   if (
@@ -290,7 +290,7 @@ async function captureNow(host: string, observed?: StorageSnapshot, skipEmpty = 
   const cookies = [...collected, ...(previous?.cookies || []).filter(cookie => !cookieAllowed(cookie, host, rules))];
   const sessionEnabled = sessionStorageEnabled(settings.includeSessionStorage, config.includeSessionStorage);
   const picked = pickAutomaticStorage(
-    observed ?? (await pageStorage(host)),
+    observed ?? (await readPageStorage(host)),
     pending,
     previous || {},
     sessionEnabled,
@@ -472,7 +472,7 @@ export async function pushAllToCloud(): Promise<PullAllSummary> {
       const cookies = [...collected, ...(previous?.cookies || []).filter(cookie => !cookieAllowed(cookie, domain, rules))];
       const sessionEnabled = sessionStorageEnabled(settings.includeSessionStorage, item.includeSessionStorage);
       const picked = pickAutomaticStorage(
-        await pageStorage(domain),
+        await readPageStorage(domain),
         undefined,
         previous || {},
         sessionEnabled,

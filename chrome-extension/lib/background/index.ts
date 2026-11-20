@@ -17,6 +17,7 @@ import { refreshListen } from './listen';
 import { initSubscribe } from './subscribe';
 import { initUpdateChecks } from './update';
 import { initSiteHealthChecks } from './healthCheck';
+import { initOverview } from './overview';
 
 const ping = () => {
   chrome.tabs.query({ active: true, currentWindow: true }, async function (tabs) {
@@ -54,6 +55,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 initAutomaticSync();
 initUpdateChecks();
 initSiteHealthChecks();
+initOverview();
 
 chrome.tabs.onActivated.addListener(async function () {
   const domainStatus = await domainStatusStorage.get();
