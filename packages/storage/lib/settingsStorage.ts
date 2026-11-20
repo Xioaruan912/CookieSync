@@ -7,6 +7,8 @@ export interface ISettings {
   includeSessionStorage?: boolean;
   /** Experimental: capture small IndexedDB object stores. Off by default. */
   includeIndexedDB?: boolean;
+  /** Keep a daily rolling copy of the remote file next to it. On by default. */
+  rollingBackup?: boolean;
   localStorageGetting?: boolean;
   contextMenu?: boolean;
   encryptionEnabled?: boolean;
@@ -34,6 +36,7 @@ const initStorage = (): BaseStorage<ISettings> => {
       includeLocalStorage: true,
       includeSessionStorage: false,
       includeIndexedDB: false,
+      rollingBackup: true,
       contextMenu: false,
       startupPull: true,
       backgroundSync: true,

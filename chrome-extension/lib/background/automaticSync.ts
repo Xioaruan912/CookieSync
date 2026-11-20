@@ -37,6 +37,7 @@ import { syncWebdavConfig } from '@sync-your-cookie/shared/lib/webdav/configSync
 import { missingLoginKeys, siteProfileFor, uaMismatchHint } from '@sync-your-cookie/shared/lib/siteProfiles';
 import { siteHealthStorage } from '@sync-your-cookie/storage/lib/siteHealthStorage';
 import { checkSiteHealth } from './healthCheck';
+import { snapshotLocal, snapshotRemote } from './safety';
 
 type ILocalStorageItem = PendingSyncJob['localStorageItems'][number];
 
@@ -488,6 +489,9 @@ export async function pushAllToCloud(): Promise<PullAllSummary> {
   const rules = await readSiteRules();
   const config = await domainConfigStorage.get();
   const key = await queueKey();
+  // The cloud copy is what this operation replaces; keep it as a rollback point.
+  const remoteNow = await pullCookies();
+  await snapshotRemote(remoteNow, 'push-all');
   const summary: PullAllSummary = { domains: 0, cookies: 0, localStorageItems: 0, sessionStorageItems: 0, skipped: 0 };
   const jobs: Parameters<typeof pushMultipleDomainCookies>[0] = [];
   for (const [domain, item] of Object.entries(config.domainMap)) {
@@ -566,10 +570,12 @@ export async function pushAllToCloud(): Promise<PullAllSummary> {
 export async function pullAllFromCloud(): Promise<PullAllSummary> {
   await check();
   const settings = await settingsStorage.get();
-  const remote = await pullCookies();
   const rules = await readSiteRules();
   const config = await domainConfigStorage.get();
   const key = await queueKey();
+  // Capture the last applied local copy before pullCookies replaces it.
+  await snapshotLocal('pull-all');
+  const remote = await pullCookies();
   const summary: PullAllSummary = { domains: 0, cookies: 0, localStorageItems: 0, sessionStorageItems: 0, skipped: 0 };
   for (const [domain, entry] of Object.entries(remote.domainCookieMap || {})) {
     if (!isSiteAllowed(domain, rules) || config.domainMap[domain]?.autoPull === false) {

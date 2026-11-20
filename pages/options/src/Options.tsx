@@ -3,6 +3,7 @@ import { WebdavSettings } from './components/WebdavSettings';
 import { ConfigChannelSettings } from './components/ConfigChannelSettings';
 import { AutoSyncStatus } from './components/AutoSyncStatus';
 import { SiteHealthSettings } from './components/SiteHealthSettings';
+import { SafetyCard } from './components/SafetyCard';
 import { AboutSettings } from './components/AboutSettings';
 import { OverviewPanel } from './components/OverviewPanel';
 import { ConnectionGuide } from './components/ConnectionGuide';
@@ -147,6 +148,9 @@ const Options = () => {
             <AutoSyncStatus />
             <CardContent className="pt-6">
               <SiteHealthSettings />
+            </CardContent>
+            <CardContent className="pt-6">
+              <SafetyCard />
             </CardContent>
           </section>
           <section hidden={section !== 'sites'} aria-label={sections.sites}>
