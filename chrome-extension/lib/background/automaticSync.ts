@@ -14,6 +14,7 @@ import {
   automaticIntervalMs,
   pickAutomaticLocalItems,
   applyLocalStorageToTabs,
+  check,
   pullCookies,
   pullAndSetCookies,
   pushMultipleDomainCookies,
@@ -310,6 +311,126 @@ export async function flushAutomaticSync(force = false): Promise<void> {
   return upload;
 }
 
+export interface PullAllSummary {
+  domains: number;
+  cookies: number;
+  localStorageItems: number;
+  skipped: number;
+}
+
+/**
+ * Manual "push everything": local wins for every allowed site that keeps auto
+ * push enabled. Jobs carry no baseHash on purpose, so the batch writes the
+ * local copies even when the cloud changed in the meantime — the user pressed
+ * the button to make this machine authoritative.
+ */
+export async function pushAllToCloud(): Promise<PullAllSummary> {
+  await check();
+  const settings = await settingsStorage.get();
+  const rules = await readSiteRules();
+  const config = await domainConfigStorage.get();
+  const key = await queueKey();
+  const summary: PullAllSummary = { domains: 0, cookies: 0, localStorageItems: 0, skipped: 0 };
+  const jobs: Parameters<typeof pushMultipleDomainCookies>[0] = [];
+  for (const [domain, item] of Object.entries(config.domainMap)) {
+    if (!isSiteAllowed(domain, rules) || item.autoPush === false) {
+      summary.skipped++;
+      continue;
+    }
+    try {
+      const url = item.sourceUrl || `https://${domain}`;
+      const collected = (await collectSiteCookies(url)).filter(cookie => cookieAllowed(cookie, domain, rules));
+      const previous = (await cookieStorage.get()).domainCookieMap?.[domain];
+      // Preserve paused child-domain backups without collecting their live values.
+      const cookies = [...collected, ...(previous?.cookies || []).filter(cookie => !cookieAllowed(cookie, domain, rules))];
+      const stored = previous?.localStorageItems || [];
+      const items =
+        settings.includeLocalStorage === false
+          ? stored
+          : pickAutomaticLocalItems(await localItems(domain), undefined, stored);
+      if (!cookies.length && !items.length) {
+        summary.skipped++;
+        continue;
+      }
+      jobs.push({ domain, cookies, localStorageItems: items, userAgent: navigator.userAgent });
+      summary.cookies += cookies.length;
+      summary.localStorageItems += items.length;
+    } catch (error) {
+      summary.skipped++;
+      await autoSyncStatusStorage.update({ error: errorMessage(error) });
+    }
+  }
+  if (jobs.length) {
+    await waitSyncJobEdits();
+    const result = await pushMultipleDomainCookies(jobs, (cookie, host) => cookieAllowed(cookie, host, rules));
+    if (!result.success) throw new Error('全部上传失败，请检查连接和加密设置');
+    // The pushed sites are now up to date locally: drop their pending jobs.
+    await editJobs(key, current => {
+      const next = { ...current };
+      for (const job of jobs) delete next[job.domain];
+      return next;
+    });
+    summary.domains = jobs.length;
+  }
+  await autoSyncStatusStorage.update({
+    phase: 'idle',
+    lastSuccess: jobs.length ? Date.now() : undefined,
+    note: `已向云端上传 ${summary.domains} 个网站（跳过 ${summary.skipped} 个）`,
+    pendingCount: Object.keys(await getActiveJobs(key)).length,
+    error: '',
+  });
+  return summary;
+}
+
+/**
+ * Manual "pull everything": cloud wins for every allowed site that has remote
+ * data and keeps auto pull enabled. Pending local jobs for those sites are
+ * dropped, so a machine that spent the day elsewhere can adopt the other
+ * machine's day of sessions in one action.
+ */
+export async function pullAllFromCloud(): Promise<PullAllSummary> {
+  await check();
+  const settings = await settingsStorage.get();
+  const remote = await pullCookies();
+  const rules = await readSiteRules();
+  const config = await domainConfigStorage.get();
+  const key = await queueKey();
+  const summary: PullAllSummary = { domains: 0, cookies: 0, localStorageItems: 0, skipped: 0 };
+  for (const [domain, entry] of Object.entries(remote.domainCookieMap || {})) {
+    if (!isSiteAllowed(domain, rules) || config.domainMap[domain]?.autoPull === false) {
+      summary.skipped++;
+      continue;
+    }
+    await captures.get(domain)?.catch(() => {});
+    try {
+      await pullAndSetCookies(config.domainMap[domain]?.sourceUrl || `https://${domain}`, domain, false, remote, undefined, cookie =>
+        cookieAllowed(cookie, domain, rules),
+      );
+      // The user explicitly chose the cloud copy: drop this site's pending job.
+      await editJobs(key, jobs => {
+        if (!jobs[domain]) return jobs;
+        const next = { ...jobs };
+        delete next[domain];
+        return next;
+      });
+      summary.domains++;
+      summary.cookies += entry.cookies?.length || 0;
+      summary.localStorageItems +=
+        settings.includeLocalStorage === false ? 0 : entry.localStorageItems?.length || 0;
+    } catch (error) {
+      summary.skipped++;
+      await autoSyncStatusStorage.update({ error: errorMessage(error) });
+    }
+  }
+  await autoSyncStatusStorage.update({
+    phase: 'idle',
+    lastCheck: Date.now(),
+    note: `已从云端拉取 ${summary.domains} 个网站（跳过 ${summary.skipped} 个）`,
+    pendingCount: Object.keys(await getActiveJobs(key)).length,
+  });
+  return summary;
+}
+
 export async function restoreAtStartup(periodic = false, force = false): Promise<void> {
   if (startup) {
     await startup;
@@ -485,6 +606,28 @@ export function initAutomaticSync() {
         .then(() => restoreAtStartup(true, true))
         .then(() => reply({ isOk: true }))
         .catch(() => reply({ isOk: false }));
+      return true;
+    }
+    if (
+      message?.type === 'CookieSyncPullAll' &&
+      sender.id === chrome.runtime.id &&
+      sender.url?.startsWith(chrome.runtime.getURL(''))
+    ) {
+      void backgroundReady
+        .then(() => pullAllFromCloud())
+        .then(result => reply({ isOk: true, result }))
+        .catch(error => reply({ isOk: false, msg: errorMessage(error) }));
+      return true;
+    }
+    if (
+      message?.type === 'CookieSyncPushAll' &&
+      sender.id === chrome.runtime.id &&
+      sender.url?.startsWith(chrome.runtime.getURL(''))
+    ) {
+      void backgroundReady
+        .then(() => pushAllToCloud())
+        .then(result => reply({ isOk: true, result }))
+        .catch(error => reply({ isOk: false, msg: errorMessage(error) }));
       return true;
     }
     if (

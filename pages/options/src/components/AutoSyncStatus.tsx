@@ -2,12 +2,24 @@ import { useStorageSuspense } from '@sync-your-cookie/shared';
 import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { Button } from '@sync-your-cookie/ui';
+import { ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { useState } from 'react';
+
+interface BulkSummary {
+  domains: number;
+  cookies: number;
+  localStorageItems: number;
+  skipped: number;
+}
+
+type ConfirmMode = 'pull' | 'push';
 
 export function AutoSyncStatus() {
   const status = useStorageSuspense(autoSyncStatusStorage);
   const settings = useStorageSuspense(settingsStorage);
   const [busy, setBusy] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmMode>();
   const [message, setMessage] = useState('');
   const enabled = settings.backgroundSync !== false;
   const phase = status.phase === 'uploading' ? '正在上传' : status.phase === 'checking' ? '正在比对' : '等待变化';
@@ -24,6 +36,29 @@ export function AutoSyncStatus() {
       setBusy(false);
     }
   };
+
+  const runBulk = async (mode: ConfirmMode) => {
+    setBulkBusy(true);
+    setMessage('');
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: mode === 'pull' ? 'CookieSyncPullAll' : 'CookieSyncPushAll',
+      });
+      if (!response?.isOk) throw new Error(response?.msg || (mode === 'pull' ? '拉取全部失败' : '全部上传失败'));
+      const result = response.result as BulkSummary;
+      setMessage(
+        mode === 'pull'
+          ? `已从云端拉取 ${result.domains} 个网站（${result.cookies} 个 Cookie），跳过 ${result.skipped} 个名单外或已暂停的网站`
+          : `已向云端上传 ${result.domains} 个网站（${result.cookies} 个 Cookie），跳过 ${result.skipped} 个名单外或已暂停的网站`,
+      );
+      setConfirm(undefined);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : mode === 'pull' ? '拉取全部失败' : '全部上传失败');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <div className="mx-6 mb-6 grid gap-3 text-sm" aria-label="自动同步状态">
       <label className="flex items-start gap-2">
@@ -57,16 +92,58 @@ export function AutoSyncStatus() {
           {message || status.error}
         </p>
       )}
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={!enabled || busy || status.phase === 'checking' || status.phase === 'uploading'}
-        onClick={sync}>
-        {busy ? '检查中…' : '立即检查并同步'}
-      </Button>
-      <p className="text-muted-foreground">
-        连接后自动检查，随后每 {settings.syncIntervalMinutes || 2} 分钟比对；内容一致跳过上传，两端都变化时保留较新一侧。
-      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!enabled || busy || status.phase === 'checking' || status.phase === 'uploading'}
+          onClick={sync}>
+          {busy ? '检查中…' : '立即检查并同步'}
+        </Button>
+        {confirm === 'pull' ? (
+          <>
+            <Button size="sm" disabled={!enabled || bulkBusy} onClick={() => void runBulk('pull')}>
+              {bulkBusy ? '拉取中…' : '确认用云端覆盖'}
+            </Button>
+            <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => setConfirm(undefined)}>
+              取消
+            </Button>
+          </>
+        ) : confirm === 'push' ? (
+          <>
+            <Button size="sm" disabled={!enabled || bulkBusy} onClick={() => void runBulk('push')}>
+              {bulkBusy ? '上传中…' : '确认用本机覆盖'}
+            </Button>
+            <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => setConfirm(undefined)}>
+              取消
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button size="sm" variant="outline" disabled={!enabled || bulkBusy} onClick={() => setConfirm('pull')}>
+              <ArrowDownToLine size={15} className="mr-1" aria-hidden="true" />
+              拉取全部
+            </Button>
+            <Button size="sm" variant="outline" disabled={!enabled || bulkBusy} onClick={() => setConfirm('push')}>
+              <ArrowUpFromLine size={15} className="mr-1" aria-hidden="true" />
+              全部上传
+            </Button>
+          </>
+        )}
+      </div>
+      {confirm === 'pull' ? (
+        <p className="text-muted-foreground">
+          将从云端覆盖名单内所有开启自动拉取的网站；本机这些网站尚未上传的改动会被放弃，名单外或已暂停的网站不受影响。
+        </p>
+      ) : confirm === 'push' ? (
+        <p className="text-muted-foreground">
+          将把名单内所有开启自动推送网站的本机数据覆盖云端对应网站；云端这些网站较新的改动会被覆盖，名单外或已暂停的网站不受影响。
+        </p>
+      ) : (
+        <p className="text-muted-foreground">
+          连接后自动检查，随后每 {settings.syncIntervalMinutes || 2} 分钟比对；内容一致跳过上传，两端都变化时保留较新一侧。
+        </p>
+      )}
     </div>
   );
 }
