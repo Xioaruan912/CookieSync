@@ -7,18 +7,22 @@ import {
   editSyncJobs,
   waitSyncJobEdits,
   matchesSyncDomain,
+  matchesSiteScope,
   canonicalSiteHost,
   matchesSitePage,
   collectSiteCookies,
   isApplyingRemoteState,
   automaticIntervalMs,
-  pickAutomaticLocalItems,
-  applyLocalStorageToTabs,
+  pickAutomaticStorage,
+  pageOrigin,
+  sessionStorageEnabled,
+  applyPageStorageToTabs,
   check,
   pullCookies,
   pullAndSetCookies,
   pushMultipleDomainCookies,
   type PendingSyncJob,
+  type StorageSnapshot,
 } from '@sync-your-cookie/shared';
 import { accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
 import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
@@ -86,22 +90,87 @@ async function getActiveJobs(key: string): Promise<Jobs> {
 
 const editJobs = editSyncJobs;
 
-async function localItems(host: string) {
+async function sessionStorageFor(host: string) {
   const settings = await settingsStorage.get();
-  if (settings.includeLocalStorage === false) return [];
+  const config = (await domainConfigStorage.get()).domainMap[host];
+  return sessionStorageEnabled(settings.includeSessionStorage, config?.includeSessionStorage);
+}
+
+/**
+ * One tab's origin-tagged storage. Falls back to the pre-1.16 message so tabs
+ * that still run an older content script keep contributing localStorage.
+ */
+async function pageStorage(host: string): Promise<StorageSnapshot | undefined> {
+  const settings = await settingsStorage.get();
+  const includeLocal = settings.includeLocalStorage !== false;
+  const includeSession = await sessionStorageFor(host);
+  if (!includeLocal && !includeSession) return undefined;
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
     if (!tab.id || !tab.url?.startsWith('http') || tab.incognito) continue;
-    const hostname = new URL(tab.url).host;
-    if (!matchesSitePage(host, hostname)) continue;
+    let hostname: string;
     try {
-      const response = await chrome.tabs.sendMessage(tab.id, { type: 'GetLocalStorage', payload: { domain: host } });
-      if (response?.isOk) return response.result || [];
+      hostname = new URL(tab.url).hostname;
     } catch {
-      /* Closed tab or content script unavailable: use last captured data. */
+      continue;
     }
+    if (!matchesSiteScope(host, hostname)) continue;
+    const tabOrigin = pageOrigin(tab.url) || '';
+    try {
+      const newer = await chrome.tabs.sendMessage(tab.id, {
+        type: 'GetPageStorage',
+        payload: { domain: host, includeSessionStorage: includeSession },
+      });
+      if (newer?.isOk && newer.result && !Array.isArray(newer.result)) {
+        const result = newer.result as {
+          origin?: string;
+          localStorageItems?: ILocalStorageItem[];
+          sessionStorageItems?: ILocalStorageItem[];
+        };
+        return {
+          origin: result.origin || tabOrigin,
+          localStorageItems: includeLocal ? result.localStorageItems || [] : [],
+          sessionStorageItems: includeSession ? result.sessionStorageItems || [] : [],
+          truncated: 0,
+        };
+      }
+    } catch {
+      /* Older content script: use the legacy message below. */
+    }
+    const legacy = await chrome.tabs
+      .sendMessage(tab.id, { type: 'GetLocalStorage', payload: { domain: host } })
+      .catch(() => undefined);
+    if (legacy?.isOk)
+      return {
+        origin: tabOrigin,
+        localStorageItems: includeLocal ? (legacy.result as ILocalStorageItem[]) || [] : [],
+        sessionStorageItems: [],
+        truncated: 0,
+      };
   }
   return undefined;
+}
+
+const validStorageItems = (value: unknown): ILocalStorageItem[] | undefined =>
+  Array.isArray(value) &&
+  value.every(item => item && typeof item.key === 'string' && typeof item.value === 'string')
+    ? (value as ILocalStorageItem[])
+    : undefined;
+
+/** Validates the content script's capture; a missing session list means "not reported". */
+function readObserved(
+  message: { localStorageItems?: unknown; sessionStorageItems?: unknown; origin?: unknown },
+  tabUrl: string,
+): StorageSnapshot | undefined {
+  const local = validStorageItems(message?.localStorageItems);
+  if (!local) return undefined;
+  const session = validStorageItems(message?.sessionStorageItems);
+  return {
+    origin: typeof message?.origin === 'string' && message.origin ? message.origin : pageOrigin(tabUrl) || '',
+    localStorageItems: local,
+    ...(session ? { sessionStorageItems: session } : {}),
+    truncated: 0,
+  };
 }
 
 function scheduleReconcile() {
@@ -112,7 +181,7 @@ function scheduleReconcile() {
   }, 1000);
 }
 
-async function discoverVisitedSite(rawUrl: string, observed?: ILocalStorageItem[], schedule = true) {
+async function discoverVisitedSite(rawUrl: string, observed?: StorageSnapshot, schedule = true) {
   let page: URL;
   try {
     page = new URL(rawUrl);
@@ -124,7 +193,7 @@ async function discoverVisitedSite(rawUrl: string, observed?: ILocalStorageItem[
   if (!isSiteAllowed(page.hostname, await readSiteRules())) return;
   const config = await domainConfigStorage.get();
   const host =
-    Object.keys(config.domainMap).find(site => matchesSitePage(site, page.host)) || canonicalSiteHost(page.host);
+    Object.keys(config.domainMap).find(site => matchesSiteScope(site, page.host)) || canonicalSiteHost(page.host);
   const sourceUrl = page.origin + page.pathname;
   if (config.domainMap[host]) {
     if (config.domainMap[host].sourceUrl !== sourceUrl) await domainConfigStorage.updateItem(host, { sourceUrl });
@@ -132,9 +201,17 @@ async function discoverVisitedSite(rawUrl: string, observed?: ILocalStorageItem[
   }
   if (settings.backgroundSync === false || settings.autoDiscoverSites === false) return;
   const cookies = await collectSiteCookies(sourceUrl);
-  const items = settings.includeLocalStorage === false ? [] : observed ?? (await localItems(host));
+  const storage = settings.includeLocalStorage === false && !(await sessionStorageFor(host)) ? undefined : observed ?? (await pageStorage(host));
   const cached = (await cookieStorage.get()).domainCookieMap?.[host];
-  if (!cookies.length && !items?.length && !cached?.cookies?.length && !cached?.localStorageItems?.length) return;
+  const storageCount = (storage?.localStorageItems.length || 0) + (storage?.sessionStorageItems?.length || 0);
+  if (
+    !cookies.length &&
+    !storageCount &&
+    !cached?.cookies?.length &&
+    !cached?.localStorageItems?.length &&
+    !cached?.sessionStorageItems?.length
+  )
+    return;
   // updateItem preserves explicit switches even if they changed while discovery was reading.
   await domainConfigStorage.updateItem(host, { sourceUrl });
   if (schedule) scheduleReconcile();
@@ -160,7 +237,7 @@ async function discoverOpenSites() {
   }
 }
 
-export function captureAutomaticSync(host: string, observed?: ILocalStorageItem[], skipEmpty = false): Promise<void> {
+export function captureAutomaticSync(host: string, observed?: StorageSnapshot, skipEmpty = false): Promise<void> {
   const next = (captures.get(host) || Promise.resolve())
     .catch(() => {})
     .then(() => captureNow(host, observed, skipEmpty));
@@ -170,7 +247,32 @@ export function captureAutomaticSync(host: string, observed?: ILocalStorageItem[
   });
 }
 
-async function captureNow(host: string, observed?: ILocalStorageItem[], skipEmpty = false) {
+const truncatedKey = 'cookiesync-storage-truncated';
+const sessionThrottleKey = (host: string) => `cookiesync-session-capture-${host}`;
+const sessionThrottleMs = 10 * 60000;
+const markPulled = (host: string) => chrome.storage.session.set({ [`cookiesync-pulled-${host}`]: Date.now() });
+
+/**
+ * Session storage changes constantly on some single-page apps. When nothing
+ * else changed, one upload per site per ten minutes is enough; cookies and
+ * localStorage changes still push immediately.
+ */
+async function sessionCaptureThrottled(host: string) {
+  const key = sessionThrottleKey(host);
+  const last = (await chrome.storage.local.get(key))[key] || 0;
+  return Date.now() - last < sessionThrottleMs;
+}
+async function markSessionCaptured(host: string) {
+  await chrome.storage.local.set({ [sessionThrottleKey(host)]: Date.now() });
+}
+async function recordTruncated(host: string, count: number) {
+  if (!count) return;
+  const stored = ((await chrome.storage.local.get(truncatedKey))[truncatedKey] || {}) as Record<string, number>;
+  if (stored[host] === count) return;
+  await chrome.storage.local.set({ [truncatedKey]: { ...stored, [host]: count } });
+}
+
+async function captureNow(host: string, observed?: StorageSnapshot, skipEmpty = false) {
   const settings = await settingsStorage.get();
   const rules = await readSiteRules();
   if (!isSiteAllowed(host, rules)) return;
@@ -186,12 +288,18 @@ async function captureNow(host: string, observed?: ILocalStorageItem[], skipEmpt
   const previous = (await cookieStorage.get()).domainCookieMap?.[host];
   // Preserve paused child-domain backups without collecting their current browser values.
   const cookies = [...collected, ...(previous?.cookies || []).filter(cookie => !cookieAllowed(cookie, host, rules))];
-  const cached = previous?.localStorageItems || [];
-  const items =
-    settings.includeLocalStorage === false
-      ? cached
-      : pickAutomaticLocalItems(observed ?? (await localItems(host)), pending, cached);
-  if (skipEmpty && !cookies.length && !items.length) return;
+  const sessionEnabled = sessionStorageEnabled(settings.includeSessionStorage, config.includeSessionStorage);
+  const picked = pickAutomaticStorage(
+    observed ?? (await pageStorage(host)),
+    pending,
+    previous || {},
+    sessionEnabled,
+    settings.includeLocalStorage !== false,
+  );
+  const items = picked.localStorageItems;
+  const sessionItems = picked.sessionStorageItems;
+  await recordTruncated(host, picked.truncated);
+  if (skipEmpty && !cookies.length && !items.length && !sessionItems.length) return;
   if (skipEmpty) {
     // Passive discovery cannot distinguish browser session-cookie cleanup from logout.
     // Actual onChanged/pagehide captures use skipEmpty=false and keep explicit deletions.
@@ -204,11 +312,29 @@ async function captureNow(host: string, observed?: ILocalStorageItem[], skipEmpt
     domain: host,
     cookies,
     localStorageItems: items,
+    sessionStorageItems: sessionItems,
     userAgent: navigator.userAgent,
     revision: crypto.randomUUID(),
     capturedAt: Date.now(),
     baseHash: pending?.baseHash || baseline,
   };
+  // A session-only change is rate limited: some single-page apps rewrite a
+  // nonce in sessionStorage on every navigation.
+  if (sessionEnabled && sessionItems.length) {
+    const baseOf = (value?: {
+      cookies?: PendingSyncJob['cookies'] | null;
+      localStorageItems?: PendingSyncJob['localStorageItems'] | null;
+    }) =>
+      domainContentHash({ cookies: value?.cookies || [], localStorageItems: value?.localStorageItems || [], sessionStorageItems: [] });
+    const withoutSession = await baseOf(job);
+    const sessionOnly =
+      (pending && (await baseOf(pending)) === withoutSession) ||
+      (previous && (await baseOf(previous)) === withoutSession);
+    if (sessionOnly) {
+      if (await sessionCaptureThrottled(host)) return;
+      await markSessionCaptured(host);
+    }
+  }
   // A profile site without its full login cookie set cannot log any machine
   // in; record that honestly instead of shipping a dead session silently.
   const profile = siteProfileFor(host);
@@ -315,6 +441,7 @@ export interface PullAllSummary {
   domains: number;
   cookies: number;
   localStorageItems: number;
+  sessionStorageItems: number;
   skipped: number;
 }
 
@@ -330,7 +457,7 @@ export async function pushAllToCloud(): Promise<PullAllSummary> {
   const rules = await readSiteRules();
   const config = await domainConfigStorage.get();
   const key = await queueKey();
-  const summary: PullAllSummary = { domains: 0, cookies: 0, localStorageItems: 0, skipped: 0 };
+  const summary: PullAllSummary = { domains: 0, cookies: 0, localStorageItems: 0, sessionStorageItems: 0, skipped: 0 };
   const jobs: Parameters<typeof pushMultipleDomainCookies>[0] = [];
   for (const [domain, item] of Object.entries(config.domainMap)) {
     if (!isSiteAllowed(domain, rules) || item.autoPush === false) {
@@ -343,18 +470,31 @@ export async function pushAllToCloud(): Promise<PullAllSummary> {
       const previous = (await cookieStorage.get()).domainCookieMap?.[domain];
       // Preserve paused child-domain backups without collecting their live values.
       const cookies = [...collected, ...(previous?.cookies || []).filter(cookie => !cookieAllowed(cookie, domain, rules))];
-      const stored = previous?.localStorageItems || [];
-      const items =
-        settings.includeLocalStorage === false
-          ? stored
-          : pickAutomaticLocalItems(await localItems(domain), undefined, stored);
-      if (!cookies.length && !items.length) {
+      const sessionEnabled = sessionStorageEnabled(settings.includeSessionStorage, item.includeSessionStorage);
+      const picked = pickAutomaticStorage(
+        await pageStorage(domain),
+        undefined,
+        previous || {},
+        sessionEnabled,
+        settings.includeLocalStorage !== false,
+      );
+      await recordTruncated(domain, picked.truncated);
+      const items = picked.localStorageItems;
+      const sessionItems = picked.sessionStorageItems;
+      if (!cookies.length && !items.length && !sessionItems.length) {
         summary.skipped++;
         continue;
       }
-      jobs.push({ domain, cookies, localStorageItems: items, userAgent: navigator.userAgent });
+      jobs.push({
+        domain,
+        cookies,
+        localStorageItems: items,
+        sessionStorageItems: sessionItems,
+        userAgent: navigator.userAgent,
+      });
       summary.cookies += cookies.length;
       summary.localStorageItems += items.length;
+      summary.sessionStorageItems += sessionItems.length;
     } catch (error) {
       summary.skipped++;
       await autoSyncStatusStorage.update({ error: errorMessage(error) });
@@ -395,7 +535,7 @@ export async function pullAllFromCloud(): Promise<PullAllSummary> {
   const rules = await readSiteRules();
   const config = await domainConfigStorage.get();
   const key = await queueKey();
-  const summary: PullAllSummary = { domains: 0, cookies: 0, localStorageItems: 0, skipped: 0 };
+  const summary: PullAllSummary = { domains: 0, cookies: 0, localStorageItems: 0, sessionStorageItems: 0, skipped: 0 };
   for (const [domain, entry] of Object.entries(remote.domainCookieMap || {})) {
     if (!isSiteAllowed(domain, rules) || config.domainMap[domain]?.autoPull === false) {
       summary.skipped++;
@@ -403,9 +543,11 @@ export async function pullAllFromCloud(): Promise<PullAllSummary> {
     }
     await captures.get(domain)?.catch(() => {});
     try {
-      await pullAndSetCookies(config.domainMap[domain]?.sourceUrl || `https://${domain}`, domain, false, remote, undefined, cookie =>
+      await pullAndSetCookies(config.domainMap[domain]?.sourceUrl || `https://${domain}`, domain, true, remote, undefined, cookie =>
         cookieAllowed(cookie, domain, rules),
       );
+      // The reloaded page must not immediately re-pull this site.
+      await markPulled(domain);
       // The user explicitly chose the cloud copy: drop this site's pending job.
       await editJobs(key, jobs => {
         if (!jobs[domain]) return jobs;
@@ -417,6 +559,10 @@ export async function pullAllFromCloud(): Promise<PullAllSummary> {
       summary.cookies += entry.cookies?.length || 0;
       summary.localStorageItems +=
         settings.includeLocalStorage === false ? 0 : entry.localStorageItems?.length || 0;
+      summary.sessionStorageItems +=
+        sessionStorageEnabled(settings.includeSessionStorage, config.domainMap[domain]?.includeSessionStorage)
+          ? entry.sessionStorageItems?.length || 0
+          : 0;
     } catch (error) {
       summary.skipped++;
       await autoSyncStatusStorage.update({ error: errorMessage(error) });
@@ -640,12 +786,7 @@ export function initAutomaticSync() {
     void domainConfigStorage
       .ensureDefaults()
       .then(async () => {
-        const value = message.localStorageItems;
-        const observed =
-          Array.isArray(value) &&
-          value.every(item => item && typeof item.key === 'string' && typeof item.value === 'string')
-            ? value
-            : undefined;
+        const observed = readObserved(message, sender.tab!.url!);
         await discoverVisitedSite(sender.tab!.url!, observed);
         return domainConfigStorage.get();
       })
@@ -653,20 +794,14 @@ export function initAutomaticSync() {
         for (const [host, item] of Object.entries(config.domainMap)) {
           const rules = await readSiteRules();
           if (!isSiteAllowed(host, rules)) continue;
-          if (!matchesSitePage(host, hostname)) continue;
+          if (!matchesSitePage(host, hostname) && !matchesSiteScope(host, hostname)) continue;
           if (message.type === 'CookieSyncPageReady') {
             if (item.autoPush !== false && (await settingsStorage.get()).backgroundSync !== false) {
               if (!(await getSyncBaseline(host))) {
                 scheduleReconcile();
                 continue;
               }
-              const value = message.localStorageItems;
-              const observed =
-                Array.isArray(value) &&
-                value.every(item => item && typeof item.key === 'string' && typeof item.value === 'string')
-                  ? value
-                  : undefined;
-              await captureAutomaticSync(host, observed, true);
+              await captureAutomaticSync(host, readObserved(message, sender.tab!.url!), true);
             }
             if (item.autoPull !== false) {
               if (startup) await startup;
@@ -676,10 +811,20 @@ export function initAutomaticSync() {
                 (await chrome.storage.session.get(`cookiesync-pulled-${host}`))[`cookiesync-pulled-${host}`] || 0;
               try {
                 if (Date.now() - pulledAt < 5 * 60000) {
-                  const cached = (await cookieStorage.get()).domainCookieMap?.[host]?.localStorageItems || [];
-                  if (cached.length) await applyLocalStorageToTabs(host, cached, sender.tab!.id);
+                  const cached = (await cookieStorage.get()).domainCookieMap?.[host];
+                  const sessionEnabled = sessionStorageEnabled(
+                    (await settingsStorage.get()).includeSessionStorage,
+                    item.includeSessionStorage,
+                  );
+                  if (cached?.localStorageItems?.length || (sessionEnabled && cached?.sessionStorageItems?.length))
+                    await applyPageStorageToTabs(
+                      host,
+                      cached.localStorageItems || [],
+                      cached.sessionStorageItems || [],
+                      { targetTabId: sender.tab!.id, includeSessionStorage: sessionEnabled },
+                    );
                 } else {
-                  await chrome.storage.session.set({ [`cookiesync-pulled-${host}`]: Date.now() });
+                  await markPulled(host);
                   const remote = await pullCookies();
                   await captures.get(host)?.catch(() => {});
                   if ((await getJobs(await queueKey()))[host]) continue;
@@ -697,11 +842,7 @@ export function initAutomaticSync() {
               }
             }
           } else if (item.autoPush !== false) {
-            const value = message.localStorageItems;
-            const valid =
-              Array.isArray(value) &&
-              value.every(item => item && typeof item.key === 'string' && typeof item.value === 'string');
-            await captureAutomaticSync(host, valid ? value : undefined);
+            await captureAutomaticSync(host, readObserved(message, sender.tab!.url!));
           }
         }
         reply({ isOk: true });

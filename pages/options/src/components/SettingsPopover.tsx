@@ -18,6 +18,7 @@ export function SettingsPopover({ trigger }: SettingsPopoverProps) {
     checkedKey:
       | 'protobufEncoding'
       | 'includeLocalStorage'
+      | 'includeSessionStorage'
       | 'contextMenu'
       | 'encryptionEnabled'
       | 'startupPull'
@@ -114,6 +115,24 @@ export function SettingsPopover({ trigger }: SettingsPopoverProps) {
                 />
                 <SyncTooltip title="开启后台同步后，已启用网站会定期检测 LocalStorage 变化；首次手动读取失败时可能刷新页面重试。">
                   <Info className="mx-2" size={18} />
+                </SyncTooltip>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-4 mb-4">
+              <Label
+                className="items-center whitespace-nowrap flex w-[136px] justify-end text-right pt-0.5"
+                htmlFor="include-session">
+                包含 sessionStorage
+              </Label>
+              <div className="flex items-start gap-1">
+                <Switch
+                  onCheckedChange={checked => handleCheckChange(checked, 'includeSessionStorage')}
+                  checked={settingsInfo.includeSessionStorage === true}
+                  id="include-session"
+                />
+                <SyncTooltip title="默认关闭：部分单页应用把会话状态放在 sessionStorage，开启后才能随同步走。它是逐标签页状态，敏感站点可能因为易变值增加上传次数；可在弹窗为单个网站单独开启。恢复时会刷新该网站页面一次。">
+                  <Info className="mx-2 mt-1" size={18} />
                 </SyncTooltip>
               </div>
             </div>

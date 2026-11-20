@@ -17,6 +17,9 @@ message Cookie {
 message LocalStorageItem {
   string key = 1;
   string value = 2;
+  // Exact origin (scheme://host[:port]) that owns this entry. Empty on entries
+  // written before 1.16; those are applied to any matching tab of the site.
+  string origin = 3;
 }
 
 message DomainCookie {
@@ -25,6 +28,12 @@ message DomainCookie {
   repeated Cookie cookies = 5;
   repeated LocalStorageItem localStorageItems = 6;
   string userAgent = 7;
+  // Session storage is per tab and per origin, so it rides with the same domain
+  // entry instead of a separate file.
+  repeated LocalStorageItem sessionStorageItems = 8;
+  // 2 when origin-tagged storage exists. Older peers ignore the marker and drop
+  // the fields they cannot represent, which the writer reports as a warning.
+  uint32 schema = 9;
 }
 
 message CookiesMap {

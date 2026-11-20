@@ -1,5 +1,14 @@
-import { DomainPayload, MessageType, SendResponse, SetLocalStorageMessagePayload } from '@sync-your-cookie/shared';
+import {
+  DomainPayload,
+  MessageType,
+  PageStoragePayload,
+  SendResponse,
+  SetLocalStorageMessagePayload,
+  SetPageStoragePayload,
+} from '@sync-your-cookie/shared';
+import { matchesSiteScope } from '@sync-your-cookie/shared/lib/cookie/restore';
 import { messageListener } from './listener';
+import { readPageSnapshot } from './snapshot';
 
 class Observer {
   observers: any[] = [];
@@ -14,9 +23,29 @@ class Observer {
   subscribeSetLocalStorage(callback: (data: any, sendResponse: (data: SendResponse) => void) => void) {
     messageListener.on(MessageType.SetLocalStorage, callback);
   }
+
+  subscribeGetPageStorage(callback: (data: any, sendResponse: (data: SendResponse) => void) => void) {
+    messageListener.on(MessageType.GetPageStorage, callback);
+  }
+
+  subscribeSetPageStorage(callback: (data: any, sendResponse: (data: SendResponse) => void) => void) {
+    messageListener.on(MessageType.SetPageStorage, callback);
+  }
 }
 
 export const observer = new Observer();
+
+/**
+ * The background addresses one exact origin. The old host check accepted any
+ * origin that merely contained the domain (evil-example.com for example.com),
+ * so the legacy path now uses the same site-family boundary as cookies.
+ */
+const inScope = (payload: { domain: string; origin?: string }) =>
+  payload.origin ? payload.origin === location.origin : matchesSiteScope(payload.domain, location.host);
+
+const setItems = (area: Storage, items: { key?: string | null; value?: string | null }[]) => {
+  for (const item of items) area.setItem(item.key || '', item.value || '');
+};
 
 class eventHandler {
   constructor() {
@@ -26,11 +55,13 @@ class eventHandler {
   init() {
     this.handleGetLocalStorage();
     this.handleSetLocalStorage();
+    this.handleGetPageStorage();
+    this.handleSetPageStorage();
   }
 
   handleGetLocalStorage() {
     observer.subscribeGetLocalStorage(async (result: DomainPayload, sendResponse: (data: SendResponse) => void) => {
-      if (location.origin.includes(result.domain)) {
+      if (inScope(result)) {
         try {
           const items: { key: string; value: string }[] = [];
           const localObject = { ...localStorage };
@@ -60,7 +91,7 @@ class eventHandler {
   handleSetLocalStorage() {
     observer.subscribeSetLocalStorage(
       async (result: SetLocalStorageMessagePayload, sendResponse: (data: SendResponse) => void) => {
-        if (location.origin.includes(result.domain)) {
+        if (inScope(result)) {
           try {
             const values = result.value;
             const setKey = result.onlyKey;
@@ -71,9 +102,7 @@ class eventHandler {
               } else {
               }
             } else {
-              for (const item of values) {
-                localStorage.setItem(item.key || '', item.value || '');
-              }
+              setItems(localStorage, values);
             }
             sendResponse({
               isOk: true,
@@ -88,6 +117,42 @@ class eventHandler {
             });
           }
         } else {
+        }
+      },
+    );
+  }
+
+  handleGetPageStorage() {
+    observer.subscribeGetPageStorage(async (result: PageStoragePayload, sendResponse: (data: SendResponse) => void) => {
+      if (!inScope(result)) return;
+      try {
+        const snapshot = readPageSnapshot();
+        sendResponse({
+          isOk: true,
+          msg: 'get page storage success',
+          result: result.includeSessionStorage === false ? { ...snapshot, sessionStorageItems: [] } : snapshot,
+        });
+      } catch (error) {
+        sendResponse({ isOk: false, msg: 'get page storage error', result: error });
+      }
+    });
+  }
+
+  handleSetPageStorage() {
+    observer.subscribeSetPageStorage(
+      async (result: SetPageStoragePayload, sendResponse: (data: SendResponse) => void) => {
+        if (!inScope(result)) return;
+        try {
+          if (result.localStorageItems) setItems(localStorage, result.localStorageItems);
+          if (result.sessionStorageItems) {
+            // Session storage belongs to this tab: restoring replaces the set so
+            // a stale key from an older session cannot survive.
+            if (result.replaceSession !== false) sessionStorage.clear();
+            setItems(sessionStorage, result.sessionStorageItems);
+          }
+          sendResponse({ isOk: true, msg: 'set page storage success' });
+        } catch (error) {
+          sendResponse({ isOk: false, msg: 'set page storage error', result: error });
         }
       },
     );

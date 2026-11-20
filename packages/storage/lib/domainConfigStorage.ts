@@ -5,6 +5,8 @@ type DomainItemConfig = {
   autoPush?: boolean;
   favIconUrl?: string;
   sourceUrl?: string;
+  /** Site switch for session storage; undefined follows the global default. */
+  includeSessionStorage?: boolean;
 };
 
 interface DomainConfig {

@@ -3,7 +3,9 @@ import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { buildWebdavUrl, readWebdav, writeWebdav, type WebdavSnapshot } from '../webdav/api';
 
 import { accountStorage, isLegacyProvider, type AccountInfo } from '@sync-your-cookie/storage/lib/accountStorage';
+import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
+import { syncFeedbackStorage } from '@sync-your-cookie/storage/lib/syncFeedbackStorage';
 
 import { MessageErrorCode } from '@lib/message';
 import {
@@ -39,6 +41,7 @@ export interface PendingDomainCookie {
   domain: string;
   cookies: ICookie[];
   localStorageItems: ILocalStorageItem[];
+  sessionStorageItems?: ILocalStorageItem[];
   userAgent?: string;
   /** Content hash the job was captured against. */
   baseHash?: string;
@@ -49,6 +52,31 @@ export interface PendingDomainCookie {
 const remoteDigests = new WeakMap<ICookiesMap, Promise<string>>();
 const remotePayloads = new WeakMap<ICookiesMap, string>();
 const webdavSnapshots = new WeakMap<ICookiesMap, { url: string; snapshot: WebdavSnapshot }>();
+
+/** Schema 2 introduced origin-tagged storage and session storage. */
+const CURRENT_SCHEMA = 2;
+
+/**
+ * Older peers ignore the fields they cannot represent, so their next write
+ * silently drops origins and session storage. Detect that regression by
+ * comparing the last applied copy with what the remote holds now.
+ */
+async function detectPeerSchemaRegression(map: ICookiesMap) {
+  const cached = cookieStorage.getSnapshot();
+  if (!cached?.domainCookieMap) return;
+  const degraded = Object.keys(map.domainCookieMap || {}).filter(domain => {
+    const before = Number(cached.domainCookieMap?.[domain]?.schema) || 0;
+    const now = Number(map.domainCookieMap?.[domain]?.schema) || 0;
+    return before >= CURRENT_SCHEMA && now < CURRENT_SCHEMA;
+  });
+  if (!degraded.length) return;
+  const message = `云端有 ${degraded.length} 个网站的 origin 或会话存储字段被旧版本电脑覆盖（${degraded
+    .slice(0, 3)
+    .join('、')}${degraded.length > 3 ? ' 等' : ''}）。请把其他电脑也更新到 1.16 或更高版本，然后重新推送。`;
+  const feedback = await syncFeedbackStorage.get();
+  if (feedback.schemaWarning?.message === message) return;
+  await syncFeedbackStorage.update({ schemaWarning: { at: Date.now(), message } });
+}
 
 export const check = async (accountInfo?: AccountInfo) => {
   const info = accountInfo || (await accountStorage.get());
@@ -72,6 +100,7 @@ export const readCookiesMap = async (accountInfo: AccountInfo): Promise<ICookies
     remotePayloads.set(map, content);
     remoteDigests.set(map, cookiesMapContentHash(map));
     webdavSnapshots.set(map, webdavRead);
+    void detectPeerSchemaRegression(map).catch(() => {});
     return map;
   };
   if (content) {
@@ -161,6 +190,7 @@ export const writeCookiesMap = async (
   if (!previous || previous.url !== url) throw new Error('请先拉取 WebDAV 文件后再写入');
   const result = await writeWebdav(config, encodingStr, previous.snapshot);
   webdavSnapshots.delete(previousMap);
+  if (result.success) await syncFeedbackStorage.update({ schemaWarning: undefined });
   return result;
 };
 
@@ -171,6 +201,7 @@ export const mergeAndWriteCookies = async (
   localStorageItems: ILocalStorageItem[] = [],
   userAgent = '',
   oldCookieMap: ICookiesMap = {},
+  sessionStorageItems: ILocalStorageItem[] = [],
 ): Promise<[WriteResponse, ICookiesMap]> => {
   await check(accountInfo);
   const cookiesMap: ICookiesMap = {
@@ -183,6 +214,8 @@ export const mergeAndWriteCookies = async (
         createTime: oldCookieMap.domainCookieMap?.[domain]?.createTime || Date.now(),
         cookies: cookies,
         localStorageItems: localStorageItems,
+        sessionStorageItems,
+        schema: CURRENT_SCHEMA,
         userAgent: userAgent || oldCookieMap.domainCookieMap?.[domain]?.userAgent || '',
       },
     },
@@ -231,12 +264,14 @@ export const mergeAndWriteMultipleDomainCookies = async (
   const newDomainCookieMap = {
     ...(oldCookieMap.domainCookieMap || {}),
   };
-  for (const { domain, cookies, localStorageItems, userAgent } of writes) {
+  for (const { domain, cookies, localStorageItems, sessionStorageItems, userAgent } of writes) {
     newDomainCookieMap[domain] = {
       updateTime: Date.now(),
       createTime: oldCookieMap.domainCookieMap?.[domain]?.createTime || Date.now(),
       cookies: cookies,
       localStorageItems: localStorageItems || [],
+      sessionStorageItems: sessionStorageItems || [],
+      schema: CURRENT_SCHEMA,
       userAgent: userAgent || oldCookieMap.domainCookieMap?.[domain]?.userAgent || '',
     };
   }

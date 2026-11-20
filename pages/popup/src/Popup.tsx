@@ -78,6 +78,7 @@ const Popup = () => {
   const registered = !!config.domainMap[domain];
   const autoPush = domainItemConfig.autoPush !== false;
   const autoPull = domainItemConfig.autoPull !== false;
+  const sessionStorageOn = domainItemConfig.includeSessionStorage ?? settings.includeSessionStorage ?? false;
   const busy = !!action || pushing || pulling || !!domainItemStatus.pushing || !!domainItemStatus.pulling;
   const siteState = !listed
     ? '未加入名单'
@@ -241,6 +242,24 @@ const Popup = () => {
                   }>
                   双向同步
                 </Button>
+              </div>
+              <div className="popup-session mt-3 border-t pt-3">
+                <label>
+                  同时同步 sessionStorage（此站）
+                  <Switch
+                    aria-label="同步此网站的 sessionStorage"
+                    checked={sessionStorageOn}
+                    disabled={saving || busy}
+                    onCheckedChange={checked =>
+                      void changeSite(() =>
+                        domainConfigStorage.updateItem(domain, { includeSessionStorage: checked }),
+                      )
+                    }
+                  />
+                </label>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  会话存储按标签页存在，恢复时会刷新此站页面一次；默认关闭以免易变值产生多余上传。
+                </p>
               </div>
             </details>
           )}

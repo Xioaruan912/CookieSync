@@ -112,10 +112,37 @@ with sync_playwright() as p:
     entry = remote['domainCookieMap'][f'127.0.0.1:{server.server_port}']
     assert any(c['name']=='session_test' for c in entry['cookies'])
     assert any(v['key']=='test_token' for v in entry['localStorageItems'])
+    assert all(v.get('origin') == base for v in entry['localStorageItems']), 'localStorage must carry its exact origin'
     before_repeat = version
     repeated = options.evaluate('(message) => chrome.runtime.sendMessage(message)', payload)
     assert repeated['isOk'] and version == before_repeat, 'unchanged push must skip remote PUT'
     print('semantic_digest_skips_unchanged_push_passed')
+    # Session storage is opt-in per site and restores only after a reload.
+    options.evaluate('''async () => {
+        const key='settings-storage-key'; const saved=(await chrome.storage.sync.get(key))[key];
+        await chrome.storage.sync.set({[key]:{...saved, includeSessionStorage:true}});
+    }''')
+    site.evaluate("sessionStorage.setItem('session_fixture','s1')")
+    site.bring_to_front()
+    session_push = options.evaluate('(message) => chrome.runtime.sendMessage(message)', payload)
+    assert session_push['isOk'], session_push
+    entry = json.loads(files['/dav/cookies.txt'][0])['domainCookieMap'][f'127.0.0.1:{server.server_port}']
+    assert any(v['key']=='session_fixture' and v['value']=='s1' and v.get('origin')==base for v in entry['sessionStorageItems']), entry['sessionStorageItems']
+    site.evaluate("sessionStorage.setItem('session_fixture','stale')")
+    pulled_session = options.evaluate('(message) => chrome.runtime.sendMessage(message)', {
+        'type':'PullCookie','payload':{'domain':f'127.0.0.1:{server.server_port}','activeTabUrl':base+'/site','reload':True}})
+    assert pulled_session['isOk'], pulled_session
+    site.wait_for_load_state('load')
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        try:
+            if site.evaluate("sessionStorage.getItem('session_fixture')") == 's1': break
+        except Exception:
+            pass
+        time.sleep(0.2)
+    else:
+        raise AssertionError('session storage was not restored after the reload')
+    print('origin_tagged_localstorage_and_session_storage_passed')
     # Conditional-PUT gateways must fail visibly, then work only after explicit opt-in.
     context.add_cookies([{'name':'session_test','value':'changed_login','url':base,'httpOnly':True,'sameSite':'Lax'}])
     reject_conditions = True

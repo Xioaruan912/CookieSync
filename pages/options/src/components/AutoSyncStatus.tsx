@@ -1,14 +1,16 @@
 import { useStorageSuspense } from '@sync-your-cookie/shared';
 import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
+import { syncFeedbackStorage } from '@sync-your-cookie/storage/lib/syncFeedbackStorage';
 import { Button } from '@sync-your-cookie/ui';
 import { ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface BulkSummary {
   domains: number;
   cookies: number;
   localStorageItems: number;
+  sessionStorageItems?: number;
   skipped: number;
 }
 
@@ -17,12 +19,21 @@ type ConfirmMode = 'pull' | 'push';
 export function AutoSyncStatus() {
   const status = useStorageSuspense(autoSyncStatusStorage);
   const settings = useStorageSuspense(settingsStorage);
+  const feedback = useStorageSuspense(syncFeedbackStorage);
+  const [truncated, setTruncated] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmMode>();
   const [message, setMessage] = useState('');
   const enabled = settings.backgroundSync !== false;
   const phase = status.phase === 'uploading' ? '正在上传' : status.phase === 'checking' ? '正在比对' : '等待变化';
+  const truncatedCount = Object.values(truncated).filter(count => count > 0).length;
+  useEffect(() => {
+    void chrome.storage.local
+      .get('cookiesync-storage-truncated')
+      .then(value => setTruncated((value['cookiesync-storage-truncated'] || {}) as Record<string, number>))
+      .catch(() => {});
+  }, [status.lastCheck, status.lastSuccess, status.note]);
   const time = (value?: number) => (value ? new Date(value).toLocaleString() : '尚无记录');
   const sync = async () => {
     setBusy(true);
@@ -46,10 +57,14 @@ export function AutoSyncStatus() {
       });
       if (!response?.isOk) throw new Error(response?.msg || (mode === 'pull' ? '拉取全部失败' : '全部上传失败'));
       const result = response.result as BulkSummary;
+      const storage = [
+        result.localStorageItems ? `${result.localStorageItems} 项本地存储` : '',
+        result.sessionStorageItems ? `${result.sessionStorageItems} 项会话存储` : '',
+      ].filter(Boolean);
       setMessage(
         mode === 'pull'
-          ? `已从云端拉取 ${result.domains} 个网站（${result.cookies} 个 Cookie），跳过 ${result.skipped} 个名单外或已暂停的网站`
-          : `已向云端上传 ${result.domains} 个网站（${result.cookies} 个 Cookie），跳过 ${result.skipped} 个名单外或已暂停的网站`,
+          ? `已从云端拉取 ${result.domains} 个网站（${result.cookies} 个 Cookie${storage.length ? '、' + storage.join('、') : ''}），跳过 ${result.skipped} 个名单外或已暂停的网站`
+          : `已向云端上传 ${result.domains} 个网站（${result.cookies} 个 Cookie${storage.length ? '、' + storage.join('、') : ''}），跳过 ${result.skipped} 个名单外或已暂停的网站`,
       );
       setConfirm(undefined);
     } catch (error) {
@@ -87,6 +102,16 @@ export function AutoSyncStatus() {
         </div>
       </dl>
       {status.note ? <p role="status">{status.note}</p> : null}
+      {feedback.schemaWarning ? (
+        <p role="alert" className="rounded-lg bg-muted p-3 break-words">
+          {feedback.schemaWarning.message}
+        </p>
+      ) : null}
+      {truncatedCount > 0 ? (
+        <p className="text-muted-foreground">
+          有 {truncatedCount} 个网站的存储项超出同步上限（单项 128 KB／每站点 2 MB），超出的键未上传，以免云端文件失控。
+        </p>
+      ) : null}
       {(status.error || message) && (
         <p role="alert" className="text-destructive break-words">
           {message || status.error}

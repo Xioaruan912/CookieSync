@@ -7,6 +7,18 @@ export const canonicalSiteHost = (host: string) => host.toLowerCase().replace(/^
 export const matchesSitePage = (site: string, pageHost: string) =>
   canonicalSiteHost(site) === canonicalSiteHost(pageHost);
 
+/**
+ * Site family match used for page storage: `app.115.com` belongs to `115.com`,
+ * while `evil-example.com` never matches `example.com`. Exact origins are
+ * compared separately before anything is written.
+ */
+export const matchesSiteScope = (site: string, pageHost: string) => {
+  const scope = canonicalSiteHost((site || '').replace(/:\d+$/, ''));
+  const host = canonicalSiteHost((pageHost || '').replace(/:\d+$/, ''));
+  if (!scope || !host) return false;
+  return host === scope || host.endsWith(`.${scope}`);
+};
+
 export async function collectSiteCookies(sourceUrl: string): Promise<chrome.cookies.Cookie[]> {
   const page = new URL(sourceUrl);
   if (!['http:', 'https:'].includes(page.protocol)) return [];

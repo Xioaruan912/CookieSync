@@ -1,16 +1,24 @@
 import { init } from './localStorage';
 import { matchesSitePage } from '@sync-your-cookie/shared/lib/cookie/restore';
 import { isSiteAllowed, siteRulesFromStorage } from '@sync-your-cookie/storage/lib/commonSites';
+import { readPageSnapshot } from './snapshot';
 init();
 
 // Observe only enabled sites; snapshots travel through private extension messages.
 let localSignature = '';
 let automaticEnabled = false;
 let includeLocalStorage = true;
-const snapshotLocalItems = () =>
-  Object.keys(localStorage)
-    .sort()
-    .map(key => ({ key, value: localStorage.getItem(key) || '' }));
+let includeSessionStorage = false;
+
+const currentSnapshot = () => {
+  const snapshot = readPageSnapshot();
+  return {
+    origin: snapshot.origin,
+    localStorageItems: includeLocalStorage ? snapshot.localStorageItems : [],
+    sessionStorageItems: includeSessionStorage ? snapshot.sessionStorageItems : [],
+  };
+};
+
 const checkLocalChanges = async () => {
   try {
     if (chrome.extension.inIncognitoContext) {
@@ -33,14 +41,19 @@ const checkLocalChanges = async () => {
     const enabled = registered
       ? (registered[1] as { autoPush?: boolean }).autoPush !== false
       : settings?.autoDiscoverSites !== false;
+    // Session storage is opt-in: a site switch wins, then the global default.
+    includeSessionStorage =
+      (registered?.[1] as { includeSessionStorage?: boolean } | undefined)?.includeSessionStorage ??
+      settings?.includeSessionStorage ??
+      false;
     automaticEnabled = enabled;
     if (!enabled) return;
-    const items = settings?.includeLocalStorage === false ? [] : snapshotLocalItems();
-    const next = JSON.stringify(items);
+    const snapshot = currentSnapshot();
+    const next = JSON.stringify(snapshot);
     if (!registered) {
-      await chrome.runtime.sendMessage({ type: 'CookieSyncPageReady', localStorageItems: items });
+      await chrome.runtime.sendMessage({ type: 'CookieSyncPageReady', ...snapshot });
     } else if (localSignature && next !== localSignature) {
-      await chrome.runtime.sendMessage({ type: 'CookieSyncLocalStorageChanged', localStorageItems: items });
+      await chrome.runtime.sendMessage({ type: 'CookieSyncLocalStorageChanged', ...snapshot });
     }
     localSignature = next;
   } catch {
@@ -55,7 +68,7 @@ window.addEventListener('pagehide', () => {
     void chrome.runtime
       .sendMessage({
         type: 'CookieSyncLocalStorageChanged',
-        localStorageItems: includeLocalStorage ? snapshotLocalItems() : [],
+        ...currentSnapshot(),
       })
       .catch(() => {});
   } catch {
@@ -64,10 +77,10 @@ window.addEventListener('pagehide', () => {
 });
 
 chrome.runtime.onMessage.addListener(message => {
-  if (message?.type === 'SetLocalStorage')
+  if (message?.type === 'SetLocalStorage' || message?.type === 'SetPageStorage')
     setTimeout(() => {
       try {
-        localSignature = JSON.stringify(snapshotLocalItems());
+        localSignature = JSON.stringify(currentSnapshot());
       } catch {
         /* Unavailable origin. */
       }

@@ -1,6 +1,10 @@
 import type { ICookie, ICookiesMap, ILocalStorageItem } from '@sync-your-cookie/protobuf';
 
-type DomainContent = { cookies?: ICookie[] | null; localStorageItems?: ILocalStorageItem[] | null };
+type DomainContent = {
+  cookies?: ICookie[] | null;
+  localStorageItems?: ILocalStorageItem[] | null;
+  sessionStorageItems?: ILocalStorageItem[] | null;
+};
 const sort = (values: unknown[]) => values.map(value => JSON.stringify(value)).sort();
 
 async function hash(value: unknown): Promise<string> {
@@ -26,14 +30,18 @@ function cookiesValue(cookies: ICookie[] = []) {
   );
 }
 
+/** Origin is part of the identity: the same key on another origin is another value. */
+const storageValue = (items: ILocalStorageItem[] = []) =>
+  sort(items.map(item => ({ origin: item.origin || '', key: item.key || '', value: item.value || '' })));
+
 export const cookieContentHash = (cookies: ICookie[] = []) => hash(cookiesValue(cookies));
-export const localStorageContentHash = (items: ILocalStorageItem[] = []) =>
-  hash(sort(items.map(item => [item.key || '', item.value || ''])));
+export const localStorageContentHash = (items: ILocalStorageItem[] = []) => hash(storageValue(items));
 
 function domainValue(domain: DomainContent = {}) {
   return {
     cookies: cookiesValue(domain.cookies || []),
-    localStorage: sort((domain.localStorageItems || []).map(item => [item.key || '', item.value || ''])),
+    localStorage: storageValue(domain.localStorageItems || []),
+    sessionStorage: storageValue(domain.sessionStorageItems || []),
   };
 }
 
