@@ -19,6 +19,7 @@ export function SettingsPopover({ trigger }: SettingsPopoverProps) {
       | 'protobufEncoding'
       | 'includeLocalStorage'
       | 'includeSessionStorage'
+      | 'includeIndexedDB'
       | 'contextMenu'
       | 'encryptionEnabled'
       | 'startupPull'
@@ -132,6 +133,24 @@ export function SettingsPopover({ trigger }: SettingsPopoverProps) {
                   id="include-session"
                 />
                 <SyncTooltip title="默认关闭：部分单页应用把会话状态放在 sessionStorage，开启后才能随同步走。它是逐标签页状态，敏感站点可能因为易变值增加上传次数；可在弹窗为单个网站单独开启。恢复时会刷新该网站页面一次。">
+                  <Info className="mx-2 mt-1" size={18} />
+                </SyncTooltip>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-4 mb-4">
+              <Label
+                className="items-center whitespace-nowrap flex w-[136px] justify-end text-right pt-0.5"
+                htmlFor="include-idb">
+                包含 IndexedDB
+              </Label>
+              <div className="flex items-start gap-1">
+                <Switch
+                  onCheckedChange={checked => handleCheckChange(checked, 'includeIndexedDB')}
+                  checked={settingsInfo.includeIndexedDB === true}
+                  id="include-idb"
+                />
+                <SyncTooltip title="实验性。只同步体积较小的对象仓库（每库 ≤ 16 KB 级数据、每站点 ≤ 512 KB），跳过无法无损编码的值与超大仓库；恢复前要求页面已存在同名数据库，并会清空该仓库后重写。默认关闭；可在弹窗为单个网站开启。">
                   <Info className="mx-2 mt-1" size={18} />
                 </SyncTooltip>
               </div>

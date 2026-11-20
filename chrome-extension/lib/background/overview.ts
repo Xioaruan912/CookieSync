@@ -9,6 +9,7 @@ import {
   pullAndSetCookies,
   pushCookies,
   sessionStorageEnabled,
+  indexedDbEnabled,
   syncDestinationKey,
   type OverviewPendingEntry,
 } from '@sync-your-cookie/shared';
@@ -25,6 +26,7 @@ import { readSiteRules } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
 import { readPageStorage } from './automaticSync';
 
 const truncatedKey = 'cookiesync-storage-truncated';
+const skippedIndexedDbKey = 'cookiesync-indexeddb-skipped';
 
 /** Only the extension's own pages may read or drive the overview. */
 const fromExtensionPage = (sender: chrome.runtime.MessageSender) =>
@@ -36,6 +38,10 @@ async function overviewPayload() {
   const key = await syncDestinationKey();
   const jobs = ((await chrome.storage.local.get(key))[key] || {}) as Record<string, OverviewPendingEntry>;
   const truncated = ((await chrome.storage.local.get(truncatedKey))[truncatedKey] || {}) as Record<string, number>;
+  const indexedDbSkipped = ((await chrome.storage.local.get(skippedIndexedDbKey))[skippedIndexedDbKey] || {}) as Record<
+    string,
+    string[]
+  >;
   const settings = await settingsStorage.get();
   const dav = await webdavStorage.get();
   const feedback = await syncFeedbackStorage.get();
@@ -47,6 +53,7 @@ async function overviewPayload() {
       health: await siteHealthStorage.get(),
       activity: await siteActivityStorage.get(),
       truncated,
+      indexedDbSkipped,
       isListed: (domain: string) => isSiteAllowed(domain, rules),
     }),
     connected: !!dav.url?.trim() && !!dav.username?.trim() && !!dav.password,
@@ -70,6 +77,7 @@ export async function pushSite(domain: string) {
   const { config, rules } = await requireSite(domain);
   const settings = await settingsStorage.get();
   const sessionEnabled = sessionStorageEnabled(settings.includeSessionStorage, config.includeSessionStorage);
+  const idbEnabled = indexedDbEnabled(settings.includeIndexedDB, config.includeIndexedDB);
   const url = config.sourceUrl || `https://${domain}`;
   const cookies = (await collectSiteCookies(url)).filter(cookie =>
     isAutomaticCookieAllowed(cookie, domain, rules),
@@ -81,8 +89,14 @@ export async function pushSite(domain: string) {
     previous || {},
     sessionEnabled,
     settings.includeLocalStorage !== false,
+    idbEnabled,
   );
-  if (!cookies.length && !picked.localStorageItems.length && !picked.sessionStorageItems.length)
+  if (
+    !cookies.length &&
+    !picked.localStorageItems.length &&
+    !picked.sessionStorageItems.length &&
+    !picked.indexedDBRecords.length
+  )
     throw new Error('未找到可上传的 Cookie 或页面存储');
   const result = await pushCookies(
     domain,
@@ -90,6 +104,7 @@ export async function pushSite(domain: string) {
     picked.localStorageItems,
     navigator.userAgent,
     picked.sessionStorageItems,
+    picked.indexedDBRecords,
   );
   if (!result?.success) throw new Error('推送失败，请检查连接和加密设置');
   const key = await syncDestinationKey();
@@ -104,6 +119,7 @@ export async function pushSite(domain: string) {
     cookies: cookies.length,
     localStorageItems: picked.localStorageItems.length,
     sessionStorageItems: picked.sessionStorageItems.length,
+    indexedDBRecords: picked.indexedDBRecords.length,
   };
 }
 

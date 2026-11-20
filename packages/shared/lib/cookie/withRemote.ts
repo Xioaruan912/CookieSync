@@ -17,6 +17,7 @@ import {
   encryptBase64,
   ICookie,
   ICookiesMap,
+  IIndexedDBRecord,
   ILocalStorageItem,
   isBase64Encrypted,
 } from '@sync-your-cookie/protobuf';
@@ -42,6 +43,7 @@ export interface PendingDomainCookie {
   cookies: ICookie[];
   localStorageItems: ILocalStorageItem[];
   sessionStorageItems?: ILocalStorageItem[];
+  indexedDBRecords?: IIndexedDBRecord[];
   userAgent?: string;
   /** Content hash the job was captured against. */
   baseHash?: string;
@@ -53,13 +55,13 @@ const remoteDigests = new WeakMap<ICookiesMap, Promise<string>>();
 const remotePayloads = new WeakMap<ICookiesMap, string>();
 const webdavSnapshots = new WeakMap<ICookiesMap, { url: string; snapshot: WebdavSnapshot }>();
 
-/** Schema 2 introduced origin-tagged storage and session storage. */
-const CURRENT_SCHEMA = 2;
+/** Schema 2 added origin-tagged/session storage; 3 added IndexedDB records. */
+const CURRENT_SCHEMA = 3;
 
 /**
  * Older peers ignore the fields they cannot represent, so their next write
- * silently drops origins and session storage. Detect that regression by
- * comparing the last applied copy with what the remote holds now.
+ * silently drops origins, session storage and IndexedDB. Detect that regression
+ * by comparing the last applied copy with what the remote holds now.
  */
 async function detectPeerSchemaRegression(map: ICookiesMap) {
   const cached = cookieStorage.getSnapshot();
@@ -67,12 +69,12 @@ async function detectPeerSchemaRegression(map: ICookiesMap) {
   const degraded = Object.keys(map.domainCookieMap || {}).filter(domain => {
     const before = Number(cached.domainCookieMap?.[domain]?.schema) || 0;
     const now = Number(map.domainCookieMap?.[domain]?.schema) || 0;
-    return before >= CURRENT_SCHEMA && now < CURRENT_SCHEMA;
+    return before >= 2 && now < before;
   });
   if (!degraded.length) return;
-  const message = `云端有 ${degraded.length} 个网站的 origin 或会话存储字段被旧版本电脑覆盖（${degraded
+  const message = `云端有 ${degraded.length} 个网站的 origin、会话存储或 IndexedDB 字段被旧版本电脑覆盖（${degraded
     .slice(0, 3)
-    .join('、')}${degraded.length > 3 ? ' 等' : ''}）。请把其他电脑也更新到 1.16 或更高版本，然后重新推送。`;
+    .join('、')}${degraded.length > 3 ? ' 等' : ''}）。请把其他电脑也更新到 1.19 或更高版本，然后重新推送。`;
   const feedback = await syncFeedbackStorage.get();
   if (feedback.schemaWarning?.message === message) return;
   await syncFeedbackStorage.update({ schemaWarning: { at: Date.now(), message } });
@@ -202,6 +204,7 @@ export const mergeAndWriteCookies = async (
   userAgent = '',
   oldCookieMap: ICookiesMap = {},
   sessionStorageItems: ILocalStorageItem[] = [],
+  indexedDBRecords: IIndexedDBRecord[] = [],
 ): Promise<[WriteResponse, ICookiesMap]> => {
   await check(accountInfo);
   const cookiesMap: ICookiesMap = {
@@ -215,6 +218,7 @@ export const mergeAndWriteCookies = async (
         cookies: cookies,
         localStorageItems: localStorageItems,
         sessionStorageItems,
+        indexedDBRecords,
         schema: CURRENT_SCHEMA,
         userAgent: userAgent || oldCookieMap.domainCookieMap?.[domain]?.userAgent || '',
       },
@@ -264,13 +268,14 @@ export const mergeAndWriteMultipleDomainCookies = async (
   const newDomainCookieMap = {
     ...(oldCookieMap.domainCookieMap || {}),
   };
-  for (const { domain, cookies, localStorageItems, sessionStorageItems, userAgent } of writes) {
+  for (const { domain, cookies, localStorageItems, sessionStorageItems, indexedDBRecords, userAgent } of writes) {
     newDomainCookieMap[domain] = {
       updateTime: Date.now(),
       createTime: oldCookieMap.domainCookieMap?.[domain]?.createTime || Date.now(),
       cookies: cookies,
       localStorageItems: localStorageItems || [],
       sessionStorageItems: sessionStorageItems || [],
+      indexedDBRecords: indexedDBRecords || [],
       schema: CURRENT_SCHEMA,
       userAgent: userAgent || oldCookieMap.domainCookieMap?.[domain]?.userAgent || '',
     };

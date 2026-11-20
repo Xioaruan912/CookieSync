@@ -60,8 +60,20 @@ test('overview rows carry counts, switches and attention flags', () => {
   const a = rows.find(row => row.domain === 'a.example');
   assert.equal(a.listed, true);
   assert.equal(a.paused, false);
-  assert.deepEqual(a.pending, { capturedAt: 111, cookies: 2, localStorageItems: 1, sessionStorageItems: 0 });
-  assert.deepEqual(a.cached, { updateTime: 100, cookies: 2, localStorageItems: 1, sessionStorageItems: 1 });
+  assert.deepEqual(a.pending, {
+    capturedAt: 111,
+    cookies: 2,
+    localStorageItems: 1,
+    sessionStorageItems: 0,
+    indexedDBRecords: 0,
+  });
+  assert.deepEqual(a.cached, {
+    updateTime: 100,
+    cookies: 2,
+    localStorageItems: 1,
+    sessionStorageItems: 1,
+    indexedDBRecords: 0,
+  });
   assert.equal(a.health.state, 'invalid');
   assert.equal(a.error, '云端未确认写入');
   assert.equal(a.lastPushAt, 500);
@@ -99,6 +111,7 @@ test('pending domains that are not registered are still shown', () => {
     cookies: 1,
     localStorageItems: 0,
     sessionStorageItems: 0,
+    indexedDBRecords: 0,
   });
 });
 

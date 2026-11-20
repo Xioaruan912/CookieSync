@@ -68,6 +68,15 @@ export type PageStoragePayload = {
   /** Exact origin requested by the background; the page compares it strictly. */
   origin?: string;
   includeSessionStorage?: boolean;
+  includeIndexedDB?: boolean;
+};
+
+export type IndexedDbRecordPayload = {
+  database: string;
+  store: string;
+  key: string;
+  value: string;
+  origin: string;
 };
 
 export type SetPageStoragePayload = {
@@ -75,14 +84,18 @@ export type SetPageStoragePayload = {
   origin?: string;
   localStorageItems?: ILocalStorageItem[];
   sessionStorageItems?: ILocalStorageItem[];
+  indexedDBRecords?: IndexedDbRecordPayload[];
   /** Session storage is per tab, so restoring replaces the whole set. */
   replaceSession?: boolean;
+  replaceIndexedDB?: boolean;
 };
 
 export type PageStorageResult = {
   origin: string;
   localStorageItems: ILocalStorageItem[];
   sessionStorageItems: ILocalStorageItem[];
+  indexedDBRecords?: IndexedDbRecordPayload[];
+  skippedIndexedDB?: string[];
 };
 
 export type MessageMap = {
@@ -252,23 +265,28 @@ export const sendPageStorageMessage = async (
   host: string,
   isTry = true,
   includeSessionStorage = true,
+  includeIndexedDB = false,
 ): Promise<PageStorageResult | undefined> => {
   const read = async (): Promise<PageStorageResult> => {
     const newer = await sendMessage(
       {
         type: MessageType.GetPageStorage,
-        payload: { domain: host, includeSessionStorage },
+        payload: { domain: host, includeSessionStorage, includeIndexedDB },
       },
       true,
     ).catch(() => undefined);
     if (newer?.isOk) {
       const result = newer.result as Partial<PageStorageResult> | undefined;
       const localStorageItems = validItems(result?.localStorageItems);
+      const indexedDBRecords = Array.isArray(result?.indexedDBRecords) ? result?.indexedDBRecords : undefined;
+      const skippedIndexedDB = Array.isArray(result?.skippedIndexedDB) ? result?.skippedIndexedDB : undefined;
       if (localStorageItems)
         return {
           origin: typeof result?.origin === 'string' ? result.origin : '',
           localStorageItems,
           sessionStorageItems: validItems(result?.sessionStorageItems) || [],
+          ...(indexedDBRecords ? { indexedDBRecords } : {}),
+          ...(skippedIndexedDB ? { skippedIndexedDB } : {}),
         };
     }
     const legacy = await sendMessage(
@@ -327,7 +345,7 @@ export const sendPageStorageMessage = async (
       }
       setTimeout(async () => {
         try {
-          myResolve(await sendPageStorageMessage(host, false, includeSessionStorage));
+          myResolve(await sendPageStorageMessage(host, false, includeSessionStorage, includeIndexedDB));
         } catch (error) {
           myReject(error);
         }

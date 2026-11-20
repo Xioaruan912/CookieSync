@@ -43,7 +43,7 @@ export type LocalStorageShowItem = {
   key: string;
   value: string;
   origin?: string;
-  kind?: 'local' | 'session';
+  kind?: 'local' | 'session' | 'indexeddb';
 };
 
 export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
@@ -388,7 +388,9 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
         return (
           <div className="min-w-[120px] text-xs">
             <p className="break-all">{item.origin || '旧版（未标记）'}</p>
-            <p className="text-muted-foreground">{item.kind === 'session' ? '会话存储' : '本地存储'}</p>
+            <p className="text-muted-foreground">
+              {item.kind === 'session' ? '会话存储' : item.kind === 'indexeddb' ? 'IndexedDB' : '本地存储'}
+            </p>
           </div>
         );
       },
@@ -418,7 +420,13 @@ export const useSelected = (cookieMap: Cookie, currentSearchStr: string) => {
   const entry = cookieMap.domainCookieMap?.[selectedDomain];
   const localItems = (entry?.localStorageItems || []).map(item => ({ ...item, kind: 'local' as const }));
   const sessionItems = (entry?.sessionStorageItems || []).map(item => ({ ...item, kind: 'session' as const }));
-  const localStorageItems = [...localItems, ...sessionItems];
+  const idbItems = (entry?.indexedDBRecords || []).map(item => ({
+    key: `${item.database || ''}/${item.store || ''}`,
+    value: item.key || '',
+    origin: item.origin || '',
+    kind: 'indexeddb' as const,
+  }));
+  const localStorageItems = [...localItems, ...sessionItems, ...idbItems];
   useEffect(() => {
     if (localStorageItems && localStorageItems.length > 0) {
       setHasLocalStorage(true);

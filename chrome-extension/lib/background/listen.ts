@@ -18,6 +18,7 @@ import {
   sendPageStorageMessage,
   pickAutomaticStorage,
   sessionStorageEnabled,
+  indexedDbEnabled,
   SendResponse,
 } from '@sync-your-cookie/shared';
 import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
@@ -55,28 +56,46 @@ const handlePush = async (payload: PushCookieMessagePayload, callback: HandleCal
 
     let localStorageItems: NonNullable<Parameters<typeof pushCookies>[2]> = [];
     let sessionStorageItems: NonNullable<Parameters<typeof pushCookies>[4]> = [];
+    let indexedDBRecords: NonNullable<Parameters<typeof pushCookies>[5]> = [];
     const settings = await settingsStorage.get();
     const includeLocalStorage = settings.includeLocalStorage !== false;
     const sessionEnabled = sessionStorageEnabled(settings.includeSessionStorage, previousConfig?.includeSessionStorage);
+    const idbEnabled = indexedDbEnabled(settings.includeIndexedDB, previousConfig?.includeIndexedDB);
     const cached = (await cookieStorage.getSnapshot())?.domainCookieMap?.[host];
     let observed: Awaited<ReturnType<typeof sendPageStorageMessage>>;
     try {
       const hostname = sourceUrl ? new URL(sourceUrl).hostname : host;
-      observed = await sendPageStorageMessage(hostname, true, sessionEnabled);
+      observed = await sendPageStorageMessage(hostname, true, sessionEnabled, idbEnabled);
     } catch {
       /* No open tab: fall back to the last captured copy below. */
     }
     if (observed) {
-      const picked = pickAutomaticStorage(observed, undefined, cached || {}, sessionEnabled, includeLocalStorage);
+      const picked = pickAutomaticStorage(
+        observed,
+        undefined,
+        cached || {},
+        sessionEnabled,
+        includeLocalStorage,
+        idbEnabled,
+      );
       localStorageItems = picked.localStorageItems;
       sessionStorageItems = picked.sessionStorageItems;
+      indexedDBRecords = picked.indexedDBRecords as NonNullable<Parameters<typeof pushCookies>[5]>;
     } else {
       localStorageItems = includeLocalStorage ? cached?.localStorageItems || [] : [];
       sessionStorageItems = sessionEnabled ? cached?.sessionStorageItems || [] : [];
+      indexedDBRecords = idbEnabled ? (cached?.indexedDBRecords || []) : [];
     }
 
-    if (cookies?.length || localStorageItems.length || sessionStorageItems.length) {
-      const res = await pushCookies(host, cookies, localStorageItems, userAgent, sessionStorageItems);
+    if (cookies?.length || localStorageItems.length || sessionStorageItems.length || indexedDBRecords.length) {
+      const res = await pushCookies(
+        host,
+        cookies,
+        localStorageItems,
+        userAgent,
+        sessionStorageItems,
+        indexedDBRecords,
+      );
       checkResponseAndCallback(res, 'push', reply);
     } else {
       reply({ isOk: false, msg: '未找到 Cookie 或 LocalStorage，请先确认已登录', result: cookies });

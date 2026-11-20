@@ -4,6 +4,7 @@ type DomainContent = {
   cookies?: ICookie[] | null;
   localStorageItems?: ILocalStorageItem[] | null;
   sessionStorageItems?: ILocalStorageItem[] | null;
+  indexedDBRecords?: { origin?: string | null; database?: string | null; store?: string | null; key?: string | null; value?: string | null }[] | null;
 };
 const sort = (values: unknown[]) => values.map(value => JSON.stringify(value)).sort();
 
@@ -42,6 +43,15 @@ function domainValue(domain: DomainContent = {}) {
     cookies: cookiesValue(domain.cookies || []),
     localStorage: storageValue(domain.localStorageItems || []),
     sessionStorage: storageValue(domain.sessionStorageItems || []),
+    indexedDB: sort(
+      (domain.indexedDBRecords || []).map(record => ({
+        origin: record.origin || '',
+        database: record.database || '',
+        store: record.store || '',
+        key: record.key || '',
+        value: record.value || '',
+      })),
+    ),
   };
 }
 

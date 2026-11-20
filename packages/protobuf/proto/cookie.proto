@@ -22,6 +22,16 @@ message LocalStorageItem {
   string origin = 3;
 }
 
+message IndexedDBRecord {
+  string database = 1;
+  string store = 2;
+  // JSON-encoded tagged key/value; see shared/lib/cookie/indexedDbCodec.ts.
+  string key = 3;
+  string value = 4;
+  // IndexedDB is per origin, exactly like localStorage.
+  string origin = 5;
+}
+
 message DomainCookie {
   int64 createTime = 1;
   int64 updateTime = 2;
@@ -31,9 +41,12 @@ message DomainCookie {
   // Session storage is per tab and per origin, so it rides with the same domain
   // entry instead of a separate file.
   repeated LocalStorageItem sessionStorageItems = 8;
-  // 2 when origin-tagged storage exists. Older peers ignore the marker and drop
-  // the fields they cannot represent, which the writer reports as a warning.
+  // 2 when origin-tagged storage exists, 3 when IndexedDB records may exist.
+  // Older peers ignore the marker and drop the fields they cannot represent,
+  // which the writer reports as a warning.
   uint32 schema = 9;
+  // Opt-in capture of small IndexedDB object stores.
+  repeated IndexedDBRecord indexedDBRecords = 10;
 }
 
 message CookiesMap {

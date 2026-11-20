@@ -16,6 +16,7 @@ export interface OverviewStorageEntry {
   cookies?: unknown[] | null;
   localStorageItems?: unknown[] | null;
   sessionStorageItems?: unknown[] | null;
+  indexedDBRecords?: unknown[] | null;
 }
 
 export interface OverviewPendingEntry extends OverviewStorageEntry {
@@ -49,13 +50,26 @@ export interface OverviewRow {
   autoPush: boolean;
   autoPull: boolean;
   paused: boolean;
-  pending?: { capturedAt?: number; cookies: number; localStorageItems: number; sessionStorageItems: number };
-  cached?: { updateTime?: number; cookies: number; localStorageItems: number; sessionStorageItems: number };
+  pending?: {
+    capturedAt?: number;
+    cookies: number;
+    localStorageItems: number;
+    sessionStorageItems: number;
+    indexedDBRecords: number;
+  };
+  cached?: {
+    updateTime?: number;
+    cookies: number;
+    localStorageItems: number;
+    sessionStorageItems: number;
+    indexedDBRecords: number;
+  };
   health?: OverviewHealthEntry;
   lastPushAt?: number;
   lastPullAt?: number;
   error?: string;
   truncated?: number;
+  indexedDbSkipped?: string[];
   attention: OverviewAttention[];
 }
 
@@ -66,6 +80,7 @@ export interface OverviewInput {
   health: Record<string, OverviewHealthEntry>;
   activity: Record<string, OverviewActivityEntry>;
   truncated: Record<string, number>;
+  indexedDbSkipped?: Record<string, string[]>;
   isListed: (domain: string) => boolean;
 }
 
@@ -78,6 +93,7 @@ export function buildOverviewRows({
   health,
   activity,
   truncated,
+  indexedDbSkipped = {},
   isListed,
 }: OverviewInput): OverviewRow[] {
   const domains = new Set([...Object.keys(domainMap), ...Object.keys(pending)]);
@@ -102,6 +118,7 @@ export function buildOverviewRows({
     if (healthEntry?.state === 'invalid') attention.push('health');
     if (activityEntry.lastPushOk === false) attention.push('error');
     if ((truncated[domain] || 0) > 0) attention.push('truncated');
+    if ((indexedDbSkipped[domain] || []).length > 0) attention.push('truncated');
     rows.push({
       domain,
       sourceUrl: config?.sourceUrl,
@@ -115,6 +132,7 @@ export function buildOverviewRows({
             cookies: count(pendingEntry.cookies),
             localStorageItems: count(pendingEntry.localStorageItems),
             sessionStorageItems: count(pendingEntry.sessionStorageItems),
+            indexedDBRecords: count(pendingEntry.indexedDBRecords),
           }
         : undefined,
       cached: cachedEntry
@@ -123,6 +141,7 @@ export function buildOverviewRows({
             cookies: count(cachedEntry.cookies),
             localStorageItems: count(cachedEntry.localStorageItems),
             sessionStorageItems: count(cachedEntry.sessionStorageItems),
+            indexedDBRecords: count(cachedEntry.indexedDBRecords),
           }
         : undefined,
       health: healthEntry,
@@ -130,6 +149,7 @@ export function buildOverviewRows({
       lastPullAt: activityEntry.lastPullAt,
       error: activityEntry.lastPushOk === false ? activityEntry.message : undefined,
       truncated: truncated[domain],
+      indexedDbSkipped: indexedDbSkipped[domain],
       attention,
     });
   }

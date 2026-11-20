@@ -7,6 +7,8 @@ type DomainItemConfig = {
   sourceUrl?: string;
   /** Site switch for session storage; undefined follows the global default. */
   includeSessionStorage?: boolean;
+  /** Site switch for IndexedDB capture; undefined follows the global default. */
+  includeIndexedDB?: boolean;
 };
 
 interface DomainConfig {

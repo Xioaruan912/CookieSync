@@ -16,6 +16,7 @@ import {
   pickAutomaticStorage,
   pageOrigin,
   sessionStorageEnabled,
+  indexedDbEnabled,
   applyPageStorageToTabs,
   check,
   pullCookies,
@@ -96,6 +97,12 @@ export async function sessionStorageFor(host: string) {
   return sessionStorageEnabled(settings.includeSessionStorage, config?.includeSessionStorage);
 }
 
+export async function indexedDbFor(host: string) {
+  const settings = await settingsStorage.get();
+  const config = (await domainConfigStorage.get()).domainMap[host];
+  return indexedDbEnabled(settings.includeIndexedDB, config?.includeIndexedDB);
+}
+
 /**
  * One tab's origin-tagged storage. Falls back to the pre-1.16 message so tabs
  * that still run an older content script keep contributing localStorage.
@@ -104,7 +111,8 @@ export async function readPageStorage(host: string): Promise<StorageSnapshot | u
   const settings = await settingsStorage.get();
   const includeLocal = settings.includeLocalStorage !== false;
   const includeSession = await sessionStorageFor(host);
-  if (!includeLocal && !includeSession) return undefined;
+  const includeIndexedDb = await indexedDbFor(host);
+  if (!includeLocal && !includeSession && !includeIndexedDb) return undefined;
   const tabs = await chrome.tabs.query({});
   for (const tab of tabs) {
     if (!tab.id || !tab.url?.startsWith('http') || tab.incognito) continue;
@@ -119,18 +127,23 @@ export async function readPageStorage(host: string): Promise<StorageSnapshot | u
     try {
       const newer = await chrome.tabs.sendMessage(tab.id, {
         type: 'GetPageStorage',
-        payload: { domain: host, includeSessionStorage: includeSession },
+        payload: { domain: host, includeSessionStorage: includeSession, includeIndexedDB: includeIndexedDb },
       });
       if (newer?.isOk && newer.result && !Array.isArray(newer.result)) {
         const result = newer.result as {
           origin?: string;
           localStorageItems?: ILocalStorageItem[];
           sessionStorageItems?: ILocalStorageItem[];
+          indexedDBRecords?: StorageSnapshot['indexedDBRecords'];
+          skippedIndexedDB?: string[];
         };
         return {
           origin: result.origin || tabOrigin,
           localStorageItems: includeLocal ? result.localStorageItems || [] : [],
           sessionStorageItems: includeSession ? result.sessionStorageItems || [] : [],
+          ...(includeIndexedDb && Array.isArray(result.indexedDBRecords)
+            ? { indexedDBRecords: result.indexedDBRecords, skippedIndexedDB: result.skippedIndexedDB || [] }
+            : {}),
           truncated: 0,
         };
       }
@@ -201,15 +214,19 @@ async function discoverVisitedSite(rawUrl: string, observed?: StorageSnapshot, s
   }
   if (settings.backgroundSync === false || settings.autoDiscoverSites === false) return;
   const cookies = await collectSiteCookies(sourceUrl);
-  const storage = settings.includeLocalStorage === false && !(await sessionStorageFor(host)) ? undefined : observed ?? (await readPageStorage(host));
+  const storage = settings.includeLocalStorage === false && !(await sessionStorageFor(host)) && !(await indexedDbFor(host)) ? undefined : observed ?? (await readPageStorage(host));
   const cached = (await cookieStorage.get()).domainCookieMap?.[host];
-  const storageCount = (storage?.localStorageItems.length || 0) + (storage?.sessionStorageItems?.length || 0);
+  const storageCount =
+    (storage?.localStorageItems.length || 0) +
+    (storage?.sessionStorageItems?.length || 0) +
+    (storage?.indexedDBRecords?.length || 0);
   if (
     !cookies.length &&
     !storageCount &&
     !cached?.cookies?.length &&
     !cached?.localStorageItems?.length &&
-    !cached?.sessionStorageItems?.length
+    !cached?.sessionStorageItems?.length &&
+    !cached?.indexedDBRecords?.length
   )
     return;
   // updateItem preserves explicit switches even if they changed while discovery was reading.
@@ -248,9 +265,19 @@ export function captureAutomaticSync(host: string, observed?: StorageSnapshot, s
 }
 
 const truncatedKey = 'cookiesync-storage-truncated';
+const skippedIndexedDbKey = 'cookiesync-indexeddb-skipped';
 const sessionThrottleKey = (host: string) => `cookiesync-session-capture-${host}`;
 const sessionThrottleMs = 10 * 60000;
 const markPulled = (host: string) => chrome.storage.session.set({ [`cookiesync-pulled-${host}`]: Date.now() });
+
+async function recordSkippedIndexedDb(host: string, stores: string[]) {
+  const stored = ((await chrome.storage.local.get(skippedIndexedDbKey))[skippedIndexedDbKey] || {}) as Record<
+    string,
+    string[]
+  >;
+  if (JSON.stringify(stored[host] || []) === JSON.stringify(stores)) return;
+  await chrome.storage.local.set({ [skippedIndexedDbKey]: { ...stored, [host]: stores } });
+}
 
 /**
  * Session storage changes constantly on some single-page apps. When nothing
@@ -289,17 +316,20 @@ async function captureNow(host: string, observed?: StorageSnapshot, skipEmpty = 
   // Preserve paused child-domain backups without collecting their current browser values.
   const cookies = [...collected, ...(previous?.cookies || []).filter(cookie => !cookieAllowed(cookie, host, rules))];
   const sessionEnabled = sessionStorageEnabled(settings.includeSessionStorage, config.includeSessionStorage);
+  const indexedDbOn = indexedDbEnabled(settings.includeIndexedDB, config.includeIndexedDB);
   const picked = pickAutomaticStorage(
     observed ?? (await readPageStorage(host)),
     pending,
     previous || {},
     sessionEnabled,
     settings.includeLocalStorage !== false,
+    indexedDbOn,
   );
   const items = picked.localStorageItems;
   const sessionItems = picked.sessionStorageItems;
   await recordTruncated(host, picked.truncated);
-  if (skipEmpty && !cookies.length && !items.length && !sessionItems.length) return;
+  if (picked.skippedIndexedDB.length) await recordSkippedIndexedDb(host, picked.skippedIndexedDB);
+  if (skipEmpty && !cookies.length && !items.length && !sessionItems.length && !picked.indexedDBRecords.length) return;
   if (skipEmpty) {
     // Passive discovery cannot distinguish browser session-cookie cleanup from logout.
     // Actual onChanged/pagehide captures use skipEmpty=false and keep explicit deletions.
@@ -313,6 +343,7 @@ async function captureNow(host: string, observed?: StorageSnapshot, skipEmpty = 
     cookies,
     localStorageItems: items,
     sessionStorageItems: sessionItems,
+    indexedDBRecords: picked.indexedDBRecords,
     userAgent: navigator.userAgent,
     revision: crypto.randomUUID(),
     capturedAt: Date.now(),
@@ -471,17 +502,20 @@ export async function pushAllToCloud(): Promise<PullAllSummary> {
       // Preserve paused child-domain backups without collecting their live values.
       const cookies = [...collected, ...(previous?.cookies || []).filter(cookie => !cookieAllowed(cookie, domain, rules))];
       const sessionEnabled = sessionStorageEnabled(settings.includeSessionStorage, item.includeSessionStorage);
+      const indexedDbOn = indexedDbEnabled(settings.includeIndexedDB, item.includeIndexedDB);
       const picked = pickAutomaticStorage(
         await readPageStorage(domain),
         undefined,
         previous || {},
         sessionEnabled,
         settings.includeLocalStorage !== false,
+        indexedDbOn,
       );
       await recordTruncated(domain, picked.truncated);
+      if (picked.skippedIndexedDB.length) await recordSkippedIndexedDb(domain, picked.skippedIndexedDB);
       const items = picked.localStorageItems;
       const sessionItems = picked.sessionStorageItems;
-      if (!cookies.length && !items.length && !sessionItems.length) {
+      if (!cookies.length && !items.length && !sessionItems.length && !picked.indexedDBRecords.length) {
         summary.skipped++;
         continue;
       }
@@ -490,6 +524,7 @@ export async function pushAllToCloud(): Promise<PullAllSummary> {
         cookies,
         localStorageItems: items,
         sessionStorageItems: sessionItems,
+        indexedDBRecords: picked.indexedDBRecords,
         userAgent: navigator.userAgent,
       });
       summary.cookies += cookies.length;
@@ -801,7 +836,13 @@ export function initAutomaticSync() {
                 scheduleReconcile();
                 continue;
               }
-              await captureAutomaticSync(host, readObserved(message, sender.tab!.url!), true);
+              // IndexedDB is only read from the page, so let captureNow query the
+              // tab instead of trusting the message snapshot.
+              await captureAutomaticSync(
+                host,
+                (await indexedDbFor(host)) ? undefined : readObserved(message, sender.tab!.url!),
+                true,
+              );
             }
             if (item.autoPull !== false) {
               if (startup) await startup;
@@ -816,12 +857,28 @@ export function initAutomaticSync() {
                     (await settingsStorage.get()).includeSessionStorage,
                     item.includeSessionStorage,
                   );
-                  if (cached?.localStorageItems?.length || (sessionEnabled && cached?.sessionStorageItems?.length))
+                  const idbOn = await indexedDbFor(host);
+                  if (
+                    cached?.localStorageItems?.length ||
+                    (sessionEnabled && cached?.sessionStorageItems?.length) ||
+                    (idbOn && cached?.indexedDBRecords?.length)
+                  )
                     await applyPageStorageToTabs(
                       host,
                       cached.localStorageItems || [],
                       cached.sessionStorageItems || [],
-                      { targetTabId: sender.tab!.id, includeSessionStorage: sessionEnabled },
+                      {
+                        targetTabId: sender.tab!.id,
+                        includeSessionStorage: sessionEnabled,
+                        includeIndexedDB: idbOn,
+                        indexedDBRecords: (cached.indexedDBRecords || []).map(record => ({
+                          database: record.database || '',
+                          store: record.store || '',
+                          key: record.key || '',
+                          value: record.value || '',
+                          origin: record.origin || '',
+                        })),
+                      },
                     );
                 } else {
                   await markPulled(host);

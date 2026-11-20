@@ -9,6 +9,7 @@ import {
 import { matchesSiteScope } from '@sync-your-cookie/shared/lib/cookie/restore';
 import { messageListener } from './listener';
 import { readPageSnapshot } from './snapshot';
+import { captureIndexedDb, restoreIndexedDb } from './indexedDb';
 
 class Observer {
   observers: any[] = [];
@@ -127,10 +128,17 @@ class eventHandler {
       if (!inScope(result)) return;
       try {
         const snapshot = readPageSnapshot();
+        const indexedDb = result.includeIndexedDB ? await captureIndexedDb() : undefined;
         sendResponse({
           isOk: true,
           msg: 'get page storage success',
-          result: result.includeSessionStorage === false ? { ...snapshot, sessionStorageItems: [] } : snapshot,
+          result: {
+            ...snapshot,
+            sessionStorageItems: result.includeSessionStorage === false ? [] : snapshot.sessionStorageItems,
+            ...(indexedDb
+              ? { indexedDBRecords: indexedDb.records, skippedIndexedDB: indexedDb.skipped }
+              : {}),
+          },
         });
       } catch (error) {
         sendResponse({ isOk: false, msg: 'get page storage error', result: error });
@@ -150,7 +158,10 @@ class eventHandler {
             if (result.replaceSession !== false) sessionStorage.clear();
             setItems(sessionStorage, result.sessionStorageItems);
           }
-          sendResponse({ isOk: true, msg: 'set page storage success' });
+          let indexedDb;
+          if (result.indexedDBRecords && result.replaceIndexedDB !== false)
+            indexedDb = await restoreIndexedDb(result.indexedDBRecords, location.origin);
+          sendResponse({ isOk: true, msg: 'set page storage success', result: indexedDb });
         } catch (error) {
           sendResponse({ isOk: false, msg: 'set page storage error', result: error });
         }
