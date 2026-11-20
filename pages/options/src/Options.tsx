@@ -5,6 +5,7 @@ import { AutoSyncStatus } from './components/AutoSyncStatus';
 import { SiteHealthSettings } from './components/SiteHealthSettings';
 import { AboutSettings } from './components/AboutSettings';
 import { OverviewPanel } from './components/OverviewPanel';
+import { ConnectionGuide } from './components/ConnectionGuide';
 import { useStorageSuspense, useTheme, withErrorBoundary, withSuspense } from '@sync-your-cookie/shared';
 import { accountStorage, isLegacyProvider } from '@sync-your-cookie/storage/lib/accountStorage';
 import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
@@ -131,6 +132,7 @@ const Options = () => {
                 </div>
               </CardContent>
             ) : null}
+            <ConnectionGuide />
             <WebdavSettings />
             <CardContent className="pt-6">
               <ConfigChannelSettings />

@@ -363,6 +363,9 @@ body {
   color: hsl(var(--muted-foreground));
   font-size: 12.5px;
 }
+.site-health-card > button {
+  justify-self: start;
+}
 .site-health-repair summary {
   display: flex;
   align-items: center;
@@ -739,6 +742,62 @@ body {
     margin-left: 0;
     width: 100%;
   }
+}
+
+/* First-run guide: three numbered steps, gone once complete. */
+.connection-guide h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.connection-guide > p.text-muted-foreground {
+  margin: 0;
+}
+.connection-guide ol {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.connection-guide li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.connection-step-index {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: 2px;
+  background: hsl(var(--muted));
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+.connection-guide li[data-done='true'] .connection-step-index {
+  border-color: hsl(var(--accent));
+  background: hsl(var(--accent) / 0.3);
+  color: hsl(var(--foreground));
+}
+.connection-guide li strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+.connection-guide li[data-done='true'] strong {
+  color: hsl(var(--muted-foreground));
+}
+.connection-guide li p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: hsl(var(--muted-foreground));
 }
 
 .settings-footer {

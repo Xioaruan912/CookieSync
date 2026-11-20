@@ -66,14 +66,22 @@ const Popup = () => {
   const listed = !!domain && !!policy && isSiteAllowed(domain, policy);
   const healthProfile = domain ? siteProfileFor(domain) : undefined;
   const healthEntry = healthProfile ? health[healthProfile.domain] : undefined;
-  const healthText =
-    healthEntry?.state === 'ok'
-      ? '登录有效'
-      : healthEntry?.state === 'invalid'
-        ? '登录已失效'
-        : healthEntry?.state === 'unknown'
-          ? '验证未完成'
-          : '未验证';
+  const healthText = healthProfile
+    ? healthProfile.healthCheck
+      ? healthEntry?.state === 'ok'
+        ? '登录有效'
+        : healthEntry?.state === 'invalid'
+          ? '登录已失效'
+          : healthEntry?.state === 'unknown'
+            ? '验证未完成'
+            : '未验证'
+      : healthEntry?.loginKeysMissing
+        ? '缺少登录 Cookie'
+        : healthEntry
+          ? '登录要素齐全'
+          : '未检查'
+    : '';
+  const healthBad = healthEntry?.state === 'invalid' || healthEntry?.loginKeysMissing === true;
   const background = settings.backgroundSync !== false;
   const registered = !!config.domainMap[domain];
   const autoPush = domainItemConfig.autoPush !== false;
@@ -146,7 +154,7 @@ const Popup = () => {
       </header>
       <section
         className="signal-card"
-        data-state={listed && connected ? (healthEntry?.state === 'invalid' ? 'warn' : 'live') : 'idle'}
+        data-state={listed && connected ? (healthBad ? 'warn' : 'live') : 'idle'}
         aria-labelledby="current-site">
         <div className="signal-top">
           <span className="signal-dot" aria-hidden="true" />
@@ -313,12 +321,16 @@ const Popup = () => {
         <button
           type="button"
           className="popup-site-health"
-          data-state={healthEntry?.state}
-          onClick={() => void chrome.runtime.openOptionsPage()}>
+          data-state={healthBad ? 'warn' : healthEntry?.state}
+          onClick={() => {
+            if (healthBad && healthProfile.qrLogin)
+              void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#automation') });
+            else void chrome.runtime.openOptionsPage();
+          }}>
           <span>
             {healthProfile.domain} 会话：{healthText}
           </span>
-          {healthEntry?.state === 'invalid' ? <span>去修复 →</span> : null}
+          {healthBad && healthProfile.qrLogin ? <span>去修复 →</span> : null}
         </button>
       ) : null}
       <footer className="popup-footer">

@@ -43,7 +43,19 @@ test('the 115 profile keeps the verified login key set and a read-only health en
   assert.equal(profiles.siteProfileFor('passport.115.com'), profile115);
   assert.equal(profiles.siteProfileFor('115.com:443'), profile115);
   assert.equal(profiles.siteProfileFor('www.11586.com'), undefined, 'lookalike domains must not match');
-  assert.equal(profiles.siteProfileFor('douyin.com'), undefined);
+  assert.equal(profiles.siteProfileFor('www.douyin.com').domain, 'douyin.com');
+  assert.equal(profiles.siteProfileFor('www.xiaohongshu.com').domain, 'xiaohongshu.com');
+});
+
+test('xiaohongshu and douyin verify login keys locally without a network probe', () => {
+  const xhs = profiles.siteProfileFor('www.xiaohongshu.com');
+  const dy = profiles.siteProfileFor('www.douyin.com');
+  assert.deepEqual(xhs.loginKeys, ['web_session']);
+  assert.deepEqual(dy.loginKeys, ['sessionid']);
+  assert.equal(xhs.healthCheck, undefined, 'signed APIs cannot serve as a stable read-only probe');
+  assert.equal(dy.healthCheck, undefined);
+  assert.deepEqual(profiles.missingLoginKeys(xhs, [{ name: 'web_session' }]), []);
+  assert.deepEqual(profiles.missingLoginKeys(dy, []), ['sessionid']);
 });
 
 test('missingLoginKeys reports exactly the absent login cookies', () => {
@@ -68,6 +80,20 @@ test('health check maps site answers honestly and never guesses on network error
   globalThis.fetch = async () => reply({}, 502);
   const unreachable = await profiles.checkProfileHealth(profile115);
   assert.equal(unreachable.state, 'unknown');
+
+  globalThis.fetch = async () => new Response('<html>WAF challenge</html>', { status: 403, headers: { 'Content-Type': 'text/html' } });
+  const challenged = await profiles.checkProfileHealth(profile115);
+  assert.equal(challenged.state, 'unknown', 'a challenge page is not proof of a logged-out session');
+  assert.match(challenged.message || '', /403|无法判断/);
+
+  globalThis.fetch = async () => new Response('not json', { status: 200 });
+  const garbage = await profiles.checkProfileHealth(profile115);
+  assert.equal(garbage.state, 'unknown');
+
+  globalThis.fetch = async () => reply({ state: false, error: '请先登录,后操作！' }, 401);
+  const denied = await profiles.checkProfileHealth(profile115);
+  assert.equal(denied.state, 'invalid');
+  assert.match(denied.message || '', /请先登录/);
 
   globalThis.fetch = async () => {
     throw new TypeError('network down');

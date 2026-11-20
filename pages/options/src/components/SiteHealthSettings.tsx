@@ -170,7 +170,18 @@ export function SiteHealthSettings() {
                 {entry.message}
               </p>
             ) : null}
-            {profile.qrLogin ? (
+            {entry?.state === 'invalid' ? (
+              <p className="text-muted-foreground">
+                站点拒绝恢复的会话（常见于登录地点/设备绑定）。在本机重新登录或扫码后推送，其他电脑稍后自动采用。
+              </p>
+            ) : null}
+            {entry?.state === 'invalid' && profile.qrLogin ? (
+              <Button size="sm" disabled={qrProfile?.domain === profile.domain && qrStage.stage !== 'failed'} onClick={() => void startRepair(profile)}>
+                <QrCode size={15} className="mr-1" aria-hidden="true" />
+                扫码重新登录
+              </Button>
+            ) : null}
+            {profile.qrLogin && entry?.state !== 'invalid' ? (
               <details className="site-health-repair">
                 <summary>
                   <QrCode size={15} aria-hidden="true" />
