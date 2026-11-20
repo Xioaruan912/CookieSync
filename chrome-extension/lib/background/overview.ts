@@ -7,6 +7,7 @@ import {
   matchesSiteScope,
   pickAutomaticStorage,
   pullAndSetCookies,
+  pullCookies,
   pushCookies,
   sessionStorageEnabled,
   indexedDbEnabled,
@@ -24,6 +25,7 @@ import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { isAutomaticCookieAllowed, isSiteAllowed } from '@sync-your-cookie/storage/lib/commonSites';
 import { readSiteRules } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
 import { readPageStorage } from './automaticSync';
+import { snapshotLocal, snapshotRemote } from './safety';
 
 const truncatedKey = 'cookiesync-storage-truncated';
 const skippedIndexedDbKey = 'cookiesync-indexeddb-skipped';
@@ -76,6 +78,8 @@ async function requireSite(domain: string) {
 export async function pushSite(domain: string) {
   const { config, rules } = await requireSite(domain);
   const settings = await settingsStorage.get();
+  // Keep the cloud copy this push replaces.
+  await snapshotRemote(await pullCookies(), 'push-site');
   const sessionEnabled = sessionStorageEnabled(settings.includeSessionStorage, config.includeSessionStorage);
   const idbEnabled = indexedDbEnabled(settings.includeIndexedDB, config.includeIndexedDB);
   const url = config.sourceUrl || `https://${domain}`;
@@ -126,6 +130,7 @@ export async function pushSite(domain: string) {
 export async function pullSite(domain: string, reload = true) {
   const { config, rules } = await requireSite(domain);
   const url = config.sourceUrl || `https://${domain}`;
+  await snapshotLocal('pull-site', [domain]);
   await pullAndSetCookies(url, domain, reload, undefined, undefined, cookie =>
     isAutomaticCookieAllowed(cookie, domain, rules),
   );

@@ -122,6 +122,7 @@ test('fresh WebDAV destination uploads existing cookies in its first automatic c
     protobufEncoding: false,
     encryptionEnabled: false,
     configChannel: 'chrome-sync',
+    rollingBackup: false,
   });
   await domainConfigStorage.ensureDefaults();
   await automatic.restoreAtStartup(true);

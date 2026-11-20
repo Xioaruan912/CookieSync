@@ -559,5 +559,26 @@ with sync_playwright() as p:
     push_all = so.evaluate('(message) => chrome.runtime.sendMessage(message)', {'type': 'CookieSyncPushAll'})
     assert push_all['isOk'], push_all
     print('push_all_message_wired', json.dumps(push_all.get('result', {}), ensure_ascii=False))
+    # Rollback points, redacted diagnostics and remote backups.
+    so.get_by_role('link', name='自动同步', exact=True).click()
+    so.locator('.safety-card').wait_for()
+    assert so.locator('.safety-snapshots li').count() >= 1, 'batch operations must leave a rollback point'
+    so.get_by_role('button', name='读取备份信息', exact=True).click()
+    so.locator('.safety-slot').first.wait_for()
+    assert so.locator('.safety-slot').count() == 3
+    with so.expect_download() as download_info:
+        so.get_by_role('button', name='导出脱敏诊断', exact=True).click()
+    download = download_info.value
+    assert download.suggested_filename.endswith('.json')
+    diagnostics = json.loads(Path(download.path()).read_text(encoding='utf-8'))
+    assert diagnostics['format'] == 'cookiesync-diagnostics-v1'
+    diagnostics_text = json.dumps(diagnostics, ensure_ascii=False)
+    assert 'dummy_login' not in diagnostics_text, 'cookie values must never be exported'
+    assert 'dummy-app-password' not in diagnostics_text, 'WebDAV credentials must never be exported'
+    snapshots = so.evaluate('async () => (await chrome.storage.local.get("cookiesync-snapshots-v1"))["cookiesync-snapshots-v1"]')
+    rollback = so.evaluate('(message) => chrome.runtime.sendMessage(message)',
+                           {'type': 'CookieSyncRollback', 'id': snapshots[0]['id']})
+    assert rollback['isOk'], rollback
+    print('rollback_diagnostics_and_remote_backup_passed')
     seed.close()
 server.shutdown()

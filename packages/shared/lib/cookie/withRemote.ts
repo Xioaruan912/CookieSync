@@ -1,6 +1,7 @@
 import { cookiesMapContentHash, domainContentHash } from './fingerprint';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { buildWebdavUrl, readWebdav, writeWebdav, type WebdavSnapshot } from '../webdav/api';
+import { backupIfDue } from '../webdav/backup';
 
 import { accountStorage, isLegacyProvider, type AccountInfo } from '@sync-your-cookie/storage/lib/accountStorage';
 import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
@@ -190,6 +191,24 @@ export const writeCookiesMap = async (
   const url = buildWebdavUrl(config);
   const previous = webdavSnapshots.get(previousMap);
   if (!previous || previous.url !== url) throw new Error('请先拉取 WebDAV 文件后再写入');
+  // Keep one daily copy of the file we are about to replace. Backups are best
+  // effort: a server without DELETE/extra paths must not break syncing.
+  if (raw && settingsInfo?.rollingBackup !== false) {
+    try {
+      await backupIfDue(config, raw);
+      const feedback = await syncFeedbackStorage.get();
+      if (feedback.backupWarning) await syncFeedbackStorage.update({ backupWarning: undefined });
+    } catch (error) {
+      await syncFeedbackStorage
+        .update({
+          backupWarning: {
+            at: Date.now(),
+            message: `云端历史备份未写入（主文件不受影响）：${error instanceof Error ? error.message : '请求失败'}`,
+          },
+        })
+        .catch(() => {});
+    }
+  }
   const result = await writeWebdav(config, encodingStr, previous.snapshot);
   webdavSnapshots.delete(previousMap);
   if (result.success) await syncFeedbackStorage.update({ schemaWarning: undefined });

@@ -8,6 +8,8 @@ interface SyncFeedback {
    * rewrote the entry. Cleared by the next successful write from this browser.
    */
   schemaWarning?: { at: number; message: string };
+  /** Set when a daily rolling backup could not be written; never blocks sync. */
+  backupWarning?: { at: number; message: string };
 }
 
 const storage = createStorage<SyncFeedback>(
