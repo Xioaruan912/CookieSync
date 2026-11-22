@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      1.2.0
+// @version      1.3.0
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
@@ -227,18 +227,106 @@
     const root = host.attachShadow({ mode: 'closed' });
     const stylesheet = new CSSStyleSheet();
     stylesheet.replaceSync(`
-        :host{all:initial}
-        dialog{width:min(520px,calc(100vw - 32px));max-height:85vh;box-sizing:border-box;
-          padding:24px;border:1px solid #366556;border-radius:14px;background:#f5faf7;color:#173a2e;
-          font:14px/1.5 system-ui,sans-serif;color-scheme:light}
-        dialog::backdrop{background:#0b241d99} header, .actions{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
-        h2,h3,p{margin:0} section{display:grid;gap:8px;margin-block:14px;padding-top:12px;border-top:1px solid #c4d9cf}
-        label{display:grid;gap:3px} label:has(input[type=checkbox]){display:flex;align-items:center;gap:8px}
-        input,select,button{font:inherit;padding:6px 8px;border:1px solid #8da99c;border-radius:6px}
-        input,select{min-width:0;background:white} button{background:#e1f1e8;color:#173a2e;cursor:pointer}
-        button:disabled{cursor:wait;opacity:.6} #sync{background:#16563e;color:white}
-        #rules{max-height:140px;overflow:auto;padding-left:24px;overflow-wrap:anywhere;margin:0}
-        :focus-visible{outline:2px solid #176852;outline-offset:2px}
+      :host { all: initial }
+      dialog {
+        --surface: #fffefb; --canvas: #f5f4ee; --ink: #202d27; --muted: #536458;
+        --edge: #d9e0d7; --brand: #1d604b; --selected: #e0eee5; --on-brand: #fff;
+        --positive: #276146; --caution: #88501e; --danger: #a12f26;
+        box-sizing: border-box; width: min(820px, calc(100vw - 32px)); max-width: none;
+        max-height: min(92dvh, 760px); padding: 0; overflow: hidden;
+        background: var(--surface); color: var(--ink); border: 1px solid var(--edge);
+        border-radius: 20px; box-shadow: 0 28px 96px #0b221e45;
+        font: 14px/1.55 "Inter", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+        color-scheme: light;
+      }
+      dialog[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto }
+      dialog::backdrop { background: #0e1d17a6 }
+      *, *::before, *::after { box-sizing: border-box }
+      h2, h3, p { margin: 0 }
+      .top {
+        background: radial-gradient(ellipse at 95% 0%, #336451 0%, transparent 65%), #173a30;
+        color: #f4fff7; padding: 24px 28px; display: flex; justify-content: space-between;
+        align-items: start; gap: 14px;
+      }
+      .top h2 { font-size: clamp(23px, 4vw, 32px); line-height: 1.15; font-weight: 680; letter-spacing: -.025em }
+      .top p { color: #bad7c8; margin-top: 6px; font-size: 12px }
+      .workspace { display: grid; grid-template-columns: 166px minmax(0, 1fr); min-height: 0 }
+      nav { display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+        padding: 22px 12px; background: var(--canvas); border-inline-end: 1px solid var(--edge) }
+      nav button { text-align: left; min-width: 0; border-color: transparent; background: transparent; color: var(--muted) }
+      nav button[aria-pressed="true"] { color: var(--positive); background: var(--selected); font-weight: 700 }
+      .content { min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable }
+      section { display: grid; align-content: start; gap: 16px; min-height: 365px; padding: 24px 28px }
+      [hidden] { display: none !important }
+      .heading { display: grid; gap: 3px; border-bottom: 1px solid var(--edge); padding-bottom: 13px }
+      h3 { font-size: 21px; font-weight: 680; letter-spacing: -.02em }
+      .hint, small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere }
+      .fields { display: grid; gap: 14px }
+      label { display: grid; gap: 5px; min-width: 0; font-weight: 550 }
+      input, select, button {
+        min-width: 0; border: 1px solid var(--edge); border-radius: 9px; min-height: 40px;
+        padding: 7px 12px; font: inherit; color: inherit; background: var(--surface);
+      }
+      input, select { width: 100%; font-weight: 400 }
+      input::placeholder { color: var(--muted); opacity: .85 }
+      button { cursor: pointer; white-space: normal; font-weight: 600 }
+      button:hover:enabled { background: var(--selected) }
+      button:disabled { cursor: wait; opacity: .62 }
+      .primary { background: var(--brand); color: var(--on-brand); border-color: transparent }
+      .primary:hover:enabled { filter: brightness(1.12); background: var(--brand) }
+      #close { background: #ffffff0d; color: #f4fff7; border-color: #c1e1cf48; min-height: 34px; padding: 4px 11px }
+      #close:hover:enabled { background: #ffffff21 }
+      .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px }
+      .key-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px }
+      .automatic { display: flex; justify-content: space-between; align-items: center; gap: 16px;
+        background: var(--canvas); padding: 10px 12px; border-radius: 9px }
+      .automatic small { display: block; font-weight: 400 }
+      #automatic { appearance: none; flex: 0 0 38px; width: 38px; min-height: 22px; height: 22px;
+        border-radius: 20px; border-color: transparent; background: #748178; cursor: pointer;
+        padding: 0; margin: 0; position: relative }
+      #automatic::before { content: ""; position: absolute; top: 2px; left: 2px;
+        width: 16px; height: 16px; border-radius: 50%; background: #fff }
+      #automatic:checked { background: var(--brand) }
+      #automatic:checked::before { transform: translateX(16px) }
+      .rules { list-style: none; padding: 0; margin: 0; max-height: 218px; overflow: auto }
+      .rules li { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 8px 0; border-bottom: 1px solid var(--edge); overflow-wrap: anywhere }
+      .rule-state { flex: none; font-size: 12px; color: var(--positive) }
+      .rule-state[data-enabled="false"] { color: var(--caution) }
+      footer { border-top: 1px solid var(--edge); background: var(--surface);
+        display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 28px }
+      .feedback { min-width: 0; display: grid; gap: 1px; overflow-wrap: anywhere }
+      #connection { font-weight: 650; font-size: 13px }
+      #connection[data-connected="true"] { color: var(--positive) }
+      #status[data-kind="error"] { color: var(--danger) }
+      #status:empty { display: none }
+      #sync { flex: none }
+      :focus-visible { outline: 2px solid var(--brand); outline-offset: 3px }
+      #close:focus-visible { outline-color: #e1f5e8 }
+      @media (prefers-reduced-motion: no-preference) {
+        dialog[open] { animation: appear .22s ease-out }
+        dialog::backdrop { animation: shade .18s ease-out }
+        section:not([hidden]) { animation: appear .18s ease-out }
+        button, #automatic, #automatic::before { transition: background-color .16s, transform .16s }
+        button:enabled:active { transform: translateY(1px) }
+        @keyframes appear { from { opacity: .5; transform: translateY(5px) } }
+        @keyframes shade { from { opacity: 0 } }
+      }
+      @media (prefers-color-scheme: dark) {
+        dialog { --surface: #182520; --canvas: #121e19; --ink: #eaf4ee; --muted: #acbeb3;
+          --edge: #344940; --brand: #a9dec1; --selected: #243b30; --on-brand: #11241b;
+          --positive: #b6e4c8; --caution: #ecc096; --danger: #ffb5aa; color-scheme: dark }
+        #automatic:checked::before { background: #173a30 }
+      }
+      @media (max-width: 610px) {
+        dialog { width: calc(100vw - 20px); max-height: 94dvh; border-radius: 14px }
+        .top { padding: 16px }
+        .workspace { grid-template-columns: minmax(0,1fr); grid-template-rows: auto minmax(0,1fr) }
+        nav { flex-direction: row; padding: 6px 9px; border-inline-end: 0; border-bottom: 1px solid var(--edge) }
+        nav button { flex: 1; text-align: center; padding-inline: 3px }
+        section { min-height: 0; padding: 16px }
+        footer { padding: 9px 12px; align-items: center }
+      }
     `);
     root.adoptedStyleSheets = [stylesheet];
     // Build the dialog without HTML parsing so strict Trusted Types pages can open it.
@@ -255,38 +343,74 @@
     const select = (id, options) => element('select', { id }, ...options.map(
       ([value, text]) => element('option', { value }, text),
     ));
-    const section = (...children) => element('section', {}, ...children);
-    const dialog = element('dialog', { 'aria-labelledby': 'title' },
-      element('header', {}, element('h2', { id: 'title' }, 'CookieSync 配置同步'), button('close', '关闭')),
-      section(
-        element('h3', {}, 'WebDAV 设置'),
-        label('WebDAV 目录网址', input('url', { type: 'url', placeholder: 'https://dav.example.com/同步目录/',
-          autocomplete: 'off' })),
-        label('用户名', input('username', { autocomplete: 'off' })),
-        button('password', '输入或更换应用密码'),
-        element('p', { id: 'password-status' }, '通过浏览器对话框输入应用密码'),
-        element('label', {}, input('automatic', { type: 'checkbox', checked: '' }), '打开网页时自动同步（每 30 分钟最多一次）'),
-        button('connect', '保存连接'),
-        element('p', { id: 'connection' }),
-        element('p', { id: 'last-sync' }),
+    const hint = (id, text) => element('p', { id, class: 'hint' }, text);
+    const heading = (id, title, description) => element('div', { class: 'heading' },
+      element('h3', { id: id + '-title' }, title), element('p', { class: 'hint' }, description),
+    );
+    const section = (id, ...children) => element('section', { id, 'aria-labelledby': id + '-title', hidden: '' }, ...children);
+    const navigation = element('nav', { 'aria-label': '配置栏目' });
+    const content = element('div', { class: 'content' },
+      section('webdav', heading('webdav', 'WebDAV 连接', '两台设备填写同一个目录，即可共用网站名单和偏好。'),
+        element('div', { class: 'fields' },
+          label('WebDAV 目录网址', input('url', { type: 'url', placeholder: 'https://dav.example.com/同步目录/',
+            autocomplete: 'off' })),
+          label('用户名', input('username', { autocomplete: 'off' })),
+        ),
+        element('div', { class: 'key-row' },
+          button('password', '输入或更换应用密码'), hint('password-status', '通过浏览器对话框输入应用密码'),
+        ),
+        element('label', { class: 'automatic' },
+          element('span', {}, '打开网页时自动同步', element('small', {}, '每 30 分钟最多尝试一次')),
+          input('automatic', { type: 'checkbox' }),
+        ),
+        element('div', { class: 'actions' }, button('connect', '保存连接')),
       ),
-      section(
-        element('h3', {}, '网站名单'),
+      section('sites', heading('sites', '网站名单', '按域名添加允许或暂停规则。'),
         label('域名', input('domain', { placeholder: 'nodeseek.com' })),
         element('div', { class: 'actions' }, button('allow', '允许'), button('pause', '暂停')),
-        element('ul', { id: 'rules', 'aria-label': '网站名单规则' }),
+        hint('rule-count', '暂无自定义规则'),
+        element('ul', { id: 'rules', class: 'rules', 'aria-label': '网站名单规则' }),
       ),
-      section(
-        element('h3', {}, '普通设置'),
+      section('preferences', heading('preferences', '普通设置', '这些偏好也会同步到使用同一配置文件的 Chrome 扩展。'),
         label('主题', select('theme', [['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']])),
         label('Chrome 右键菜单', select('contextMenu', [['false', '关闭'], ['true', '开启']])),
         label('Chrome 同步间隔（分钟）', input('syncIntervalMinutes', { type: 'number', min: '1', max: '60', step: '1' })),
-        button('save', '保存普通设置'),
+        element('div', { class: 'actions' }, button('save', '保存普通设置')),
       ),
-      button('sync', '合并并同步'),
-      element('p', { id: 'status', role: 'status', 'aria-live': 'polite' }),
     );
+    const syncButton = button('sync', '合并并同步');
+    syncButton.className = 'primary';
+    const dialog = element('dialog', { 'aria-labelledby': 'title', lang: 'zh-CN' },
+      element('header', { class: 'top' },
+        element('div', {}, element('h2', { id: 'title' }, 'CookieSync'), element('p', {}, '配置同步')),
+        button('close', '关闭'),
+      ),
+      element('div', { class: 'workspace' }, navigation, content),
+      element('footer', {},
+        element('div', { class: 'feedback' },
+          element('p', { id: 'connection' }), hint('last-sync', '尚未同步'),
+          element('p', { id: 'status', class: 'hint', role: 'status', 'aria-live': 'polite' }),
+        ),
+        syncButton,
+      ),
+    );
+    const views = [['webdav', 'WebDAV 连接'], ['sites', '网站名单'], ['preferences', '普通设置']];
+    function showView(activeId) {
+      for (const [id] of views) {
+        get(id).hidden = id !== activeId;
+        get(id + '-nav').setAttribute('aria-pressed', String(id === activeId));
+      }
+      content.scrollTop = 0;
+    }
+    for (const [id, title] of views) {
+      const control = button(id + '-nav', title);
+      control.setAttribute('aria-controls', id);
+      control.onclick = event => { if (event.isTrusted) showView(id); };
+      navigation.append(control);
+    }
     root.append(dialog);
+    showView('webdav');
+    get('automatic').checked = true;
     panel = { dialog, host };
     let current;
     let pendingPassword;
@@ -298,9 +422,12 @@
         busy = true;
         root.querySelectorAll('button').forEach(button => { button.disabled = true; });
         try {
+          get('status').dataset.kind = 'progress';
           get('status').textContent = '处理中…';
           get('status').textContent = (await withLock(action)) || '';
+          get('status').dataset.kind = 'success';
         } catch (error) {
+          get('status').dataset.kind = 'error';
           get('status').textContent = error.message || '操作失败';
         } finally {
           busy = false;
@@ -310,11 +437,12 @@
     }
     async function render({ refreshPreferences = true } = {}) {
       const local = current ? await readConfig(current) : empty();
-      get('rules').replaceChildren(...Object.entries(local.rules).map(([domain, rule]) => {
-        const row = document.createElement('li');
-        row.textContent = domain + (rule.enabled ? ' · 允许' : ' · 暂停');
-        return row;
-      }));
+      const rules = Object.entries(local.rules);
+      get('rule-count').textContent = rules.length ? rules.length + ' 条规则' : '暂无自定义规则';
+      get('rules').replaceChildren(...rules.map(([domain, rule]) => element('li', {},
+        element('span', {}, domain), element('span', { class: 'rule-state', 'data-enabled': String(rule.enabled) },
+          rule.enabled ? '允许' : '暂停'),
+      )));
       if (refreshPreferences) {
         for (const key of Object.keys(defaults)) {
           displayed[key] = local.preferences[key]?.value ?? defaults[key];
@@ -322,7 +450,8 @@
         }
       }
       get('last-sync').textContent = statusText(current && await GM.getValue(statusKey(current), null));
-      get('connection').textContent = current ? '已保存连接，配置文件为 ' + fileName : '请先保存连接';
+      get('connection').dataset.connected = String(Boolean(current));
+      get('connection').textContent = current ? '已保存 WebDAV 连接' : '请先保存连接';
     }
     function active() {
       if (!current) throw new Error('请先保存 WebDAV 连接');

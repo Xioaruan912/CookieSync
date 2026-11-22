@@ -3,7 +3,7 @@
 [安装油猴脚本](https://raw.githubusercontent.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config.user.js) · [GitHub Releases](https://github.com/Xioaruan912/CookieSync/releases)
 
 1. 安装新版 Tampermonkey，再打开上面的脚本安装链接。
-2. 打开任意允许脚本运行的 HTTPS 网页，从油猴菜单选择「CookieSync · 配置同步」。WebDAV 设置会在当前页打开。
+2. 打开任意允许脚本运行的 HTTPS 网页，从油猴菜单选择「CookieSync · 配置同步」。面板会在当前页打开，包含「WebDAV 连接」「网站名单」「普通设置」三个栏目。
 3. 填写 HTTPS WebDAV 目录和用户名，点击「保存连接」。首次保存时，在浏览器对话框输入应用密码。对话框会显示输入内容。首次访问服务器时，油猴可能请求域名授权，只选择自己使用的 WebDAV 域名。
 4. 首次点「合并并同步」验证连接并完成服务器域名授权。之后可等待自动同步。应用密码保存在油猴本机存储中。
 
@@ -13,7 +13,7 @@
 
 可在设置面板关闭「打开网页时自动同步」，再点「保存连接」。需要立即同步时，手动点「合并并同步」。可用「输入或更换应用密码」更新已保存的密码。
 
-如果普通网页里看不到 CookieSync 菜单，先确认脚本版本至少为 1.2.0、脚本已启用，再检查 Chrome 的 Tampermonkey 扩展详情是否允许用户脚本，以及浏览器是否允许油猴在当前网站访问网页。调整后刷新页面。
+如果普通网页里看不到 CookieSync 菜单，先确认脚本版本至少为 1.3.0、脚本已启用，再检查 Chrome 的 Tampermonkey 扩展详情是否允许用户脚本，以及浏览器是否允许油猴在当前网站访问网页。调整后刷新页面。
 
 ## 和 Chrome 扩展共用配置
 
