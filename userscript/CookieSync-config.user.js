@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      1.4.0
+// @version      1.5.0
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
@@ -234,18 +234,18 @@
     stylesheet.replaceSync(`
       :host { all: initial }
       dialog {
-        --surface: #fbfcfa; --recess: #ecf2ee; --ink: #172a28; --muted: #49615b;
-        --line: #cbd9d2; --field: #7c948a; --accent: #17605b; --on-accent: #fff;
-        --selected: #dcece5; --good: #276245; --warning: #795120; --error: #9b342e;
-        --summary: #153d39; --summary-ink: #f5fff9; --summary-muted: #c6e3d7;
+        --surface: #fdfcf9; --recess: #edeff3; --ink: #212a3c; --muted: #4f5d74;
+        --line: #d6dce6; --field: #7f8ca3; --accent: #284e9a; --on-accent: #fff;
+        --selected: #e0e8fa; --good: #276245; --warning: #795120; --error: #9b342e;
+        --summary: #16243e; --summary-ink: #f7f9ff; --summary-muted: #c1cceb;
         width: min(760px, calc(100vw - 32px)); max-width: none;
         max-height: min(710px, calc(100dvh - 32px)); padding: 0; overflow: hidden;
         border: 0; border-radius: 16px; background: var(--surface); color: var(--ink);
-        box-shadow: 0 20px 70px #102b284f; color-scheme: light;
+        box-shadow: 0 20px 70px #101f3d52; color-scheme: light;
         font: 15px/1.55 "Instrument Sans", "Segoe UI", "Microsoft YaHei UI", sans-serif;
       }
       dialog[open] { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto }
-      dialog::backdrop { background: #13292491 }
+      dialog::backdrop { background: #151d3294 }
       *, *::before, *::after { box-sizing: border-box }
       ::selection { color: var(--ink); background: var(--selected) }
       [hidden] { display: none !important }
@@ -257,16 +257,18 @@
       .top { background: var(--recess) }
       .top h2 { font-size: 19px; font-weight: 750; letter-spacing: -.025em; line-height: 1.2 }
       .top p { font-size: 12px }
-      nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line);
-        padding: 0 16px; background: var(--recess) }
+      nav { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line);
+        padding: 0; background: var(--recess) }
       button, input, select { min-height: 40px; border: 1px solid var(--field); border-radius: 7px;
         background: var(--surface); padding: 7px 12px; min-width: 0 }
       button { font-weight: 650; cursor: pointer }
       button:hover:enabled { background: var(--selected) }
       button:disabled { opacity: .62; cursor: wait }
       nav button { border: 0; border-radius: 0; background: transparent; color: var(--muted);
-        padding: 6px 4px; box-shadow: inset 0 -2px transparent }
-      nav button[aria-pressed="true"] { color: var(--accent); box-shadow: inset 0 -3px var(--accent) }
+        padding: 6px 4px }
+      nav button[aria-pressed="true"] { color: var(--accent) }
+      .nav-indicator { position: absolute; inset: auto auto 0 0; width: 25%; height: 3px; pointer-events: none;
+        background: var(--accent); transform: translateX(calc(var(--view-index, 0) * 100%)) }
       :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
       nav button:focus-visible { outline-offset: -4px }
       .content { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain;
@@ -276,9 +278,32 @@
       h3 { font-size: 25px; font-weight: 720; letter-spacing: -.03em; line-height: 1.2 }
       h4 { font-size: 15px }
       .hint, small { font-size: 13px; color: var(--muted); overflow-wrap: anywhere }
-      .status-panel { background: var(--summary); color: var(--summary-ink); border-radius: 12px;
-        padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto;
-        align-items: end; gap: 16px }
+      .status-panel {
+        background: radial-gradient(ellipse at 100% 0%, #293d61, transparent 76%), var(--summary);
+        color: var(--summary-ink); border-radius: 12px; padding: 20px;
+        display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(140px, 1fr);
+        align-items: center; gap: 24px;
+      }
+      .result { display: grid; justify-items: start; gap: 5px; min-width: 0 }
+      .result button { margin-top: 10px }
+      .sync-route {
+        display: grid; gap: 10px; padding: 16px; border-radius: 9px;
+        background: #9eb5e912; border: 1px solid #acc1f54d;
+      }
+      .route-labels { display: flex; justify-content: space-between; gap: 8px;
+        font-size: 12px; font-weight: 650; color: var(--summary-muted) }
+      .route-line { position: relative; height: 4px; margin: 6px; background: #91ace564; border-radius: 4px }
+      .route-line::before, .route-line::after {
+        content: ""; position: absolute; top: 50%; border-radius: 50%;
+        width: 10px; height: 10px; background: #b2c5ed; transform: translate(-50%, -50%);
+      }
+      .route-line::before { left: 0 }
+      .route-line::after { left: 100% }
+      .sync-route[data-state="ok"] .route-line::after { background: #a5e0c6 }
+      .sync-route[data-state="error"] .route-line::after { background: #ffc0b4 }
+      .route-pulse { position: absolute; inset: 0; opacity: 0; pointer-events: none }
+      .route-pulse::before { content: ""; position: absolute; left: 0; top: 50%;
+        width: 8px; height: 8px; border-radius: 50%; transform: translate(-50%, -50%); background: #fff }
       .status-panel h4 { font-size: clamp(20px, 4vw, 27px); line-height: 1.25; margin-bottom: 6px }
       .status-panel p, .status-panel time { font-size: 13px; color: var(--summary-muted); overflow-wrap: anywhere }
       .status-panel time { display: block; margin-top: 8px }
@@ -321,28 +346,35 @@
       #sync { flex: none }
       @media (prefers-reduced-motion: no-preference) {
         dialog[open] { animation: open-panel .18s cubic-bezier(.2,.8,.2,1) }
-        button { transition: background-color .14s, box-shadow .14s }
+        button { transition: background-color .14s }
+        .nav-indicator { transition: transform .22s cubic-bezier(.2,.8,.2,1) }
+        .sync-route[data-pending] .route-pulse { animation: route-pulse .72s ease-out both }
+        @keyframes route-pulse {
+          0% { transform: translateX(0); opacity: 0 }
+          15%, 75% { opacity: 1 }
+          100% { transform: translateX(100%); opacity: 0 }
+        }
         @keyframes open-panel { from { opacity: .5; transform: translateY(5px) } }
       }
       @media (prefers-color-scheme: dark) {
-        dialog { --surface: #182723; --recess: #14211e; --ink: #f0faf4; --muted: #a9c2b7;
-          --line: #405a50; --field: #78968a; --accent: #98d8c9; --on-accent: #112a26;
-          --selected: #25463d; --good: #a2d4b5; --warning: #efc88f; --error: #ffb9b0;
-          --summary: #254c44; --summary-ink: #f4fff9; --summary-muted: #c6e3d7; color-scheme: dark }
+        dialog { --surface: #171e2d; --recess: #131a27; --ink: #f0f4ff; --muted: #b1bdd6;
+          --line: #414e64; --field: #8190a9; --accent: #a8c2ff; --on-accent: #192845;
+          --selected: #263958; --good: #a2d4b5; --warning: #efc88f; --error: #ffb9b0;
+          --summary: #233450; --summary-ink: #f7f9ff; --summary-muted: #cedaf4; color-scheme: dark }
       }
       @media (max-width: 510px) {
         dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px) }
-        nav { padding: 0 6px }
+        .sync-route { padding: 12px }
         nav button { font-size: 13px }
         .top, footer { padding: 10px 12px }
         section { padding: 16px 12px; gap: 14px; min-height: 0 }
-        .status-panel { padding: 15px; grid-template-columns: minmax(0, 1fr) }
+        .status-panel { padding: 15px; gap: 16px; grid-template-columns: minmax(0, 1fr) }
         .status-panel button { justify-self: start }
         .rule-editor label { flex-basis: 100% }
       }
       @media (forced-colors: active) {
         dialog { border: 1px solid CanvasText }
-        nav button[aria-pressed="true"] { border-bottom: 3px solid Highlight }
+        .nav-indicator { background: Highlight }
       }
     `);
     root.adoptedStyleSheets = [stylesheet];
@@ -368,15 +400,20 @@
     const navigation = element('nav', { 'aria-label': '配置栏目' });
     const detail = (id, title) => element('div', {}, element('dt', {}, title), element('dd', { id }));
     const overviewAction = button('overview-action', '立即同步');
+    const route = element('div', { class: 'sync-route', 'aria-hidden': 'true' },
+      element('div', { class: 'route-labels' }, element('span', {}, '本机'), element('span', {}, 'WebDAV')),
+      element('div', { class: 'route-line' }, element('span', { class: 'route-pulse' })),
+    );
     const content = element('div', { class: 'content' },
-      section('overview', heading('overview', '同步概览', '查看最近结果和当前连接。'),
+      section('overview', heading('overview', '同步概览', '网站名单与扩展偏好'),
         element('div', { class: 'status-panel' },
-          element('div', {},
+          element('div', { class: 'result' },
             element('h4', { id: 'sync-state', 'aria-live': 'polite' }),
             element('p', { id: 'sync-message' }),
             element('time', { id: 'last-sync', hidden: '' }),
+            overviewAction,
           ),
-          overviewAction,
+          route,
         ),
         element('dl', { class: 'details' }, detail('saved-host', 'WebDAV 服务器'), detail('auto-state', '自动同步')),
         element('div', { class: 'actions' }, button('edit-connection', '管理连接')),
@@ -437,6 +474,7 @@
     let rules = [];
     function showView(activeId) {
       view = activeId;
+      navigation.style.setProperty('--view-index', String(views.findIndex(([id]) => id === activeId)));
       for (const [id] of views) {
         get(id).hidden = id !== activeId;
         get(id + '-nav').setAttribute('aria-pressed', String(id === activeId));
@@ -451,6 +489,7 @@
       control.onclick = event => { if (event.isTrusted) showView(id); };
       navigation.append(control);
     }
+    navigation.append(element('span', { class: 'nav-indicator', 'aria-hidden': 'true' }));
     root.append(dialog);
     showView('webdav');
     get('automatic').checked = true;
@@ -462,14 +501,14 @@
       const feedback = get('status');
       feedback.toggleAttribute('data-summary', view === 'overview' && feedback.textContent === get('sync-message').textContent);
     }
-    function run(action) {
+    function run(action, showProgress = true) {
       return async event => {
         if (busy || (event && !event.isTrusted)) return;
         busy = true;
         root.querySelectorAll('button').forEach(button => { button.disabled = true; });
         try {
           get('status').dataset.kind = 'progress';
-          get('status').textContent = '处理中…';
+          get('status').textContent = showProgress ? '处理中…' : '';
           updateFeedbackVisibility();
           get('status').textContent = (await withLock(action)) || '';
           get('status').dataset.kind = 'success';
@@ -515,6 +554,7 @@
         }
       }
       const status = current && await GM.getValue(statusKey(current), null);
+      route.dataset.state = status?.ok === true ? 'ok' : status?.ok === false ? 'error' : 'idle';
       const lastSync = get('last-sync');
       lastSync.hidden = !status;
       if (status) {
@@ -629,11 +669,17 @@
       try {
         const connection = active();
         await GM.setValue(scheduleKey(connection), { at: Date.now() });
+        route.setAttribute('data-pending', '');
+        get('sync-state').textContent = '正在同步';
+        overviewAction.textContent = '同步中…';
+        syncButton.textContent = '同步中…';
         return await reportSync(connection);
       } finally {
+        route.removeAttribute('data-pending');
+        syncButton.textContent = '立即同步';
         await render();
       }
-    });
+    }, false);
     syncButton.onclick = synchronize;
     overviewAction.onclick = event => {
       if (!event.isTrusted) return;
