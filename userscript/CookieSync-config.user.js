@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      1.3.2
+// @version      1.4.0
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
@@ -95,11 +95,16 @@
     return merge(empty(), { ...value, preferences: value.preferences === undefined ? {} : value.preferences });
   }
 
-  function destination(connection) {
+  function webdavDirectory(value) {
     let url;
-    try { url = new URL(connection.url.trim()); } catch { throw new Error('请输入有效的 WebDAV 目录网址'); }
+    try { url = new URL(value.trim()); } catch { throw new Error('请输入有效的 WebDAV 目录网址'); }
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash)
       throw new Error('请填写最终 HTTPS 目录网址，账号和密码分别填写');
+    return url;
+  }
+
+  function destination(connection) {
+    const url = webdavDirectory(connection.url);
     if (!connection.username.trim() || connection.username.includes(':') || !connection.password)
       throw new Error('请填写 WebDAV 用户名和应用密码，用户名不能含冒号');
     url.pathname = url.pathname.replace(/\/?$/, '/') + fileName;
@@ -159,10 +164,10 @@
     try {
       message = await syncConfig(connection);
     } catch (error) {
-      await GM.setValue(statusKey(connection), { at: Date.now(), message: error.message });
+      await GM.setValue(statusKey(connection), { at: Date.now(), message: error.message, ok: false });
       throw error;
     }
-    await GM.setValue(statusKey(connection), { at: Date.now(), message });
+    await GM.setValue(statusKey(connection), { at: Date.now(), message, ok: true });
     return message;
   }
 
@@ -229,103 +234,115 @@
     stylesheet.replaceSync(`
       :host { all: initial }
       dialog {
-        --surface: #fdf9f3; --canvas: #f2ebe1; --ink: #30231e; --muted: #68564e;
-        --edge: #dfd2c5; --brand: #923e32; --selected: #f2ded4; --on-brand: #fff;
-        --positive: #276146; --caution: #79501f; --danger: #a12f26;
-        box-sizing: border-box; width: min(820px, calc(100vw - 32px)); max-width: none;
-        max-height: min(92dvh, 760px); padding: 0; overflow: hidden;
-        background: var(--surface); color: var(--ink); border: 1px solid var(--edge);
-        border-radius: 20px; box-shadow: 0 28px 96px #39211845;
-        font: 14px/1.55 "Inter", "Segoe UI", "Microsoft YaHei UI", sans-serif;
-        color-scheme: light;
+        --surface: #fbfcfa; --recess: #ecf2ee; --ink: #172a28; --muted: #49615b;
+        --line: #cbd9d2; --field: #7c948a; --accent: #17605b; --on-accent: #fff;
+        --selected: #dcece5; --good: #276245; --warning: #795120; --error: #9b342e;
+        --summary: #153d39; --summary-ink: #f5fff9; --summary-muted: #c6e3d7;
+        width: min(760px, calc(100vw - 32px)); max-width: none;
+        max-height: min(710px, calc(100dvh - 32px)); padding: 0; overflow: hidden;
+        border: 0; border-radius: 16px; background: var(--surface); color: var(--ink);
+        box-shadow: 0 20px 70px #102b284f; color-scheme: light;
+        font: 15px/1.55 "Instrument Sans", "Segoe UI", "Microsoft YaHei UI", sans-serif;
       }
-      dialog[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto }
-      dialog::backdrop { background: #231913a6 }
+      dialog[open] { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto }
+      dialog::backdrop { background: #13292491 }
       *, *::before, *::after { box-sizing: border-box }
-      h2, h3, p { margin: 0 }
-      .top {
-        background: radial-gradient(ellipse at 95% 0%, #694239 0%, transparent 65%), #392822;
-        color: #fff6ee; padding: 24px 28px; display: flex; justify-content: space-between;
-        align-items: start; gap: 14px;
-      }
-      .top h2 { font-size: clamp(23px, 4vw, 32px); line-height: 1.15; font-weight: 680; letter-spacing: -.025em }
-      .top p { color: #efcfc1; margin-top: 6px; font-size: 12px }
-      .workspace { display: grid; grid-template-columns: 166px minmax(0, 1fr); min-height: 0 }
-      nav { display: flex; flex-direction: column; align-items: stretch; gap: 6px;
-        padding: 22px 12px; background: var(--canvas); border-inline-end: 1px solid var(--edge) }
-      nav button { text-align: left; min-width: 0; border-color: transparent; background: transparent; color: var(--muted) }
-      nav button[aria-pressed="true"] { color: var(--brand); background: var(--selected); font-weight: 700 }
-      .content { min-width: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable }
-      section { display: grid; align-content: start; gap: 16px; min-height: 365px; padding: 24px 28px }
+      ::selection { color: var(--ink); background: var(--selected) }
       [hidden] { display: none !important }
-      .heading { display: grid; gap: 3px; border-bottom: 1px solid var(--edge); padding-bottom: 13px }
-      h3 { font-size: 21px; font-weight: 680; letter-spacing: -.02em }
-      .hint, small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere }
-      .fields { display: grid; gap: 14px }
-      label { display: grid; gap: 5px; min-width: 0; font-weight: 550 }
-      input, select, button {
-        min-width: 0; border: 1px solid var(--edge); border-radius: 9px; min-height: 40px;
-        padding: 7px 12px; font: inherit; color: inherit; background: var(--surface);
+      h2, h3, h4, p, dl, dd { margin: 0 }
+      button, input, select { font: inherit; color: inherit }
+      .top, footer {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 24px;
       }
-      input, select { width: 100%; font-weight: 400 }
-      input::placeholder { color: var(--muted); opacity: .85 }
-      button { cursor: pointer; white-space: normal; font-weight: 600 }
+      .top { background: var(--recess) }
+      .top h2 { font-size: 19px; font-weight: 750; letter-spacing: -.025em; line-height: 1.2 }
+      .top p { font-size: 12px }
+      nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line);
+        padding: 0 16px; background: var(--recess) }
+      button, input, select { min-height: 40px; border: 1px solid var(--field); border-radius: 7px;
+        background: var(--surface); padding: 7px 12px; min-width: 0 }
+      button { font-weight: 650; cursor: pointer }
       button:hover:enabled { background: var(--selected) }
-      button:disabled { cursor: wait; opacity: .62 }
-      .primary { background: var(--brand); color: var(--on-brand); border-color: transparent }
-      .primary:hover:enabled { filter: brightness(1.12); background: var(--brand) }
-      #close { background: #ffffff0d; color: #fff6ee; border-color: #eacebe59; min-height: 34px; padding: 4px 11px }
-      #close:hover:enabled { background: #ffffff21 }
-      .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px }
-      .key-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px }
-      .automatic { display: flex; justify-content: space-between; align-items: center; gap: 16px;
-        background: var(--canvas); padding: 10px 12px; border-radius: 9px }
+      button:disabled { opacity: .62; cursor: wait }
+      nav button { border: 0; border-radius: 0; background: transparent; color: var(--muted);
+        padding: 6px 4px; box-shadow: inset 0 -2px transparent }
+      nav button[aria-pressed="true"] { color: var(--accent); box-shadow: inset 0 -3px var(--accent) }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+      nav button:focus-visible { outline-offset: -4px }
+      .content { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain;
+        scrollbar-color: var(--field) transparent }
+      section { display: grid; gap: 18px; align-content: start; padding: 24px; min-height: 340px }
+      .heading { display: grid; gap: 4px }
+      h3 { font-size: 25px; font-weight: 720; letter-spacing: -.03em; line-height: 1.2 }
+      h4 { font-size: 15px }
+      .hint, small { font-size: 13px; color: var(--muted); overflow-wrap: anywhere }
+      .status-panel { background: var(--summary); color: var(--summary-ink); border-radius: 12px;
+        padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+        align-items: end; gap: 16px }
+      .status-panel h4 { font-size: clamp(20px, 4vw, 27px); line-height: 1.25; margin-bottom: 6px }
+      .status-panel p, .status-panel time { font-size: 13px; color: var(--summary-muted); overflow-wrap: anywhere }
+      .status-panel time { display: block; margin-top: 8px }
+      .status-panel button { background: var(--summary-ink); color: var(--summary);
+        border-color: transparent; white-space: nowrap }
+      .status-panel button:hover:enabled { background: var(--summary-muted) }
+      .status-panel button:focus-visible { outline-color: var(--summary-ink) }
+      .details { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); border-block: 1px solid var(--line) }
+      .details div { padding: 12px 0; min-width: 0 }
+      .details div + div { border-inline-start: 1px solid var(--line); padding-inline-start: 16px }
+      .details dt { font-size: 13px; color: var(--muted) }
+      .details dd { overflow-wrap: anywhere; font-weight: 650 }
+      .actions, .key-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px }
+      .fields { display: grid; gap: 12px }
+      label { display: grid; gap: 5px; min-width: 0; font-weight: 600 }
+      input, select { width: 100%; font-weight: 400; caret-color: var(--accent) }
+      input::placeholder { color: var(--muted); opacity: 1 }
+      input[aria-invalid="true"] { border-color: var(--error) }
+      .automatic { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 12px; border-radius: 8px; background: var(--recess) }
       .automatic small { display: block; font-weight: 400 }
-      #automatic { appearance: none; flex: 0 0 38px; width: 38px; min-height: 22px; height: 22px;
-        border-radius: 20px; border-color: transparent; background: #7d6a60; cursor: pointer;
-        padding: 0; margin: 0; position: relative }
-      #automatic::before { content: ""; position: absolute; top: 2px; left: 2px;
-        width: 16px; height: 16px; border-radius: 50%; background: #fff }
-      #automatic:checked { background: var(--brand) }
-      #automatic:checked::before { transform: translateX(16px) }
-      .rules { list-style: none; padding: 0; margin: 0; max-height: 218px; overflow: auto }
+      #automatic { width: 20px; height: 20px; min-height: 20px; margin: 0; flex: none;
+        accent-color: var(--accent); cursor: pointer }
+      .rule-editor { display: flex; gap: 8px; align-items: end; flex-wrap: wrap }
+      .rule-editor label { flex: 1 1 185px }
+      .rule-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px }
+      .rule-toolbar select { width: auto }
+      .rules { list-style: none; padding: 0; margin: 0 }
       .rules li { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-        padding: 8px 0; border-bottom: 1px solid var(--edge); overflow-wrap: anywhere }
-      .rule-state { flex: none; font-size: 12px; color: var(--positive) }
-      .rule-state[data-enabled="false"] { color: var(--caution) }
-      footer { border-top: 1px solid var(--edge); background: var(--surface);
-        display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 28px }
-      .feedback { min-width: 0; display: grid; gap: 1px; overflow-wrap: anywhere }
-      #connection { font-weight: 650; font-size: 13px }
-      #connection[data-connected="true"] { color: var(--positive) }
-      #status[data-kind="error"] { color: var(--danger) }
-      #status:empty { display: none }
+        padding: 9px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere }
+      .rule-state { flex: none; font-size: 13px; color: var(--good) }
+      .rule-state[data-enabled="false"] { color: var(--warning) }
+      .primary { background: var(--accent); border-color: transparent; color: var(--on-accent) }
+      .primary:hover:enabled { background: var(--accent); filter: contrast(1.2) }
+      footer { border-top: 1px solid var(--line); background: var(--recess); min-height: 48px }
+      footer:has(#sync[hidden]):has(#status:is(:empty, [data-summary])) { display: none }
+      #status { color: var(--muted); min-width: 0; overflow-wrap: anywhere }
+      #status[data-kind="error"], .field-error { color: var(--error) }
+      #status[data-kind="success"] { color: var(--good) }
       #sync { flex: none }
-      :focus-visible { outline: 2px solid var(--brand); outline-offset: 3px }
-      #close:focus-visible { outline-color: #ffe6d8 }
       @media (prefers-reduced-motion: no-preference) {
-        dialog[open] { animation: appear .22s ease-out }
-        dialog::backdrop { animation: shade .18s ease-out }
-        section:not([hidden]) { animation: appear .18s ease-out }
-        button, #automatic, #automatic::before { transition: background-color .16s, transform .16s }
-        button:enabled:active { transform: translateY(1px) }
-        @keyframes appear { from { opacity: .5; transform: translateY(5px) } }
-        @keyframes shade { from { opacity: 0 } }
+        dialog[open] { animation: open-panel .18s cubic-bezier(.2,.8,.2,1) }
+        button { transition: background-color .14s, box-shadow .14s }
+        @keyframes open-panel { from { opacity: .5; transform: translateY(5px) } }
       }
       @media (prefers-color-scheme: dark) {
-        dialog { --surface: #281e1b; --canvas: #211916; --ink: #faf0e8; --muted: #c8b3a8;
-          --edge: #584139; --brand: #eba998; --selected: #49312a; --on-brand: #2e1d17;
-          --positive: #b6e4c8; --caution: #edc48a; --danger: #ffb5aa; color-scheme: dark }
-        #automatic:checked::before { background: #392822 }
+        dialog { --surface: #182723; --recess: #14211e; --ink: #f0faf4; --muted: #a9c2b7;
+          --line: #405a50; --field: #78968a; --accent: #98d8c9; --on-accent: #112a26;
+          --selected: #25463d; --good: #a2d4b5; --warning: #efc88f; --error: #ffb9b0;
+          --summary: #254c44; --summary-ink: #f4fff9; --summary-muted: #c6e3d7; color-scheme: dark }
       }
-      @media (max-width: 610px) {
-        dialog { width: calc(100vw - 20px); max-height: 94dvh; border-radius: 14px }
-        .top { padding: 16px }
-        .workspace { grid-template-columns: minmax(0,1fr); grid-template-rows: auto minmax(0,1fr) }
-        nav { flex-direction: row; padding: 6px 9px; border-inline-end: 0; border-bottom: 1px solid var(--edge) }
-        nav button { flex: 1; text-align: center; padding-inline: 3px }
-        section { min-height: 0; padding: 16px }
-        footer { padding: 9px 12px; align-items: center }
+      @media (max-width: 510px) {
+        dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px) }
+        nav { padding: 0 6px }
+        nav button { font-size: 13px }
+        .top, footer { padding: 10px 12px }
+        section { padding: 16px 12px; gap: 14px; min-height: 0 }
+        .status-panel { padding: 15px; grid-template-columns: minmax(0, 1fr) }
+        .status-panel button { justify-self: start }
+        .rule-editor label { flex-basis: 100% }
+      }
+      @media (forced-colors: active) {
+        dialog { border: 1px solid CanvasText }
+        nav button[aria-pressed="true"] { border-bottom: 3px solid Highlight }
       }
     `);
     root.adoptedStyleSheets = [stylesheet];
@@ -345,16 +362,32 @@
     ));
     const hint = (id, text) => element('p', { id, class: 'hint' }, text);
     const heading = (id, title, description) => element('div', { class: 'heading' },
-      element('h3', { id: id + '-title' }, title), element('p', { class: 'hint' }, description),
+      element('h3', { id: id + '-title', tabindex: '-1' }, title), element('p', { class: 'hint' }, description),
     );
     const section = (id, ...children) => element('section', { id, 'aria-labelledby': id + '-title', hidden: '' }, ...children);
     const navigation = element('nav', { 'aria-label': '配置栏目' });
+    const detail = (id, title) => element('div', {}, element('dt', {}, title), element('dd', { id }));
+    const overviewAction = button('overview-action', '立即同步');
     const content = element('div', { class: 'content' },
+      section('overview', heading('overview', '同步概览', '查看最近结果和当前连接。'),
+        element('div', { class: 'status-panel' },
+          element('div', {},
+            element('h4', { id: 'sync-state', 'aria-live': 'polite' }),
+            element('p', { id: 'sync-message' }),
+            element('time', { id: 'last-sync', hidden: '' }),
+          ),
+          overviewAction,
+        ),
+        element('dl', { class: 'details' }, detail('saved-host', 'WebDAV 服务器'), detail('auto-state', '自动同步')),
+        element('div', { class: 'actions' }, button('edit-connection', '管理连接')),
+      ),
       section('webdav', heading('webdav', 'WebDAV 连接', '两台设备填写同一个目录，即可共用网站名单和偏好。'),
         element('div', { class: 'fields' },
           label('WebDAV 目录网址', input('url', { type: 'url', placeholder: 'https://dav.example.com/同步目录/',
-            autocomplete: 'off' })),
-          label('用户名', input('username', { autocomplete: 'off' })),
+            autocomplete: 'off', 'aria-describedby': 'url-error' })),
+          element('p', { id: 'url-error', class: 'hint field-error', hidden: '' }),
+          label('用户名', input('username', { autocomplete: 'off', 'aria-describedby': 'username-error' })),
+          element('p', { id: 'username-error', class: 'hint field-error', hidden: '' }),
         ),
         element('div', { class: 'key-row' },
           button('password', '输入或更换应用密码'), hint('password-status', '通过浏览器对话框输入应用密码'),
@@ -366,40 +399,50 @@
         element('div', { class: 'actions' }, button('connect', '保存连接')),
       ),
       section('sites', heading('sites', '网站名单', '按域名添加允许或暂停规则。'),
-        label('域名', input('domain', { placeholder: 'nodeseek.com' })),
-        element('div', { class: 'actions' }, button('allow', '允许'), button('pause', '暂停')),
-        hint('rule-count', '暂无自定义规则'),
+        element('div', { class: 'rule-editor' },
+          label('添加或更新域名', input('domain', { placeholder: 'nodeseek.com' })),
+          button('allow', '允许'), button('pause', '暂停'),
+        ),
+        element('div', { class: 'rule-toolbar' },
+          label('搜索现有规则', input('rule-search', { type: 'search', placeholder: '输入域名片段' })),
+          label('筛选状态', select('rule-filter', [['all', '全部'], ['allow', '允许'], ['pause', '暂停']])),
+        ),
+        element('p', { id: 'rule-count', class: 'hint', role: 'status' }),
         element('ul', { id: 'rules', class: 'rules', 'aria-label': '网站名单规则' }),
       ),
-      section('preferences', heading('preferences', '普通设置', '这些偏好也会同步到使用同一配置文件的 Chrome 扩展。'),
+      section('preferences', heading('preferences', '扩展偏好', '与使用同一 WebDAV 配置文件的 Chrome 扩展共享。'),
         label('主题', select('theme', [['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']])),
         label('Chrome 右键菜单', select('contextMenu', [['false', '关闭'], ['true', '开启']])),
         label('Chrome 同步间隔（分钟）', input('syncIntervalMinutes', { type: 'number', min: '1', max: '60', step: '1' })),
-        element('div', { class: 'actions' }, button('save', '保存普通设置')),
+        element('div', { class: 'actions' }, button('save', '保存偏好')),
       ),
     );
-    const syncButton = button('sync', '合并并同步');
+    const syncButton = button('sync', '立即同步');
     syncButton.className = 'primary';
     const dialog = element('dialog', { 'aria-labelledby': 'title', lang: 'zh-CN' },
       element('header', { class: 'top' },
-        element('div', {}, element('h2', { id: 'title' }, 'CookieSync'), element('p', {}, '配置同步')),
+        element('div', {}, element('h2', { id: 'title' }, 'CookieSync'), element('p', { class: 'hint' }, '配置同步')),
         button('close', '关闭'),
       ),
-      element('div', { class: 'workspace' }, navigation, content),
+      navigation,
+      content,
       element('footer', {},
-        element('div', { class: 'feedback' },
-          element('p', { id: 'connection' }), hint('last-sync', '尚未同步'),
-          element('p', { id: 'status', class: 'hint', role: 'status', 'aria-live': 'polite' }),
-        ),
+        element('p', { id: 'status', class: 'hint', role: 'status', 'aria-live': 'polite' }),
         syncButton,
       ),
     );
-    const views = [['webdav', 'WebDAV 连接'], ['sites', '网站名单'], ['preferences', '普通设置']];
+    const views = [['overview', '概览'], ['webdav', 'WebDAV'], ['sites', '网站名单'], ['preferences', '扩展偏好']];
+    let current;
+    let view = 'webdav';
+    let rules = [];
     function showView(activeId) {
+      view = activeId;
       for (const [id] of views) {
         get(id).hidden = id !== activeId;
         get(id + '-nav').setAttribute('aria-pressed', String(id === activeId));
       }
+      syncButton.hidden = !current || view === 'overview';
+      updateFeedbackVisibility();
       content.scrollTop = 0;
     }
     for (const [id, title] of views) {
@@ -412,10 +455,13 @@
     showView('webdav');
     get('automatic').checked = true;
     panel = { dialog, host };
-    let current;
     let pendingPassword;
     let displayed = { ...defaults };
     let busy = false;
+    function updateFeedbackVisibility() {
+      const feedback = get('status');
+      feedback.toggleAttribute('data-summary', view === 'overview' && feedback.textContent === get('sync-message').textContent);
+    }
     function run(action) {
       return async event => {
         if (busy || (event && !event.isTrusted)) return;
@@ -424,34 +470,68 @@
         try {
           get('status').dataset.kind = 'progress';
           get('status').textContent = '处理中…';
+          updateFeedbackVisibility();
           get('status').textContent = (await withLock(action)) || '';
           get('status').dataset.kind = 'success';
         } catch (error) {
           get('status').dataset.kind = 'error';
           get('status').textContent = error.message || '操作失败';
         } finally {
+          updateFeedbackVisibility();
           busy = false;
           root.querySelectorAll('button').forEach(button => { button.disabled = false; });
         }
       };
     }
-    async function render({ refreshPreferences = true } = {}) {
-      const local = current ? await readConfig(current) : empty();
-      const rules = Object.entries(local.rules);
-      get('rule-count').textContent = rules.length ? rules.length + ' 条规则' : '暂无自定义规则';
-      get('rules').replaceChildren(...rules.map(([domain, rule]) => element('li', {},
+    function renderRules() {
+      const query = get('rule-search').value.trim().toLowerCase();
+      const filter = get('rule-filter').value;
+      const shown = rules.filter(([domain, rule]) =>
+        domain.includes(query) && (filter === 'all' || rule.enabled === (filter === 'allow')),
+      );
+      get('rule-count').textContent = !rules.length ? '还没有规则，可添加一个域名。'
+        : !shown.length ? '没有匹配的规则。' : '显示 ' + shown.length + ' / ' + rules.length + ' 条规则';
+      get('rules').replaceChildren(...shown.map(([domain, rule]) => element('li', {},
         element('span', {}, domain), element('span', { class: 'rule-state', 'data-enabled': String(rule.enabled) },
           rule.enabled ? '允许' : '暂停'),
       )));
+    }
+    get('rule-search').oninput = renderRules;
+    get('rule-filter').onchange = renderRules;
+    get('edit-connection').onclick = event => {
+      if (!event.isTrusted) return;
+      showView('webdav');
+      get('url').focus();
+    };
+
+    async function render({ refreshPreferences = true } = {}) {
+      const local = current ? await readConfig(current) : empty();
+      rules = Object.entries(local.rules);
+      renderRules();
       if (refreshPreferences) {
         for (const key of Object.keys(defaults)) {
           displayed[key] = local.preferences[key]?.value ?? defaults[key];
           get(key).value = String(displayed[key]);
         }
       }
-      get('last-sync').textContent = statusText(current && await GM.getValue(statusKey(current), null));
-      get('connection').dataset.connected = String(Boolean(current));
-      get('connection').textContent = current ? '已保存 WebDAV 连接' : '请先保存连接';
+      const status = current && await GM.getValue(statusKey(current), null);
+      const lastSync = get('last-sync');
+      lastSync.hidden = !status;
+      if (status) {
+        const time = new Date(status.at);
+        lastSync.dateTime = time.toISOString();
+        lastSync.textContent = time.toLocaleString('zh-CN');
+      }
+      get('sync-state').textContent = !current ? '还未连接 WebDAV'
+        : !status ? '等待首次同步'
+        : status.ok === false ? '上次同步失败' : status.ok === true ? '同步完成' : '最近同步结果';
+      get('sync-message').textContent = status?.message || (current
+        ? '立即同步，检查云端配置并合并本机改动。' : '添加 WebDAV 连接后即可开始同步。');
+      get('saved-host').textContent = current ? new URL(destination(current)).host : '未配置';
+      get('auto-state').textContent = !current ? '等待连接' : current.automatic === false ? '已关闭' : '已开启';
+      overviewAction.textContent = current ? '立即同步' : '配置 WebDAV';
+      get('edit-connection').hidden = !current;
+      syncButton.hidden = !current || view === 'overview';
     }
     function active() {
       if (!current) throw new Error('请先保存 WebDAV 连接');
@@ -486,9 +566,30 @@
         get('password-status').textContent = '已输入应用密码，点击「保存连接」提交';
       }
     };
+    function clearFieldError(id) {
+      get(id).removeAttribute('aria-invalid');
+      get(id + '-error').hidden = true;
+    }
+    function fieldError(id, message) {
+      get(id).setAttribute('aria-invalid', 'true');
+      get(id + '-error').hidden = false;
+      get(id + '-error').textContent = message;
+      get(id).focus();
+      throw new Error(message);
+    }
+    for (const id of ['url', 'username']) get(id).oninput = () => clearFieldError(id);
+    get('connect').className = 'primary';
     get('connect').onclick = run(async () => {
       const url = get('url').value.trim();
       const username = get('username').value.trim();
+      clearFieldError('url');
+      clearFieldError('username');
+      try {
+        webdavDirectory(url);
+      } catch {
+        fieldError('url', '请输入有效的 HTTPS 目录网址，账号和密码请单独填写。');
+      }
+      if (!username || username.includes(':')) fieldError('username', '请输入用户名，用户名不能含冒号。');
       const sameConnection = current?.url === url && current.username === username;
       const password = pendingPassword || (sameConnection ? current.password : askPassword());
       if (password === null) return '已取消保存连接';
@@ -499,6 +600,8 @@
       get('password-status').textContent = '应用密码已保存在油猴本机存储';
       current = next;
       await render();
+      showView('overview');
+      get('overview-title').focus();
       return '连接已保存';
     });
     get('allow').onclick = run(() => changeRule(true));
@@ -521,7 +624,7 @@
       await render();
       return '普通设置已保存到本机';
     });
-    get('sync').onclick = run(async () => {
+    const synchronize = run(async () => {
       await savePreferences();
       try {
         const connection = active();
@@ -531,6 +634,13 @@
         await render();
       }
     });
+    syncButton.onclick = synchronize;
+    overviewAction.onclick = event => {
+      if (!event.isTrusted) return;
+      if (current) return synchronize(event);
+      showView('webdav');
+      get('url').focus();
+    };
     document.body.append(host);
     dialog.showModal();
     await run(async () => {
@@ -542,6 +652,7 @@
         get('password-status').textContent = '已有应用密码，可按需更换';
       }
       await render();
+      showView(current ? 'overview' : 'webdav');
     })();
   }
 
