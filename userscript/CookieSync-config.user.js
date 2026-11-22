@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      1.3.1
+// @version      1.3.2
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
@@ -229,27 +229,27 @@
     stylesheet.replaceSync(`
       :host { all: initial }
       dialog {
-        --surface: #fcfdff; --canvas: #eff3f8; --ink: #19263b; --muted: #4e6078;
-        --edge: #d3deeb; --brand: #245bb5; --selected: #e1ecff; --on-brand: #fff;
-        --positive: #276146; --caution: #88501e; --danger: #a12f26;
+        --surface: #fdf9f3; --canvas: #f2ebe1; --ink: #30231e; --muted: #68564e;
+        --edge: #dfd2c5; --brand: #923e32; --selected: #f2ded4; --on-brand: #fff;
+        --positive: #276146; --caution: #79501f; --danger: #a12f26;
         box-sizing: border-box; width: min(820px, calc(100vw - 32px)); max-width: none;
         max-height: min(92dvh, 760px); padding: 0; overflow: hidden;
         background: var(--surface); color: var(--ink); border: 1px solid var(--edge);
-        border-radius: 20px; box-shadow: 0 28px 96px #10274945;
+        border-radius: 20px; box-shadow: 0 28px 96px #39211845;
         font: 14px/1.55 "Inter", "Segoe UI", "Microsoft YaHei UI", sans-serif;
         color-scheme: light;
       }
       dialog[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto }
-      dialog::backdrop { background: #101d35a6 }
+      dialog::backdrop { background: #231913a6 }
       *, *::before, *::after { box-sizing: border-box }
       h2, h3, p { margin: 0 }
       .top {
-        background: radial-gradient(ellipse at 95% 0%, #315ba1 0%, transparent 65%), #142c54;
-        color: #f5f8ff; padding: 24px 28px; display: flex; justify-content: space-between;
+        background: radial-gradient(ellipse at 95% 0%, #694239 0%, transparent 65%), #392822;
+        color: #fff6ee; padding: 24px 28px; display: flex; justify-content: space-between;
         align-items: start; gap: 14px;
       }
       .top h2 { font-size: clamp(23px, 4vw, 32px); line-height: 1.15; font-weight: 680; letter-spacing: -.025em }
-      .top p { color: #ceddf6; margin-top: 6px; font-size: 12px }
+      .top p { color: #efcfc1; margin-top: 6px; font-size: 12px }
       .workspace { display: grid; grid-template-columns: 166px minmax(0, 1fr); min-height: 0 }
       nav { display: flex; flex-direction: column; align-items: stretch; gap: 6px;
         padding: 22px 12px; background: var(--canvas); border-inline-end: 1px solid var(--edge) }
@@ -274,7 +274,7 @@
       button:disabled { cursor: wait; opacity: .62 }
       .primary { background: var(--brand); color: var(--on-brand); border-color: transparent }
       .primary:hover:enabled { filter: brightness(1.12); background: var(--brand) }
-      #close { background: #ffffff0d; color: #f5f8ff; border-color: #c5d9fa56; min-height: 34px; padding: 4px 11px }
+      #close { background: #ffffff0d; color: #fff6ee; border-color: #eacebe59; min-height: 34px; padding: 4px 11px }
       #close:hover:enabled { background: #ffffff21 }
       .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px }
       .key-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px }
@@ -282,7 +282,7 @@
         background: var(--canvas); padding: 10px 12px; border-radius: 9px }
       .automatic small { display: block; font-weight: 400 }
       #automatic { appearance: none; flex: 0 0 38px; width: 38px; min-height: 22px; height: 22px;
-        border-radius: 20px; border-color: transparent; background: #63758d; cursor: pointer;
+        border-radius: 20px; border-color: transparent; background: #7d6a60; cursor: pointer;
         padding: 0; margin: 0; position: relative }
       #automatic::before { content: ""; position: absolute; top: 2px; left: 2px;
         width: 16px; height: 16px; border-radius: 50%; background: #fff }
@@ -302,7 +302,7 @@
       #status:empty { display: none }
       #sync { flex: none }
       :focus-visible { outline: 2px solid var(--brand); outline-offset: 3px }
-      #close:focus-visible { outline-color: #e3edff }
+      #close:focus-visible { outline-color: #ffe6d8 }
       @media (prefers-reduced-motion: no-preference) {
         dialog[open] { animation: appear .22s ease-out }
         dialog::backdrop { animation: shade .18s ease-out }
@@ -313,10 +313,10 @@
         @keyframes shade { from { opacity: 0 } }
       }
       @media (prefers-color-scheme: dark) {
-        dialog { --surface: #151f32; --canvas: #101828; --ink: #edf3ff; --muted: #afbed5;
-          --edge: #36455f; --brand: #a5c8ff; --selected: #243a5f; --on-brand: #13243e;
-          --positive: #b6e4c8; --caution: #ecc096; --danger: #ffb5aa; color-scheme: dark }
-        #automatic:checked::before { background: #142c54 }
+        dialog { --surface: #281e1b; --canvas: #211916; --ink: #faf0e8; --muted: #c8b3a8;
+          --edge: #584139; --brand: #eba998; --selected: #49312a; --on-brand: #2e1d17;
+          --positive: #b6e4c8; --caution: #edc48a; --danger: #ffb5aa; color-scheme: dark }
+        #automatic:checked::before { background: #392822 }
       }
       @media (max-width: 610px) {
         dialog { width: calc(100vw - 20px); max-height: 94dvh; border-radius: 14px }
