@@ -1,0 +1,301 @@
+// ==UserScript==
+// @name         CookieSync 配置同步
+// @namespace    https://github.com/Xioaruan912/CookieSync
+// @version      1.0.0
+// @description  通过 WebDAV 同步网站名单和普通偏好
+// @author       Xioaruan912
+// @license      MIT
+// @homepageURL  https://github.com/Xioaruan912/CookieSync/tree/tampermonkey
+// @match        https://github.com/Xioaruan912/CookieSync
+// @match        https://github.com/Xioaruan912/CookieSync/*
+// @noframes
+// @grant        GM.getValue
+// @grant        GM.setValue
+// @grant        GM.registerMenuCommand
+// @grant        GM.xmlHttpRequest
+// @connect      *
+// @updateURL    https://raw.githubusercontent.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config.user.js
+// @downloadURL  https://raw.githubusercontent.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config.user.js
+// ==/UserScript==
+
+(() => {
+  'use strict';
+
+  const fileName = 'CookieSync-config-v1.json';
+  const connectionKey = 'webdav-connection';
+  const defaults = { theme: 'light', contextMenu: false, syncIntervalMinutes: 2 };
+  const empty = () => ({ version: 1, rules: {}, preferences: {} });
+  const object = value => value && typeof value === 'object' && !Array.isArray(value);
+
+  function normalizeDomain(input) {
+    const raw = input.trim();
+    const invalid = () => new Error('请输入具体网站域名，例如 nodeseek.com');
+    if (!raw || /[\s*@\\]/.test(raw)) throw invalid();
+    let url;
+    try {
+      url = new URL(raw.includes('://') ? raw : 'https://' + raw);
+    } catch {
+      throw invalid();
+    }
+    const domain = url.hostname.toLowerCase().replace(/^www\./, '');
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.port ||
+        domain.length > 253 || !domain.includes('.') || /^\d+(?:\.\d+){3}$/.test(domain) ||
+        !domain.split('.').every(part => /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(part)) ||
+        ['com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn', 'co.uk', 'com.hk', 'com.tw'].includes(domain))
+      throw invalid();
+    return domain;
+  }
+
+  function validPreference(key, value) {
+    if (key === 'theme') return ['light', 'dark', 'system'].includes(value);
+    if (key === 'contextMenu') return typeof value === 'boolean';
+    return key === 'syncIntervalMinutes' && Number.isInteger(value) && value >= 1 && value <= 60;
+  }
+
+  // Keep the same per-field revision ordering as the Chrome config channel.
+  function merge(left, right) {
+    const merged = empty();
+    for (const group of ['rules', 'preferences']) {
+      const isRule = group === 'rules';
+      const field = isRule ? 'enabled' : 'value';
+      for (const source of [left[group], right[group]]) {
+        if (!object(source)) throw new Error('配置文件格式错误');
+        for (const [key, entry] of Object.entries(source)) {
+          if (!entry || !Number.isSafeInteger(entry.updatedAt) || entry.updatedAt < 1 ||
+              typeof entry.revision !== 'string' || entry.revision.length < 1 || entry.revision.length > 80 ||
+              (isRule ? normalizeDomain(key) !== key || typeof entry.enabled !== 'boolean' : !validPreference(key, entry.value)))
+            throw new Error('配置项格式错误');
+          const previous = merged[group][key];
+          if (!previous || entry.updatedAt > previous.updatedAt || (entry.updatedAt === previous.updatedAt &&
+              (entry.revision > previous.revision || (entry.revision === previous.revision &&
+                (isRule ? !entry.enabled : String(entry.value) > String(previous.value))))))
+            merged[group][key] = { [field]: entry[field], updatedAt: entry.updatedAt, revision: entry.revision };
+        }
+      }
+    }
+    if (Object.keys(merged.rules).length > 400) throw new Error('网站名单最多支持 400 条规则');
+    merged.rules = Object.fromEntries(Object.entries(merged.rules).sort(([a], [b]) => a.localeCompare(b)));
+    merged.preferences = Object.fromEntries(Object.keys(defaults).filter(key => merged.preferences[key])
+      .map(key => [key, merged.preferences[key]]));
+    if (JSON.stringify(merged).length > 100000) throw new Error('配置超过 100000 字符');
+    return merged;
+  }
+
+  function decode(content) {
+    if (content.length > 100000) throw new Error('远程配置过大');
+    let value;
+    try { value = JSON.parse(content); } catch { throw new Error('远程配置不是有效的 JSON'); }
+    if (value?.version !== 1) throw new Error('远程配置版本不受支持');
+    return merge(empty(), { ...value, preferences: value.preferences === undefined ? {} : value.preferences });
+  }
+
+  function destination(connection) {
+    let url;
+    try { url = new URL(connection.url.trim()); } catch { throw new Error('请输入有效的 WebDAV 目录网址'); }
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash)
+      throw new Error('请填写最终 HTTPS 目录网址，账号和密码分别填写');
+    if (!connection.username.trim() || connection.username.includes(':') || !connection.password)
+      throw new Error('请填写 WebDAV 用户名和应用密码，用户名不能含冒号');
+    url.pathname = url.pathname.replace(/\/?$/, '/') + fileName;
+    return url.href;
+  }
+
+  async function request(connection, method, headers = {}, data) {
+    const url = destination(connection);
+    const bytes = new TextEncoder().encode(connection.username.trim() + ':' + connection.password);
+    const authorization = 'Basic ' + btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''));
+    let response;
+    let timer;
+    try {
+      const pending = GM.xmlHttpRequest({ method, url, data, anonymous: true, redirect: 'error', nocache: true,
+        headers: { Authorization: authorization, ...headers } });
+      response = await Promise.race([pending, new Promise((_, reject) => {
+        timer = setTimeout(() => { reject(new Error('timeout')); pending.abort(); }, 20000);
+      })]);
+    } catch {
+      throw new Error('WebDAV 请求失败，请检查域名授权、网络及最终目录地址');
+    } finally {
+      clearTimeout(timer);
+    }
+    if (response.finalUrl !== url) throw new Error('WebDAV 地址发生重定向，请填写最终地址');
+    return response;
+  }
+
+  const dataKey = connection => 'config:' + JSON.stringify([destination(connection), connection.username.trim()]);
+  const withLock = action => navigator.locks.request('cookiesync-userscript-config', action);
+
+  async function syncConfig(connection) {
+    const key = dataKey(connection);
+    let local = await GM.getValue(key, empty());
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const read = await request(connection, 'GET');
+      if (![200, 404].includes(read.status)) throw new Error('WebDAV 读取失败（HTTP ' + read.status + '）');
+      const remote = read.status === 404 ? empty() : decode(read.responseText);
+      local = merge(remote, local);
+      await GM.setValue(key, local);
+      const content = JSON.stringify(local);
+      if (content === JSON.stringify(remote)) return '已同步，远端无需写入';
+      const etag = read.responseHeaders?.match(/^etag:[ \t]*([^\r\n]+)/im)?.[1].trim();
+      if (read.status === 200 && !/^"[\x21\x23-\x7e\x80-\xff]*"$/.test(etag || ''))
+        throw new Error('WebDAV 未提供强 ETag，本机修改已保存，远程文件未覆盖');
+      const condition = read.status === 404 ? { 'If-None-Match': '*' } : { 'If-Match': etag };
+      const write = await request(connection, 'PUT', { 'Content-Type': 'application/json; charset=utf-8', ...condition }, content);
+      if (write.status >= 200 && write.status < 300) return '已合并并同步到 WebDAV';
+      if (write.status !== 412) throw new Error('WebDAV 写入失败（HTTP ' + write.status + '）');
+    }
+    throw new Error('WebDAV 配置发生冲突（HTTP 412），本机修改已保存，请稍后重新同步');
+  }
+
+  function revision(value, previous, field) {
+    return { [field]: value, updatedAt: Math.max(Date.now(), (previous?.updatedAt ?? 0) + 1), revision: crypto.randomUUID() };
+  }
+
+  let panel;
+  async function openPanel() {
+    if (panel?.open) return;
+    const host = document.createElement('div');
+    const root = host.attachShadow({ mode: 'closed' });
+    root.innerHTML = `
+      <style>
+        dialog{width:min(520px,calc(100vw - 32px));max-height:85vh;box-sizing:border-box;
+          padding:24px;border:1px solid #366556;border-radius:14px;background:#f5faf7;color:#173a2e;
+          font:14px/1.5 system-ui,sans-serif;color-scheme:light}
+        dialog::backdrop{background:#0b241d99} header, .actions{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+        h2,h3,p{margin:0} section{display:grid;gap:8px;margin-block:14px;padding-top:12px;border-top:1px solid #c4d9cf}
+        label{display:grid;gap:3px} input,select,button{font:inherit;padding:6px 8px;border:1px solid #8da99c;border-radius:6px}
+        input,select{min-width:0;background:white} button{background:#e1f1e8;color:#173a2e;cursor:pointer}
+        button:disabled{cursor:wait;opacity:.6} #sync{background:#16563e;color:white}
+        #rules{max-height:140px;overflow:auto;padding-left:24px;overflow-wrap:anywhere;margin:0}
+        :focus-visible{outline:2px solid #176852;outline-offset:2px}
+      </style>
+      <dialog aria-labelledby="title">
+        <header><h2 id="title">CookieSync 配置同步</h2><button id="close" type="button">关闭</button></header>
+        <section>
+          <label>WebDAV 目录网址<input id="url" type="url" placeholder="https://dav.example.com/同步目录/"></label>
+          <label>用户名<input id="username" autocomplete="off"></label>
+          <label>应用密码<input id="password" type="password" autocomplete="new-password" placeholder="已保存的密码可留空"></label>
+          <button id="connect" type="button">保存连接</button>
+          <p id="connection"></p>
+        </section>
+        <section>
+          <h3>网站名单</h3>
+          <label>域名<input id="domain" placeholder="nodeseek.com"></label>
+          <div class="actions"><button id="allow">允许</button><button id="pause">暂停</button></div>
+          <ul id="rules" aria-label="网站名单规则"></ul>
+        </section>
+        <section>
+          <h3>普通设置</h3>
+          <label>主题<select id="theme"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></label>
+          <label>Chrome 右键菜单<select id="contextMenu"><option value="false">关闭</option><option value="true">开启</option></select></label>
+          <label>Chrome 同步间隔（分钟）<input id="syncIntervalMinutes" type="number" min="1" max="60" step="1"></label>
+          <button id="save">保存普通设置</button>
+        </section>
+        <button id="sync">合并并同步</button>
+        <p id="status" role="status" aria-live="polite"></p>
+      </dialog>`;
+    const get = id => root.getElementById(id);
+    const dialog = root.querySelector('dialog');
+    panel = dialog;
+    let current;
+    let displayed = { ...defaults };
+    let busy = false;
+    function run(action) {
+      return async () => {
+        if (busy) return;
+        busy = true;
+        root.querySelectorAll('button').forEach(button => { button.disabled = true; });
+        try {
+          get('status').textContent = '处理中…';
+          get('status').textContent = (await withLock(action)) || '';
+        } catch (error) {
+          get('status').textContent = error.message || '操作失败';
+        } finally {
+          busy = false;
+          root.querySelectorAll('button').forEach(button => { button.disabled = false; });
+        }
+      };
+    }
+    async function render({ refreshPreferences = true } = {}) {
+      const local = current ? await GM.getValue(dataKey(current), empty()) : empty();
+      get('rules').replaceChildren(...Object.entries(local.rules).map(([domain, rule]) => {
+        const row = document.createElement('li');
+        row.textContent = domain + (rule.enabled ? ' · 允许' : ' · 暂停');
+        return row;
+      }));
+      if (refreshPreferences) {
+        for (const key of Object.keys(defaults)) {
+          displayed[key] = local.preferences[key]?.value ?? defaults[key];
+          get(key).value = String(displayed[key]);
+        }
+      }
+      get('connection').textContent = current ? '已保存连接，配置文件为 ' + fileName : '请先保存连接';
+    }
+    function active() {
+      if (!current) throw new Error('请先保存 WebDAV 连接');
+      return current;
+    }
+    async function changeRule(enabled) {
+      const key = dataKey(active());
+      const domain = normalizeDomain(get('domain').value);
+      const local = await GM.getValue(key, empty());
+      local.rules[domain] = revision(enabled, local.rules[domain], 'enabled');
+      await GM.setValue(key, merge(empty(), local));
+      get('domain').value = '';
+      await render({ refreshPreferences: false });
+      return '名单已保存到本机';
+    }
+    dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
+    dialog.addEventListener('close', () => {
+      host.remove();
+      if (panel === dialog) panel = undefined;
+    });
+    get('close').onclick = () => dialog.close();
+    get('connect').onclick = run(async () => {
+      const url = get('url').value.trim();
+      const username = get('username').value.trim();
+      const sameConnection = current?.url === url && current.username === username;
+      const password = get('password').value || (sameConnection ? current.password : '');
+      const next = { url, username, password };
+      destination(next);
+      await GM.setValue(connectionKey, next);
+      get('password').value = '';
+      current = next;
+      await render();
+      return '连接已保存';
+    });
+    get('allow').onclick = run(() => changeRule(true));
+    get('pause').onclick = run(() => changeRule(false));
+    async function savePreferences() {
+      const key = dataKey(active());
+      const local = await GM.getValue(key, empty());
+      const values = { theme: get('theme').value, contextMenu: get('contextMenu').value === 'true',
+        syncIntervalMinutes: get('syncIntervalMinutes').valueAsNumber };
+      for (const [name, value] of Object.entries(values)) {
+        if (!validPreference(name, value)) throw new Error('同步间隔须为 1 到 60 的整数');
+        if (value !== displayed[name]) local.preferences[name] = revision(value, local.preferences[name], 'value');
+      }
+      await GM.setValue(key, merge(empty(), local));
+    }
+    get('save').onclick = run(async () => {
+      await savePreferences();
+      await render();
+      return '普通设置已保存到本机';
+    });
+    get('sync').onclick = run(async () => {
+      await savePreferences();
+      try { return await syncConfig(active()); } finally { await render(); }
+    });
+    document.body.append(host);
+    dialog.showModal();
+    await run(async () => {
+      current = await GM.getValue(connectionKey, null);
+      if (current) {
+        get('url').value = current.url;
+        get('username').value = current.username;
+      }
+      await render();
+    })();
+  }
+
+  GM.registerMenuCommand('CookieSync · 配置同步', openPanel);
+})();

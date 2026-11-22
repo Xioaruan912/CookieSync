@@ -1,0 +1,58 @@
+name: Release Tampermonkey script
+
+on:
+  push:
+    branches: [tampermonkey]
+    paths:
+      - 'userscript/**'
+      - '.github/workflows/release-userscript.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-tampermonkey
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify script
+        run: |
+          node --check userscript/CookieSync-config.user.js
+          node --test userscript/config.test.mjs
+      - name: Publish standalone script
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          script=userscript/CookieSync-config.user.js
+          version=$(awk '$2 == "@version" {print $3}' "$script")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          tag="tampermonkey-v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            gh release view "$tag" >/dev/null
+            exit 0
+          else
+            status=$?
+            [[ "$status" == 2 ]]
+          fi
+          (
+            cd userscript
+            sha256sum CookieSync-config.user.js
+          ) > "$RUNNER_TEMP/SHA256SUMS.txt"
+          cat > "$RUNNER_TEMP/userscript-notes.md" <<'EOF'
+          [点此安装油猴脚本](https://raw.githubusercontent.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config.user.js)，也可下载附件并导入 Tampermonkey。油猴开启脚本自动安装更新后，会从 GitHub 检查和下载新版。
+
+          安装后在 [CookieSync 仓库页面](https://github.com/Xioaruan912/CookieSync) 打开油猴菜单，选择「CookieSync · 配置同步」。
+
+          油猴版通过 WebDAV 同步网站名单和普通设置。使用扩展中 Cookie 文件所在的 WebDAV 目录，两端就能共享配置。详见[油猴版使用说明](https://github.com/Xioaruan912/CookieSync/blob/tampermonkey/userscript/README.md)。
+          EOF
+          gh release create "$tag" "$script" "$RUNNER_TEMP/SHA256SUMS.txt" \
+            --target "$GITHUB_SHA" --title "CookieSync 油猴版 $version" \
+            --latest=false --notes-file "$RUNNER_TEMP/userscript-notes.md"
