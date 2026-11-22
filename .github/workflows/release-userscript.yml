@@ -49,7 +49,7 @@ jobs:
           cat > "$RUNNER_TEMP/userscript-notes.md" <<'EOF'
           [点此安装油猴脚本](https://raw.githubusercontent.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config.user.js)，也可下载附件并导入 Tampermonkey。油猴开启脚本自动安装更新后，会从 GitHub 检查和下载新版。
 
-          安装后在 [CookieSync 仓库页面](https://github.com/Xioaruan912/CookieSync) 打开油猴菜单，选择「CookieSync · 配置同步」。
+          在普通 HTTPS 网页打开油猴菜单，选择「CookieSync · 配置同步」，即可在当前网页打开 WebDAV 设置。应用密码通过浏览器对话框输入。
 
           油猴版通过 WebDAV 同步网站名单和普通设置。打开普通 HTTPS 网页时会检查，每 30 分钟最多自动尝试一次；在油猴菜单可查看最近一次结果。使用扩展中 Cookie 文件所在的 WebDAV 目录，两端就能共享配置。详见[油猴版使用说明](https://github.com/Xioaruan912/CookieSync/blob/tampermonkey/userscript/README.md)。
           EOF

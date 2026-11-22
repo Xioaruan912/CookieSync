@@ -14,6 +14,8 @@ function setup(remoteResponse, local = payload(), sharedData = new Map()) {
   const data = sharedData;
   const exports = {};
   const gm = {
+    listValues: async () => [...data.keys()],
+    getValues: async keys => Object.fromEntries(keys.filter(key => data.has(key)).map(key => [key, structuredClone(data.get(key))])),
     getValue: async (key, fallback) => structuredClone(data.get(key) ?? fallback),
     setValue: async (key, value) => data.set(key, structuredClone(value)),
     xmlHttpRequest: async options => {
@@ -131,4 +133,18 @@ test('background sync stores downloaded data separately from a simultaneous loca
   await app.syncConfig(connection);
   assert.deepEqual(app.data.get(app.key), edit);
   assert.deepEqual(Object.keys(app.data.get(app.key + ':remote-cache').rules), ['cloud.example', 'edit.example']);
+});
+
+test('edits from separate sites merge with the existing journal', async () => {
+  const app = setup((request) => {
+    if (request.method === 'GET') return { status: 404 };
+    const content = JSON.parse(request.data);
+    assert.deepEqual(Object.keys(content.rules), ['new.example', 'old.example']);
+    assert.equal(content.preferences.theme.value, 'dark');
+    return { status: 201 };
+  }, payload({ 'old.example': rule(true) }));
+  app.data.set(app.key + ':edit:rules:new.example', rule(false));
+  app.data.set(app.key + ':edit:preferences:theme', { value: 'dark', updatedAt: 20, revision: 'b' });
+  await app.syncConfig(connection);
+  assert.deepEqual(Object.keys(app.data.get(app.key).rules), ['old.example']);
 });

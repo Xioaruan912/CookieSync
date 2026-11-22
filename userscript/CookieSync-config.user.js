@@ -1,17 +1,20 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      1.1.0
+// @version      1.2.0
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
 // @homepageURL  https://github.com/Xioaruan912/CookieSync/tree/tampermonkey
 // @match        https://*/*
 // @run-at       document-idle
+// @sandbox      DOM
 // @noframes
 // @grant        GM_info
-// @grant        GM.openInTab
 // @grant        GM.getValue
+// @grant        GM.listValues
+// @grant        GM.getValues
+// @grant        GM.setValues
 // @grant        GM.setValue
 // @grant        GM.registerMenuCommand
 // @grant        GM.xmlHttpRequest
@@ -25,7 +28,6 @@
 
   const fileName = 'CookieSync-config-v1.json';
   const connectionKey = 'webdav-connection';
-  const projectUrl = 'https://github.com/Xioaruan912/CookieSync';
   const intervalMs = 30 * 60 * 1000;
   const defaults = { theme: 'light', contextMenu: false, syncIntervalMinutes: 2 };
   const empty = () => ({ version: 1, rules: {}, preferences: {} });
@@ -131,9 +133,20 @@
   const scheduleKey = connection => dataKey(connection) + ':schedule';
   const statusKey = connection => dataKey(connection) + ':status';
 
+  const editPrefix = connection => dataKey(connection) + ':edit:';
+  const editKey = (connection, group, name) => editPrefix(connection) + group + ':' + name;
+
   async function readConfig(connection) {
-    const local = await GM.getValue(dataKey(connection), empty());
-    const cached = await GM.getValue(cacheKey(connection), empty());
+    const prefix = editPrefix(connection);
+    const keys = (await GM.listValues()).filter(key => key.startsWith(prefix));
+    const stored = await GM.getValues([dataKey(connection), cacheKey(connection), ...keys]);
+    const edits = empty();
+    for (const key of keys) {
+      const [group, name] = key.slice(prefix.length).split(':');
+      if (stored[key] !== undefined) edits[group][name] = stored[key];
+    }
+    const local = merge(stored[dataKey(connection)] ?? empty(), edits);
+    const cached = stored[cacheKey(connection)] ?? empty();
     return merge(cached, local);
   }
 
@@ -208,58 +221,80 @@
 
   let panel;
   async function openPanel() {
-    if (panel?.open) return;
+    if (panel?.dialog.open) return;
+    panel?.host.remove();
     const host = document.createElement('div');
     const root = host.attachShadow({ mode: 'closed' });
-    root.innerHTML = `
-      <style>
+    const stylesheet = new CSSStyleSheet();
+    stylesheet.replaceSync(`
+        :host{all:initial}
         dialog{width:min(520px,calc(100vw - 32px));max-height:85vh;box-sizing:border-box;
           padding:24px;border:1px solid #366556;border-radius:14px;background:#f5faf7;color:#173a2e;
           font:14px/1.5 system-ui,sans-serif;color-scheme:light}
         dialog::backdrop{background:#0b241d99} header, .actions{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
         h2,h3,p{margin:0} section{display:grid;gap:8px;margin-block:14px;padding-top:12px;border-top:1px solid #c4d9cf}
-        label{display:grid;gap:3px} input,select,button{font:inherit;padding:6px 8px;border:1px solid #8da99c;border-radius:6px}
+        label{display:grid;gap:3px} label:has(input[type=checkbox]){display:flex;align-items:center;gap:8px}
+        input,select,button{font:inherit;padding:6px 8px;border:1px solid #8da99c;border-radius:6px}
         input,select{min-width:0;background:white} button{background:#e1f1e8;color:#173a2e;cursor:pointer}
         button:disabled{cursor:wait;opacity:.6} #sync{background:#16563e;color:white}
         #rules{max-height:140px;overflow:auto;padding-left:24px;overflow-wrap:anywhere;margin:0}
         :focus-visible{outline:2px solid #176852;outline-offset:2px}
-      </style>
-      <dialog aria-labelledby="title">
-        <header><h2 id="title">CookieSync 配置同步</h2><button id="close" type="button">关闭</button></header>
-        <section>
-          <label>WebDAV 目录网址<input id="url" type="url" placeholder="https://dav.example.com/同步目录/"></label>
-          <label>用户名<input id="username" autocomplete="off"></label>
-          <label>应用密码<input id="password" type="password" autocomplete="new-password" placeholder="已保存的密码可留空"></label>
-          <button id="connect" type="button">保存连接</button>
-          <label><span><input id="automatic" type="checkbox" checked> 打开网页时自动同步（每 30 分钟最多一次）</span></label>
-          <p id="connection"></p>
-          <p id="last-sync"></p>
-        </section>
-        <section>
-          <h3>网站名单</h3>
-          <label>域名<input id="domain" placeholder="nodeseek.com"></label>
-          <div class="actions"><button id="allow">允许</button><button id="pause">暂停</button></div>
-          <ul id="rules" aria-label="网站名单规则"></ul>
-        </section>
-        <section>
-          <h3>普通设置</h3>
-          <label>主题<select id="theme"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></label>
-          <label>Chrome 右键菜单<select id="contextMenu"><option value="false">关闭</option><option value="true">开启</option></select></label>
-          <label>Chrome 同步间隔（分钟）<input id="syncIntervalMinutes" type="number" min="1" max="60" step="1"></label>
-          <button id="save">保存普通设置</button>
-        </section>
-        <button id="sync">合并并同步</button>
-        <p id="status" role="status" aria-live="polite"></p>
-      </dialog>`;
+    `);
+    root.adoptedStyleSheets = [stylesheet];
+    // Build the dialog without HTML parsing so strict Trusted Types pages can open it.
     const get = id => root.getElementById(id);
-    const dialog = root.querySelector('dialog');
-    panel = dialog;
+    const element = (tag, attributes = {}, ...children) => {
+      const node = document.createElement(tag);
+      for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+      node.append(...children);
+      return node;
+    };
+    const button = (id, text) => element('button', { id, type: 'button' }, text);
+    const label = (text, field) => element('label', {}, text, field);
+    const input = (id, options = {}) => element('input', { id, ...options });
+    const select = (id, options) => element('select', { id }, ...options.map(
+      ([value, text]) => element('option', { value }, text),
+    ));
+    const section = (...children) => element('section', {}, ...children);
+    const dialog = element('dialog', { 'aria-labelledby': 'title' },
+      element('header', {}, element('h2', { id: 'title' }, 'CookieSync 配置同步'), button('close', '关闭')),
+      section(
+        element('h3', {}, 'WebDAV 设置'),
+        label('WebDAV 目录网址', input('url', { type: 'url', placeholder: 'https://dav.example.com/同步目录/',
+          autocomplete: 'off' })),
+        label('用户名', input('username', { autocomplete: 'off' })),
+        button('password', '输入或更换应用密码'),
+        element('p', { id: 'password-status' }, '通过浏览器对话框输入应用密码'),
+        element('label', {}, input('automatic', { type: 'checkbox', checked: '' }), '打开网页时自动同步（每 30 分钟最多一次）'),
+        button('connect', '保存连接'),
+        element('p', { id: 'connection' }),
+        element('p', { id: 'last-sync' }),
+      ),
+      section(
+        element('h3', {}, '网站名单'),
+        label('域名', input('domain', { placeholder: 'nodeseek.com' })),
+        element('div', { class: 'actions' }, button('allow', '允许'), button('pause', '暂停')),
+        element('ul', { id: 'rules', 'aria-label': '网站名单规则' }),
+      ),
+      section(
+        element('h3', {}, '普通设置'),
+        label('主题', select('theme', [['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']])),
+        label('Chrome 右键菜单', select('contextMenu', [['false', '关闭'], ['true', '开启']])),
+        label('Chrome 同步间隔（分钟）', input('syncIntervalMinutes', { type: 'number', min: '1', max: '60', step: '1' })),
+        button('save', '保存普通设置'),
+      ),
+      button('sync', '合并并同步'),
+      element('p', { id: 'status', role: 'status', 'aria-live': 'polite' }),
+    );
+    root.append(dialog);
+    panel = { dialog, host };
     let current;
+    let pendingPassword;
     let displayed = { ...defaults };
     let busy = false;
     function run(action) {
-      return async () => {
-        if (busy) return;
+      return async event => {
+        if (busy || (event && !event.isTrusted)) return;
         busy = true;
         root.querySelectorAll('button').forEach(button => { button.disabled = true; });
         try {
@@ -294,12 +329,12 @@
       return current;
     }
     async function changeRule(enabled) {
-      const key = dataKey(active());
+      const connection = active();
       const domain = normalizeDomain(get('domain').value);
-      const local = await GM.getValue(key, empty());
-      const effective = await readConfig(active());
-      local.rules[domain] = revision(enabled, effective.rules[domain], 'enabled');
-      await GM.setValue(key, merge(empty(), local));
+      const effective = await readConfig(connection);
+      const updated = revision(enabled, effective.rules[domain], 'enabled');
+      merge(effective, { ...empty(), rules: { [domain]: updated } });
+      await GM.setValue(editKey(connection, 'rules', domain), updated);
       get('domain').value = '';
       await render({ refreshPreferences: false });
       return '名单已保存到本机';
@@ -307,18 +342,32 @@
     dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
     dialog.addEventListener('close', () => {
       host.remove();
-      if (panel === dialog) panel = undefined;
+      if (panel?.dialog === dialog) panel = undefined;
     });
-    get('close').onclick = () => dialog.close();
+    get('close').onclick = event => { if (event.isTrusted) dialog.close(); };
+    function askPassword() {
+      // Third-party documents can observe keyboard events from a shadow tree.
+      return window.prompt('CookieSync · 输入 WebDAV 应用密码（浏览器对话框会显示输入内容）');
+    }
+    get('password').onclick = event => {
+      if (!event.isTrusted) return;
+      const value = askPassword();
+      if (value) {
+        pendingPassword = value;
+        get('password-status').textContent = '已输入应用密码，点击「保存连接」提交';
+      }
+    };
     get('connect').onclick = run(async () => {
       const url = get('url').value.trim();
       const username = get('username').value.trim();
       const sameConnection = current?.url === url && current.username === username;
-      const password = get('password').value || (sameConnection ? current.password : '');
+      const password = pendingPassword || (sameConnection ? current.password : askPassword());
+      if (password === null) return '已取消保存连接';
       const next = { url, username, password, automatic: get('automatic').checked };
       destination(next);
       await GM.setValue(connectionKey, next);
-      get('password').value = '';
+      pendingPassword = undefined;
+      get('password-status').textContent = '应用密码已保存在油猴本机存储';
       current = next;
       await render();
       return '连接已保存';
@@ -326,16 +375,17 @@
     get('allow').onclick = run(() => changeRule(true));
     get('pause').onclick = run(() => changeRule(false));
     async function savePreferences() {
-      const key = dataKey(active());
-      const local = await GM.getValue(key, empty());
+      const connection = active();
+      const changes = {};
       const values = { theme: get('theme').value, contextMenu: get('contextMenu').value === 'true',
         syncIntervalMinutes: get('syncIntervalMinutes').valueAsNumber };
-      const effective = await readConfig(active());
+      const effective = await readConfig(connection);
       for (const [name, value] of Object.entries(values)) {
         if (!validPreference(name, value)) throw new Error('同步间隔须为 1 到 60 的整数');
-        if (value !== displayed[name]) local.preferences[name] = revision(value, effective.preferences[name], 'value');
+        if (value !== displayed[name])
+          changes[editKey(connection, 'preferences', name)] = revision(value, effective.preferences[name], 'value');
       }
-      await GM.setValue(key, merge(empty(), local));
+      if (Object.keys(changes).length) await GM.setValues(changes);
     }
     get('save').onclick = run(async () => {
       await savePreferences();
@@ -360,6 +410,7 @@
         get('url').value = current.url;
         get('username').value = current.username;
         get('automatic').checked = current.automatic !== false;
+        get('password-status').textContent = '已有应用密码，可按需更换';
       }
       await render();
     })();
@@ -367,11 +418,7 @@
 
   function start() {
     if (GM_info.isIncognito) return;
-    GM.registerMenuCommand('CookieSync · 配置同步', () => {
-      const onProject = location.origin === 'https://github.com' &&
-        /^\/Xioaruan912\/CookieSync(?:\/|$)/i.test(location.pathname);
-      return onProject ? openPanel() : GM.openInTab(projectUrl, { active: true });
-    });
+    GM.registerMenuCommand('CookieSync · 配置同步', openPanel);
     GM.registerMenuCommand('CookieSync · 查看同步状态', async () => {
       const connection = await GM.getValue(connectionKey, null);
       alert(connection ? statusText(await GM.getValue(statusKey(connection), null)) : '请先保存 WebDAV 连接');
