@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      1.6.0
+// @version      1.7.0
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
@@ -234,17 +234,18 @@
     stylesheet.replaceSync(`
       :host { all: initial }
       dialog {
-        --surface: #fdfcf9; --recess: #edeff3; --ink: #212a3c; --muted: #4f5d74;
-        --line: #d6dce6; --field: #7f8ca3; --accent: #284e9a; --on-accent: #fff;
-        --selected: #e0e8fa; --good: #276245; --warning: #795120; --error: #9b342e;
-        width: min(840px, calc(100vw - 32px)); max-width: none;
+        --surface: #fcfaff; --recess: #f4eff8; --ink: #281f35; --muted: #62536f;
+        --line: #e3d9eb; --field: #8e7e9d; --accent: #55318e; --on-accent: #fff;
+        --selected: #ede3f6; --good: #276245; --warning: #795120; --error: #9b342e;
+        --hero: #f4edf9; --route: #e9ddf4; --device: #f8f3fc; --track: #a38ab9;
+        width: min(880px, calc(100vw - 32px)); max-width: none;
         max-height: min(710px, calc(100dvh - 32px)); padding: 0; overflow: hidden;
-        border: 0; border-radius: 16px; background: var(--surface); color: var(--ink);
-        box-shadow: 0 20px 70px #101f3d52; color-scheme: light;
+        border: 0; border-radius: 24px; background: var(--surface); color: var(--ink);
+        box-shadow: 0 24px 80px #26173457; color-scheme: light;
         font: 15px/1.55 "Instrument Sans", "Segoe UI", "Microsoft YaHei UI", sans-serif;
       }
       dialog[open] { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto }
-      dialog::backdrop { background: #151d3294 }
+      dialog::backdrop { background: #26193685 }
       *, *::before, *::after { box-sizing: border-box }
       ::selection { color: var(--ink); background: var(--selected) }
       [hidden] { display: none !important }
@@ -255,12 +256,21 @@
       .top, footer {
         display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 24px;
       }
-      .top { background: var(--recess) }
+      .top { border-bottom: 1px solid var(--line) }
+      .wordmark { display: flex; align-items: center; gap: 11px }
+      .brand-mark { position: relative; width: 32px; height: 32px; border-radius: 10px;
+        background: var(--selected); color: var(--accent); flex: none }
+      .brand-mark::before, .brand-mark::after { content: ""; position: absolute; width: 13px; height: 10px;
+        border: 2px solid currentColor; border-radius: 4px; transform: rotate(-35deg) }
+      .brand-mark::before { left: 7px; top: 13px }
+      .brand-mark::after { left: 12px; top: 8px }
+      #close { min-height: 44px; border: 0; background: transparent; color: var(--muted) }
+      #close:hover:enabled { background: var(--selected) }
       .top h2 { font-size: 19px; font-weight: 750; letter-spacing: -.025em; line-height: 1.2 }
       .top p { font-size: 12px }
       nav { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line);
-        padding: 0; background: var(--recess) }
-      button, input, select { min-height: 40px; border: 1px solid var(--field); border-radius: 7px;
+        padding: 0; background: var(--surface) }
+      button, input, select { min-height: 44px; border: 1px solid var(--field); border-radius: 10px;
         background: var(--surface); padding: 7px 12px; min-width: 0 }
       button { font-weight: 650; cursor: pointer }
       button:hover:enabled:not([aria-disabled="true"]) { background: var(--selected) }
@@ -275,88 +285,90 @@
       .content { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain;
         scrollbar-color: var(--field) transparent }
       section { display: grid; gap: 18px; align-content: start; padding: 24px; min-height: 340px }
-      .heading { display: grid; gap: 4px }
+      .heading { display: grid; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--line) }
       h3 { font-size: 25px; font-weight: 720; letter-spacing: -.03em; line-height: 1.2 }
       h4 { font-size: 15px }
       .hint, small { font-size: 13px; color: var(--muted); overflow-wrap: anywhere }
       #overview { padding: 0; gap: 0 }
       .status-panel {
-        --scene-ink: #fafaff; --scene-muted: #c7cee3; --signal: #abbcff;
-        background: radial-gradient(ellipse at 74% 57%, #202c54, #141a2d 45%, #101321 72%);
-        color: var(--scene-ink); padding: 44px 40px; min-height: 306px;
-        display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+        background: var(--hero); padding: 42px 36px; min-height: 286px;
+        display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .92fr);
         align-items: center; gap: 28px;
       }
-      .result { display: grid; justify-items: start; gap: 10px; min-width: 0 }
+      .result { display: grid; justify-items: start; gap: 11px; min-width: 0 }
       .result h4 {
-        font-size: clamp(34px, 5.2vw, 53px); font-weight: 720; letter-spacing: -.04em;
+        font-size: clamp(34px, 4.3vw, 55px); font-weight: 750; letter-spacing: -.04em;
         line-height: 1.08; text-wrap: balance;
       }
-      .result p, .result time { color: var(--scene-muted); font-size: 14px; overflow-wrap: anywhere }
-      .result time { font-size: 13px; font-variant-numeric: tabular-nums }
+      .result p { color: var(--muted); font-size: 15px; max-width: 37ch; overflow-wrap: anywhere }
       #overview-action {
-        margin-top: 6px; padding: 8px 17px; min-height: 44px; min-width: 112px;
-        background: #f5f7ff; color: #20263b; border: 0; border-radius: 24px;
+        margin-top: 5px; padding: 8px 19px; min-width: 112px; border-radius: 24px;
       }
-      #overview-action:hover:enabled:not([aria-disabled="true"]) { background: #dde6ff }
-      #overview-action:focus-visible { outline-color: #c5d3ff }
       .sync-route {
-        display: grid; grid-template-columns: minmax(70px, 1fr) minmax(24px, 1.12fr) minmax(70px, 1fr);
-        align-items: start; min-width: 0; color: var(--scene-muted);
+        --signal: var(--accent);
+        display: grid; grid-template-columns: 64px minmax(28px, 1fr) 64px; column-gap: 8px;
+        align-items: start; min-width: 0; color: var(--muted); padding: 29px 18px 23px;
+        background: var(--route); border-radius: 16px;
       }
-      .sync-route[data-state="ok"] { --signal: #98e5c6 }
-      .sync-route[data-state="error"] { --signal: #ffb4a4 }
-      .route-node { display: grid; gap: 13px; justify-items: center; min-width: 0; font-size: 13px }
+      .sync-route[data-state="ok"] { --signal: var(--good) }
+      .sync-route[data-state="error"] { --signal: var(--error) }
+      .sync-route[data-pending] { --signal: var(--accent) }
+      .route-node { display: grid; gap: 11px; justify-items: center; min-width: 0; font-size: 13px; font-weight: 650 }
       .device {
-        position: relative; display: block; width: 100%; height: 82px; border-radius: 14px;
-        border: 1px solid #95a9e5a6;
-        background: linear-gradient(155deg, #758ccb 0%, #34446e 46%, #202946 100%);
-        box-shadow: inset 0 1px 1px #ffffff58, 0 16px 24px #090d1d80;
+        position: relative; display: block; width: 60px; height: 52px; border-radius: 14px;
+        border: 1px solid var(--track); background: var(--device); color: var(--signal);
       }
-      .device-local { border-radius: 10px 10px 6px 6px }
       .device-local::before {
-        content: ""; position: absolute; inset: 7px 7px 9px; border-radius: 5px;
-        background: linear-gradient(150deg, #2f3a61, #141b31 66%); border: 1px solid #111528;
+        content: ""; position: absolute; inset: 12px 14px 15px; border-radius: 3px; border: 2px solid currentColor;
       }
       .device-local::after {
-        content: ""; position: absolute; inset: auto -6% -6px; height: 7px;
-        border-radius: 2px 2px 8px 8px; background: linear-gradient(#d4dcf6, #68769b);
+        content: ""; position: absolute; inset: auto 11px 13px; height: 2px; background: currentColor;
       }
       .device-remote::before, .device-remote::after {
-        content: ""; position: absolute; inset: 13px 10px auto; height: 21px; border-radius: 6px;
-        border: 1px solid #8b9ac16b; background: linear-gradient(150deg, #293652, #141b30);
+        content: ""; position: absolute; inset: 12px 13px auto; height: 11px; border-radius: 3px;
+        border: 2px solid currentColor;
       }
-      .device-remote::after { top: auto; bottom: 13px }
+      .device-remote::after { top: auto; bottom: 12px }
       .device-light {
-        position: absolute; z-index: 1; width: 7px; height: 7px; border-radius: 50%;
-        top: 20px; right: 18px; background: var(--signal);
+        position: absolute; width: 3px; height: 3px; border-radius: 50%;
+        top: 16px; right: 18px; background: currentColor;
       }
-      .device-local .device-light { top: 50%; left: 50%; transform: translate(-50%, -50%) }
-      .route-line { position: relative; height: 1px; margin-top: 41px; background: #a4b5e784 }
+      .device-local .device-light { display: none }
+      .route-line { position: relative; height: 2px; margin-top: 25px; background: var(--track) }
+      .route-mark {
+        position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%);
+        width: 29px; height: 29px; border-radius: 50%; border: 1px solid var(--track);
+        background: var(--device); color: var(--signal);
+      }
+      .route-mark::before, .route-mark::after {
+        content: ""; position: absolute; left: 7px; top: 9px; width: 13px; height: 4px;
+        background: currentColor; clip-path: polygon(0 28%, 68% 28%, 68% 0, 100% 50%, 68% 100%, 68% 72%, 0 72%);
+      }
+      .route-mark::after { top: 14px; transform: rotate(180deg) }
       .route-pulse { position: absolute; inset: 0; opacity: 0; pointer-events: none }
       .route-pulse::before {
-        content: ""; position: absolute; top: 50%; width: 16px; height: 4px; border-radius: 6px;
-        background: #eef2ff; transform: translate(-50%, -50%); box-shadow: 0 0 8px #9db6ff;
+        content: ""; position: absolute; top: 50%; width: 12px; height: 4px; border-radius: 6px;
+        background: var(--signal); transform: translate(-50%, -50%);
       }
       .route-pulse--out::before { left: 0 }
       .route-pulse--back::before { left: 100% }
       .overview-meta { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) auto;
-        gap: 16px; padding: 12px 24px }
-      .overview-meta .details { border: 0 }
+        gap: 19px; padding: 12px 24px; border-top: 1px solid var(--line) }
       .overview-meta button { justify-self: start }
-      .details { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); border-block: 1px solid var(--line) }
-      .details div { padding: 12px 0; min-width: 0 }
-      .details div + div { border-inline-start: 1px solid var(--line); padding-inline-start: 16px }
+      .details { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr) minmax(0, 1.2fr) }
+      .details div { padding: 8px 0; min-width: 0 }
+      .details div + div { border-inline-start: 1px solid var(--line); padding-inline: 12px 4px }
       .details dt { font-size: 13px; color: var(--muted) }
-      .details dd { overflow-wrap: anywhere; font-weight: 650 }
+      .details dd { overflow-wrap: anywhere; font-size: 14px; font-weight: 650 }
+      #last-sync { font-variant-numeric: tabular-nums }
       .actions, .key-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px }
-      .fields { display: grid; gap: 12px }
+      .fields { display: grid; gap: 14px }
       label { display: grid; gap: 5px; min-width: 0; font-weight: 600 }
       input, select { width: 100%; font-weight: 400; caret-color: var(--accent) }
       input::placeholder { color: var(--muted); opacity: 1 }
       input[aria-invalid="true"] { border-color: var(--error) }
       .automatic { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-        padding: 12px; border-radius: 8px; background: var(--recess) }
+        padding: 12px 0; border-block: 1px solid var(--line); min-height: 54px }
       .automatic small { display: block; font-weight: 400 }
       #automatic { width: 20px; height: 20px; min-height: 20px; margin: 0; flex: none;
         accent-color: var(--accent); cursor: pointer }
@@ -366,7 +378,7 @@
       .rule-toolbar select { width: auto }
       .rules { list-style: none; padding: 0; margin: 0 }
       .rules li { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-        padding: 9px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere }
+        padding: 12px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere }
       .rule-state { flex: none; font-size: 13px; color: var(--good) }
       .rule-state[data-enabled="false"] { color: var(--warning) }
       .primary { background: var(--accent); border-color: transparent; color: var(--on-accent) }
@@ -396,30 +408,29 @@
         @keyframes open-panel { from { opacity: .5; transform: translateY(5px) } }
       }
       @media (prefers-color-scheme: dark) {
-        dialog { --surface: #171e2d; --recess: #131a27; --ink: #f0f4ff; --muted: #b1bdd6;
-          --line: #414e64; --field: #8190a9; --accent: #a8c2ff; --on-accent: #192845;
-          --selected: #263958; --good: #a2d4b5; --warning: #efc88f; --error: #ffb9b0;
+        dialog { --surface: #211a2b; --recess: #271e33; --ink: #fcf4ff; --muted: #d2c2e0;
+          --line: #483b56; --field: #9584a8; --accent: #ddc0ff; --on-accent: #29163b;
+          --selected: #39274b; --good: #a2d4b5; --warning: #efc88f; --error: #ffb9b0;
+          --hero: #2a2036; --route: #3c2c4d; --device: #251c32; --track: #977fb0;
           color-scheme: dark }
       }
       @media (max-width: 510px) {
         dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px) }
-        .sync-route { justify-self: center; width: min(100%, 264px) }
-        .device { height: 66px }
-        .device-remote::before, .device-remote::after { height: 16px; top: 10px }
-        .device-remote::after { top: auto; bottom: 10px }
-        .device-remote .device-light { top: 15px }
-        .route-line { margin-top: 33px }
-        .overview-meta { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 10px 14px 16px }
+        .sync-route { width: 100%; grid-template-columns: 60px minmax(28px, 1fr) 60px;
+          padding: 16px 13px 12px }
+        .overview-meta { grid-template-columns: minmax(0, 1fr); gap: 7px; padding: 10px 16px 14px }
+        .details div + div { padding-inline-start: 8px }
         nav button { font-size: 13px }
-        .top, footer { padding: 10px 12px }
-        section { padding: 16px 12px; gap: 14px; min-height: 0 }
-        .status-panel { min-height: 0; padding: 23px 18px 20px; gap: 24px; grid-template-columns: minmax(0, 1fr) }
+        .top, footer { padding: 8px 14px }
+        section { padding: 17px 14px; gap: 14px; min-height: 0 }
+        .status-panel { min-height: 0; padding: 22px 17px 16px; gap: 19px; grid-template-columns: minmax(0, 1fr) }
         .result h4 { font-size: clamp(29px, 8vw, 38px) }
         .rule-editor label { flex-basis: 100% }
       }
       @media (forced-colors: active) {
         dialog { border: 1px solid CanvasText }
-        .nav-indicator { background: Highlight }
+        .nav-indicator, .brand-mark, .route-line, .route-mark::before, .route-mark::after,
+        .device-local::after, .device-light { background: Highlight; forced-color-adjust: none }
       }
     `);
     root.adoptedStyleSheets = [stylesheet];
@@ -443,8 +454,12 @@
     );
     const section = (id, ...children) => element('section', { id, 'aria-labelledby': id + '-title', hidden: '' }, ...children);
     const navigation = element('nav', { 'aria-label': '配置栏目' });
-    const detail = (id, title) => element('div', {}, element('dt', {}, title), element('dd', { id }));
+    const detail = (id, title, ...children) =>
+      element('div', {}, element('dt', {}, title), element('dd', { id }, ...children));
     const overviewAction = button('overview-action', '立即同步');
+    overviewAction.className = 'primary';
+    const lastSync = element('time', { id: 'last-sync', hidden: '' });
+    const noSyncTime = element('span', { id: 'no-sync-time' }, '尚无记录');
     const routeNode = (kind, title) => element('div', { class: 'route-node' },
       element('span', { class: 'device device-' + kind }, element('span', { class: 'device-light' })),
       element('span', {}, title),
@@ -452,6 +467,7 @@
     const route = element('div', { class: 'sync-route', 'aria-hidden': 'true' },
       routeNode('local', '本机'),
       element('div', { class: 'route-line' },
+        element('span', { class: 'route-mark' }),
         element('span', { class: 'route-pulse route-pulse--out' }),
         element('span', { class: 'route-pulse route-pulse--back' }),
       ),
@@ -464,13 +480,15 @@
           element('div', { class: 'result' },
             element('h4', { id: 'sync-state', 'aria-live': 'polite' }),
             element('p', { id: 'sync-message' }),
-            element('time', { id: 'last-sync', hidden: '' }),
             overviewAction,
           ),
           route,
         ),
         element('div', { class: 'overview-meta' },
-          element('dl', { class: 'details' }, detail('saved-host', 'WebDAV 服务器'), detail('auto-state', '自动同步')),
+          element('dl', { class: 'details' },
+            detail('saved-host', 'WebDAV 服务器'), detail('auto-state', '自动同步'),
+            detail('last-result', '上次同步', lastSync, noSyncTime),
+          ),
           button('edit-connection', '管理连接'),
         ),
       ),
@@ -514,7 +532,10 @@
     syncButton.className = 'primary';
     const dialog = element('dialog', { 'aria-labelledby': 'title', lang: 'zh-CN' },
       element('header', { class: 'top' },
-        element('div', {}, element('h2', { id: 'title' }, 'CookieSync'), element('p', { class: 'hint' }, '配置同步')),
+        element('div', { class: 'wordmark' },
+          element('span', { class: 'brand-mark', 'aria-hidden': 'true' }),
+          element('h2', { id: 'title' }, 'CookieSync'),
+        ),
         button('close', '关闭'),
       ),
       navigation,
@@ -617,12 +638,14 @@
       }
       const status = current && await GM.getValue(statusKey(current), null);
       route.dataset.state = status?.ok === true ? 'ok' : status?.ok === false ? 'error' : 'idle';
-      const lastSync = get('last-sync');
       lastSync.hidden = !status;
+      noSyncTime.hidden = Boolean(status);
       if (status) {
         const time = new Date(status.at);
         lastSync.dateTime = time.toISOString();
-        lastSync.textContent = time.toLocaleString('zh-CN');
+        lastSync.textContent = time.toLocaleString('zh-CN', {
+          year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+        });
       }
       get('sync-state').textContent = !current ? '还未连接 WebDAV'
         : !status ? '等待首次同步'
