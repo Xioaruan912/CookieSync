@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      1.5.0
+// @version      1.6.0
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
@@ -237,8 +237,7 @@
         --surface: #fdfcf9; --recess: #edeff3; --ink: #212a3c; --muted: #4f5d74;
         --line: #d6dce6; --field: #7f8ca3; --accent: #284e9a; --on-accent: #fff;
         --selected: #e0e8fa; --good: #276245; --warning: #795120; --error: #9b342e;
-        --summary: #16243e; --summary-ink: #f7f9ff; --summary-muted: #c1cceb;
-        width: min(760px, calc(100vw - 32px)); max-width: none;
+        width: min(840px, calc(100vw - 32px)); max-width: none;
         max-height: min(710px, calc(100dvh - 32px)); padding: 0; overflow: hidden;
         border: 0; border-radius: 16px; background: var(--surface); color: var(--ink);
         box-shadow: 0 20px 70px #101f3d52; color-scheme: light;
@@ -249,6 +248,8 @@
       *, *::before, *::after { box-sizing: border-box }
       ::selection { color: var(--ink); background: var(--selected) }
       [hidden] { display: none !important }
+      .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden;
+        clip-path: inset(50%); white-space: nowrap }
       h2, h3, h4, p, dl, dd { margin: 0 }
       button, input, select { font: inherit; color: inherit }
       .top, footer {
@@ -262,8 +263,8 @@
       button, input, select { min-height: 40px; border: 1px solid var(--field); border-radius: 7px;
         background: var(--surface); padding: 7px 12px; min-width: 0 }
       button { font-weight: 650; cursor: pointer }
-      button:hover:enabled { background: var(--selected) }
-      button:disabled { opacity: .62; cursor: wait }
+      button:hover:enabled:not([aria-disabled="true"]) { background: var(--selected) }
+      button:disabled, button[aria-disabled="true"] { opacity: .62; cursor: wait }
       nav button { border: 0; border-radius: 0; background: transparent; color: var(--muted);
         padding: 6px 4px }
       nav button[aria-pressed="true"] { color: var(--accent) }
@@ -278,39 +279,71 @@
       h3 { font-size: 25px; font-weight: 720; letter-spacing: -.03em; line-height: 1.2 }
       h4 { font-size: 15px }
       .hint, small { font-size: 13px; color: var(--muted); overflow-wrap: anywhere }
+      #overview { padding: 0; gap: 0 }
       .status-panel {
-        background: radial-gradient(ellipse at 100% 0%, #293d61, transparent 76%), var(--summary);
-        color: var(--summary-ink); border-radius: 12px; padding: 20px;
-        display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(140px, 1fr);
-        align-items: center; gap: 24px;
+        --scene-ink: #fafaff; --scene-muted: #c7cee3; --signal: #abbcff;
+        background: radial-gradient(ellipse at 74% 57%, #202c54, #141a2d 45%, #101321 72%);
+        color: var(--scene-ink); padding: 44px 40px; min-height: 306px;
+        display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+        align-items: center; gap: 28px;
       }
-      .result { display: grid; justify-items: start; gap: 5px; min-width: 0 }
-      .result button { margin-top: 10px }
+      .result { display: grid; justify-items: start; gap: 10px; min-width: 0 }
+      .result h4 {
+        font-size: clamp(34px, 5.2vw, 53px); font-weight: 720; letter-spacing: -.04em;
+        line-height: 1.08; text-wrap: balance;
+      }
+      .result p, .result time { color: var(--scene-muted); font-size: 14px; overflow-wrap: anywhere }
+      .result time { font-size: 13px; font-variant-numeric: tabular-nums }
+      #overview-action {
+        margin-top: 6px; padding: 8px 17px; min-height: 44px; min-width: 112px;
+        background: #f5f7ff; color: #20263b; border: 0; border-radius: 24px;
+      }
+      #overview-action:hover:enabled:not([aria-disabled="true"]) { background: #dde6ff }
+      #overview-action:focus-visible { outline-color: #c5d3ff }
       .sync-route {
-        display: grid; gap: 10px; padding: 16px; border-radius: 9px;
-        background: #9eb5e912; border: 1px solid #acc1f54d;
+        display: grid; grid-template-columns: minmax(70px, 1fr) minmax(24px, 1.12fr) minmax(70px, 1fr);
+        align-items: start; min-width: 0; color: var(--scene-muted);
       }
-      .route-labels { display: flex; justify-content: space-between; gap: 8px;
-        font-size: 12px; font-weight: 650; color: var(--summary-muted) }
-      .route-line { position: relative; height: 4px; margin: 6px; background: #91ace564; border-radius: 4px }
-      .route-line::before, .route-line::after {
-        content: ""; position: absolute; top: 50%; border-radius: 50%;
-        width: 10px; height: 10px; background: #b2c5ed; transform: translate(-50%, -50%);
+      .sync-route[data-state="ok"] { --signal: #98e5c6 }
+      .sync-route[data-state="error"] { --signal: #ffb4a4 }
+      .route-node { display: grid; gap: 13px; justify-items: center; min-width: 0; font-size: 13px }
+      .device {
+        position: relative; display: block; width: 100%; height: 82px; border-radius: 14px;
+        border: 1px solid #95a9e5a6;
+        background: linear-gradient(155deg, #758ccb 0%, #34446e 46%, #202946 100%);
+        box-shadow: inset 0 1px 1px #ffffff58, 0 16px 24px #090d1d80;
       }
-      .route-line::before { left: 0 }
-      .route-line::after { left: 100% }
-      .sync-route[data-state="ok"] .route-line::after { background: #a5e0c6 }
-      .sync-route[data-state="error"] .route-line::after { background: #ffc0b4 }
+      .device-local { border-radius: 10px 10px 6px 6px }
+      .device-local::before {
+        content: ""; position: absolute; inset: 7px 7px 9px; border-radius: 5px;
+        background: linear-gradient(150deg, #2f3a61, #141b31 66%); border: 1px solid #111528;
+      }
+      .device-local::after {
+        content: ""; position: absolute; inset: auto -6% -6px; height: 7px;
+        border-radius: 2px 2px 8px 8px; background: linear-gradient(#d4dcf6, #68769b);
+      }
+      .device-remote::before, .device-remote::after {
+        content: ""; position: absolute; inset: 13px 10px auto; height: 21px; border-radius: 6px;
+        border: 1px solid #8b9ac16b; background: linear-gradient(150deg, #293652, #141b30);
+      }
+      .device-remote::after { top: auto; bottom: 13px }
+      .device-light {
+        position: absolute; z-index: 1; width: 7px; height: 7px; border-radius: 50%;
+        top: 20px; right: 18px; background: var(--signal);
+      }
+      .device-local .device-light { top: 50%; left: 50%; transform: translate(-50%, -50%) }
+      .route-line { position: relative; height: 1px; margin-top: 41px; background: #a4b5e784 }
       .route-pulse { position: absolute; inset: 0; opacity: 0; pointer-events: none }
-      .route-pulse::before { content: ""; position: absolute; left: 0; top: 50%;
-        width: 8px; height: 8px; border-radius: 50%; transform: translate(-50%, -50%); background: #fff }
-      .status-panel h4 { font-size: clamp(20px, 4vw, 27px); line-height: 1.25; margin-bottom: 6px }
-      .status-panel p, .status-panel time { font-size: 13px; color: var(--summary-muted); overflow-wrap: anywhere }
-      .status-panel time { display: block; margin-top: 8px }
-      .status-panel button { background: var(--summary-ink); color: var(--summary);
-        border-color: transparent; white-space: nowrap }
-      .status-panel button:hover:enabled { background: var(--summary-muted) }
-      .status-panel button:focus-visible { outline-color: var(--summary-ink) }
+      .route-pulse::before {
+        content: ""; position: absolute; top: 50%; width: 16px; height: 4px; border-radius: 6px;
+        background: #eef2ff; transform: translate(-50%, -50%); box-shadow: 0 0 8px #9db6ff;
+      }
+      .route-pulse--out::before { left: 0 }
+      .route-pulse--back::before { left: 100% }
+      .overview-meta { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px; padding: 12px 24px }
+      .overview-meta .details { border: 0 }
+      .overview-meta button { justify-self: start }
       .details { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); border-block: 1px solid var(--line) }
       .details div { padding: 12px 0; min-width: 0 }
       .details div + div { border-inline-start: 1px solid var(--line); padding-inline-start: 16px }
@@ -348,11 +381,17 @@
         dialog[open] { animation: open-panel .18s cubic-bezier(.2,.8,.2,1) }
         button { transition: background-color .14s }
         .nav-indicator { transition: transform .22s cubic-bezier(.2,.8,.2,1) }
-        .sync-route[data-pending] .route-pulse { animation: route-pulse .72s ease-out both }
+        .sync-route[data-pending="pointer"] .route-pulse--out { animation: route-pulse .68s ease-out both }
+        .sync-route[data-pending="pointer"] .route-pulse--back { animation: route-return .68s .12s ease-out both }
         @keyframes route-pulse {
           0% { transform: translateX(0); opacity: 0 }
-          15%, 75% { opacity: 1 }
+          14%, 76% { opacity: 1 }
           100% { transform: translateX(100%); opacity: 0 }
+        }
+        @keyframes route-return {
+          0% { transform: translateX(0); opacity: 0 }
+          14%, 76% { opacity: .72 }
+          100% { transform: translateX(-100%); opacity: 0 }
         }
         @keyframes open-panel { from { opacity: .5; transform: translateY(5px) } }
       }
@@ -360,16 +399,22 @@
         dialog { --surface: #171e2d; --recess: #131a27; --ink: #f0f4ff; --muted: #b1bdd6;
           --line: #414e64; --field: #8190a9; --accent: #a8c2ff; --on-accent: #192845;
           --selected: #263958; --good: #a2d4b5; --warning: #efc88f; --error: #ffb9b0;
-          --summary: #233450; --summary-ink: #f7f9ff; --summary-muted: #cedaf4; color-scheme: dark }
+          color-scheme: dark }
       }
       @media (max-width: 510px) {
         dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px) }
-        .sync-route { padding: 12px }
+        .sync-route { justify-self: center; width: min(100%, 264px) }
+        .device { height: 66px }
+        .device-remote::before, .device-remote::after { height: 16px; top: 10px }
+        .device-remote::after { top: auto; bottom: 10px }
+        .device-remote .device-light { top: 15px }
+        .route-line { margin-top: 33px }
+        .overview-meta { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 10px 14px 16px }
         nav button { font-size: 13px }
         .top, footer { padding: 10px 12px }
         section { padding: 16px 12px; gap: 14px; min-height: 0 }
-        .status-panel { padding: 15px; gap: 16px; grid-template-columns: minmax(0, 1fr) }
-        .status-panel button { justify-self: start }
+        .status-panel { min-height: 0; padding: 23px 18px 20px; gap: 24px; grid-template-columns: minmax(0, 1fr) }
+        .result h4 { font-size: clamp(29px, 8vw, 38px) }
         .rule-editor label { flex-basis: 100% }
       }
       @media (forced-colors: active) {
@@ -400,12 +445,21 @@
     const navigation = element('nav', { 'aria-label': '配置栏目' });
     const detail = (id, title) => element('div', {}, element('dt', {}, title), element('dd', { id }));
     const overviewAction = button('overview-action', '立即同步');
+    const routeNode = (kind, title) => element('div', { class: 'route-node' },
+      element('span', { class: 'device device-' + kind }, element('span', { class: 'device-light' })),
+      element('span', {}, title),
+    );
     const route = element('div', { class: 'sync-route', 'aria-hidden': 'true' },
-      element('div', { class: 'route-labels' }, element('span', {}, '本机'), element('span', {}, 'WebDAV')),
-      element('div', { class: 'route-line' }, element('span', { class: 'route-pulse' })),
+      routeNode('local', '本机'),
+      element('div', { class: 'route-line' },
+        element('span', { class: 'route-pulse route-pulse--out' }),
+        element('span', { class: 'route-pulse route-pulse--back' }),
+      ),
+      routeNode('remote', 'WebDAV'),
     );
     const content = element('div', { class: 'content' },
-      section('overview', heading('overview', '同步概览', '网站名单与扩展偏好'),
+      section('overview',
+        element('h3', { id: 'overview-title', class: 'sr-only', tabindex: '-1' }, '同步概览'),
         element('div', { class: 'status-panel' },
           element('div', { class: 'result' },
             element('h4', { id: 'sync-state', 'aria-live': 'polite' }),
@@ -415,8 +469,10 @@
           ),
           route,
         ),
-        element('dl', { class: 'details' }, detail('saved-host', 'WebDAV 服务器'), detail('auto-state', '自动同步')),
-        element('div', { class: 'actions' }, button('edit-connection', '管理连接')),
+        element('div', { class: 'overview-meta' },
+          element('dl', { class: 'details' }, detail('saved-host', 'WebDAV 服务器'), detail('auto-state', '自动同步')),
+          button('edit-connection', '管理连接'),
+        ),
       ),
       section('webdav', heading('webdav', 'WebDAV 连接', '两台设备填写同一个目录，即可共用网站名单和偏好。'),
         element('div', { class: 'fields' },
@@ -505,12 +561,17 @@
       return async event => {
         if (busy || (event && !event.isTrusted)) return;
         busy = true;
-        root.querySelectorAll('button').forEach(button => { button.disabled = true; });
+        const trigger = event?.currentTarget;
+        const buttons = root.querySelectorAll('button');
+        for (const button of buttons) {
+          if (button === trigger) button.setAttribute('aria-disabled', 'true');
+          else button.disabled = true;
+        }
         try {
           get('status').dataset.kind = 'progress';
           get('status').textContent = showProgress ? '处理中…' : '';
           updateFeedbackVisibility();
-          get('status').textContent = (await withLock(action)) || '';
+          get('status').textContent = (await withLock(() => action(event))) || '';
           get('status').dataset.kind = 'success';
         } catch (error) {
           get('status').dataset.kind = 'error';
@@ -518,7 +579,8 @@
         } finally {
           updateFeedbackVisibility();
           busy = false;
-          root.querySelectorAll('button').forEach(button => { button.disabled = false; });
+          trigger?.removeAttribute('aria-disabled');
+          for (const button of buttons) button.disabled = false;
         }
       };
     }
@@ -664,12 +726,12 @@
       await render();
       return '普通设置已保存到本机';
     });
-    const synchronize = run(async () => {
+    const synchronize = run(async event => {
       await savePreferences();
       try {
         const connection = active();
         await GM.setValue(scheduleKey(connection), { at: Date.now() });
-        route.setAttribute('data-pending', '');
+        route.dataset.pending = event?.detail ? 'pointer' : 'keyboard';
         get('sync-state').textContent = '正在同步';
         overviewAction.textContent = '同步中…';
         syncButton.textContent = '同步中…';
