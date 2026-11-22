@@ -1,14 +1,16 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      1.0.0
+// @version      1.1.0
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
 // @homepageURL  https://github.com/Xioaruan912/CookieSync/tree/tampermonkey
-// @match        https://github.com/Xioaruan912/CookieSync
-// @match        https://github.com/Xioaruan912/CookieSync/*
+// @match        https://*/*
+// @run-at       document-idle
 // @noframes
+// @grant        GM_info
+// @grant        GM.openInTab
 // @grant        GM.getValue
 // @grant        GM.setValue
 // @grant        GM.registerMenuCommand
@@ -23,6 +25,8 @@
 
   const fileName = 'CookieSync-config-v1.json';
   const connectionKey = 'webdav-connection';
+  const projectUrl = 'https://github.com/Xioaruan912/CookieSync';
+  const intervalMs = 30 * 60 * 1000;
   const defaults = { theme: 'light', contextMenu: false, syncIntervalMinutes: 2 };
   const empty = () => ({ version: 1, rules: {}, preferences: {} });
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -123,16 +127,65 @@
 
   const dataKey = connection => 'config:' + JSON.stringify([destination(connection), connection.username.trim()]);
   const withLock = action => navigator.locks.request('cookiesync-userscript-config', action);
+  const cacheKey = connection => dataKey(connection) + ':remote-cache';
+  const scheduleKey = connection => dataKey(connection) + ':schedule';
+  const statusKey = connection => dataKey(connection) + ':status';
+
+  async function readConfig(connection) {
+    const local = await GM.getValue(dataKey(connection), empty());
+    const cached = await GM.getValue(cacheKey(connection), empty());
+    return merge(cached, local);
+  }
+
+  function statusText(status) {
+    return status ? new Date(status.at).toLocaleString('zh-CN') + ' · ' + status.message : '尚未同步';
+  }
+
+  async function reportSync(connection) {
+    let message;
+    try {
+      message = await syncConfig(connection);
+    } catch (error) {
+      await GM.setValue(statusKey(connection), { at: Date.now(), message: error.message });
+      throw error;
+    }
+    await GM.setValue(statusKey(connection), { at: Date.now(), message });
+    return message;
+  }
+
+  // GM storage is shared across sites, while Web Locks are scoped to an origin.
+  // The shared claim coalesces restored tabs; conditional PUT handles any overlap.
+  async function maybeSync() {
+    const connection = await GM.getValue(connectionKey, null);
+    if (!connection || connection.automatic === false) return;
+    const key = scheduleKey(connection);
+    const due = async () => {
+      const last = await GM.getValue(key, null);
+      const elapsed = Date.now() - (last?.at ?? 0);
+      return !last || elapsed >= intervalMs || elapsed < 0;
+    };
+    if (!(await due())) return;
+    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+    await delay(150 + Math.random() * 250);
+    if (!(await due())) return;
+    const claim = { at: Date.now(), id: crypto.randomUUID() };
+    await GM.setValue(key, claim);
+    await delay(150);
+    if ((await GM.getValue(key, null))?.id !== claim.id) return;
+    const current = await GM.getValue(connectionKey, null);
+    if (!current || current.automatic === false || dataKey(current) !== dataKey(connection)) return;
+    await reportSync(current);
+  }
 
   async function syncConfig(connection) {
-    const key = dataKey(connection);
-    let local = await GM.getValue(key, empty());
+    // Background tabs write only the remote cache. Explicit edits have their own journal.
+    const key = cacheKey(connection);
     for (let attempt = 0; attempt < 3; attempt++) {
       const read = await request(connection, 'GET');
       if (![200, 404].includes(read.status)) throw new Error('WebDAV 读取失败（HTTP ' + read.status + '）');
       const remote = read.status === 404 ? empty() : decode(read.responseText);
-      local = merge(remote, local);
-      await GM.setValue(key, local);
+      const local = merge(remote, await readConfig(connection));
+      await GM.setValue(key, merge(remote, await GM.getValue(key, empty())));
       const content = JSON.stringify(local);
       if (content === JSON.stringify(remote)) return '已同步，远端无需写入';
       const etag = read.responseHeaders?.match(/^etag:[ \t]*([^\r\n]+)/im)?.[1].trim();
@@ -140,7 +193,10 @@
         throw new Error('WebDAV 未提供强 ETag，本机修改已保存，远程文件未覆盖');
       const condition = read.status === 404 ? { 'If-None-Match': '*' } : { 'If-Match': etag };
       const write = await request(connection, 'PUT', { 'Content-Type': 'application/json; charset=utf-8', ...condition }, content);
-      if (write.status >= 200 && write.status < 300) return '已合并并同步到 WebDAV';
+      if (write.status >= 200 && write.status < 300) {
+        await GM.setValue(key, merge(local, await GM.getValue(key, empty())));
+        return '已合并并同步到 WebDAV';
+      }
       if (write.status !== 412) throw new Error('WebDAV 写入失败（HTTP ' + write.status + '）');
     }
     throw new Error('WebDAV 配置发生冲突（HTTP 412），本机修改已保存，请稍后重新同步');
@@ -175,7 +231,9 @@
           <label>用户名<input id="username" autocomplete="off"></label>
           <label>应用密码<input id="password" type="password" autocomplete="new-password" placeholder="已保存的密码可留空"></label>
           <button id="connect" type="button">保存连接</button>
+          <label><span><input id="automatic" type="checkbox" checked> 打开网页时自动同步（每 30 分钟最多一次）</span></label>
           <p id="connection"></p>
+          <p id="last-sync"></p>
         </section>
         <section>
           <h3>网站名单</h3>
@@ -216,7 +274,7 @@
       };
     }
     async function render({ refreshPreferences = true } = {}) {
-      const local = current ? await GM.getValue(dataKey(current), empty()) : empty();
+      const local = current ? await readConfig(current) : empty();
       get('rules').replaceChildren(...Object.entries(local.rules).map(([domain, rule]) => {
         const row = document.createElement('li');
         row.textContent = domain + (rule.enabled ? ' · 允许' : ' · 暂停');
@@ -228,6 +286,7 @@
           get(key).value = String(displayed[key]);
         }
       }
+      get('last-sync').textContent = statusText(current && await GM.getValue(statusKey(current), null));
       get('connection').textContent = current ? '已保存连接，配置文件为 ' + fileName : '请先保存连接';
     }
     function active() {
@@ -238,7 +297,8 @@
       const key = dataKey(active());
       const domain = normalizeDomain(get('domain').value);
       const local = await GM.getValue(key, empty());
-      local.rules[domain] = revision(enabled, local.rules[domain], 'enabled');
+      const effective = await readConfig(active());
+      local.rules[domain] = revision(enabled, effective.rules[domain], 'enabled');
       await GM.setValue(key, merge(empty(), local));
       get('domain').value = '';
       await render({ refreshPreferences: false });
@@ -255,7 +315,7 @@
       const username = get('username').value.trim();
       const sameConnection = current?.url === url && current.username === username;
       const password = get('password').value || (sameConnection ? current.password : '');
-      const next = { url, username, password };
+      const next = { url, username, password, automatic: get('automatic').checked };
       destination(next);
       await GM.setValue(connectionKey, next);
       get('password').value = '';
@@ -270,9 +330,10 @@
       const local = await GM.getValue(key, empty());
       const values = { theme: get('theme').value, contextMenu: get('contextMenu').value === 'true',
         syncIntervalMinutes: get('syncIntervalMinutes').valueAsNumber };
+      const effective = await readConfig(active());
       for (const [name, value] of Object.entries(values)) {
         if (!validPreference(name, value)) throw new Error('同步间隔须为 1 到 60 的整数');
-        if (value !== displayed[name]) local.preferences[name] = revision(value, local.preferences[name], 'value');
+        if (value !== displayed[name]) local.preferences[name] = revision(value, effective.preferences[name], 'value');
       }
       await GM.setValue(key, merge(empty(), local));
     }
@@ -283,7 +344,13 @@
     });
     get('sync').onclick = run(async () => {
       await savePreferences();
-      try { return await syncConfig(active()); } finally { await render(); }
+      try {
+        const connection = active();
+        await GM.setValue(scheduleKey(connection), { at: Date.now() });
+        return await reportSync(connection);
+      } finally {
+        await render();
+      }
     });
     document.body.append(host);
     dialog.showModal();
@@ -292,10 +359,29 @@
       if (current) {
         get('url').value = current.url;
         get('username').value = current.username;
+        get('automatic').checked = current.automatic !== false;
       }
       await render();
     })();
   }
 
-  GM.registerMenuCommand('CookieSync · 配置同步', openPanel);
+  function start() {
+    if (GM_info.isIncognito) return;
+    GM.registerMenuCommand('CookieSync · 配置同步', () => {
+      const onProject = location.origin === 'https://github.com' &&
+        /^\/Xioaruan912\/CookieSync(?:\/|$)/i.test(location.pathname);
+      return onProject ? openPanel() : GM.openInTab(projectUrl, { active: true });
+    });
+    GM.registerMenuCommand('CookieSync · 查看同步状态', async () => {
+      const connection = await GM.getValue(connectionKey, null);
+      alert(connection ? statusText(await GM.getValue(statusKey(connection), null)) : '请先保存 WebDAV 连接');
+    });
+    const trigger = () => {
+      if (!document.hidden) void maybeSync().catch(() => {});
+    };
+    document.addEventListener('visibilitychange', trigger);
+    trigger();
+  }
+
+  start();
 })();

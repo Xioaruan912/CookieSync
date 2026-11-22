@@ -9,9 +9,9 @@ const url = connection.url + 'CookieSync-config-v1.json';
 const payload = (rules = {}, preferences = {}) => ({ version: 1, rules, preferences });
 const rule = (enabled, updatedAt = 10, revision = 'a') => ({ enabled, updatedAt, revision });
 
-function setup(remoteResponse, local = payload()) {
+function setup(remoteResponse, local = payload(), sharedData = new Map()) {
   const requests = [];
-  const data = new Map();
+  const data = sharedData;
   const exports = {};
   const gm = {
     getValue: async (key, fallback) => structuredClone(data.get(key) ?? fallback),
@@ -26,12 +26,12 @@ function setup(remoteResponse, local = payload()) {
     },
     registerMenuCommand: () => {},
   };
-  vm.runInNewContext(source.replace("GM.registerMenuCommand('CookieSync · 配置同步', openPanel);",
-    'Object.assign(exports, { destination, syncConfig, dataKey });'), {
-    exports, GM: gm, URL, TextEncoder, btoa, clearTimeout, setTimeout,
+  vm.runInNewContext(source.replace("  start();",
+    'Object.assign(exports, { destination, syncConfig, dataKey, maybeSync });'), {
+    exports, GM: gm, URL, TextEncoder, btoa, clearTimeout, setTimeout, crypto,
   });
   const key = exports.dataKey(connection);
-  data.set(key, local);
+  if (!data.has(key)) data.set(key, local);
   return { ...exports, data, key, requests };
 }
 
@@ -92,4 +92,43 @@ test('update URLs follow the userscript branch and grants omit cookie interfaces
     assert.match(source, new RegExp('@' + field + '\\s+https://raw\\.githubusercontent\\.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config\\.user\\.js'));
   }
   assert.doesNotMatch(source, /@grant[^\r\n]*(?:cookie|unsafeWindow)|document\.cookie|localStorage|indexedDB/i);
+});
+
+test('restored tabs share the 30-minute throttle, with an opt-out and failure status', async () => {
+  const sharedData = new Map([['webdav-connection', connection]]);
+  const primary = setup(() => ({ status: 200, responseText: JSON.stringify(payload()) }), payload(), sharedData);
+  const other = setup(() => ({ status: 200, responseText: JSON.stringify(payload()) }), payload(), sharedData);
+  await Promise.all([primary.maybeSync(), other.maybeSync()]);
+  assert.equal(primary.requests.length + other.requests.length, 1);
+  assert.match(sharedData.get(primary.key + ':status').message, /已同步/);
+  await other.maybeSync();
+  assert.equal(primary.requests.length + other.requests.length, 1);
+
+  sharedData.set(primary.key + ':schedule', { at: Date.now() - 31 * 60000 });
+  sharedData.set('webdav-connection', { ...connection, automatic: false });
+  await primary.maybeSync();
+  assert.equal(primary.requests.length + other.requests.length, 1);
+
+  sharedData.set('webdav-connection', connection);
+  const offline = setup(() => ({ status: 503 }), payload(), sharedData);
+  await assert.rejects(offline.maybeSync(), /503/);
+  assert.match(sharedData.get(primary.key + ':status').message, /503/);
+  await offline.maybeSync();
+  assert.equal(offline.requests.length, 1);
+});
+
+test('background sync stores downloaded data separately from a simultaneous local edit', async () => {
+  const remote = payload({ 'cloud.example': rule(true) });
+  const edit = payload({ 'edit.example': rule(false) });
+  const app = setup((request, count) => {
+    if (count === 1) {
+      app.data.set(app.key, edit);
+      return { status: 200, responseText: JSON.stringify(remote), responseHeaders: 'ETag: "fresh"' };
+    }
+    assert.equal(request.method, 'PUT');
+    return { status: 204 };
+  });
+  await app.syncConfig(connection);
+  assert.deepEqual(app.data.get(app.key), edit);
+  assert.deepEqual(Object.keys(app.data.get(app.key + ':remote-cache').rules), ['cloud.example', 'edit.example']);
 });

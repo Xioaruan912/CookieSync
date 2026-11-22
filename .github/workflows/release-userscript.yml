@@ -51,7 +51,7 @@ jobs:
 
           安装后在 [CookieSync 仓库页面](https://github.com/Xioaruan912/CookieSync) 打开油猴菜单，选择「CookieSync · 配置同步」。
 
-          油猴版通过 WebDAV 同步网站名单和普通设置。使用扩展中 Cookie 文件所在的 WebDAV 目录，两端就能共享配置。详见[油猴版使用说明](https://github.com/Xioaruan912/CookieSync/blob/tampermonkey/userscript/README.md)。
+          油猴版通过 WebDAV 同步网站名单和普通设置。打开普通 HTTPS 网页时会检查，每 30 分钟最多自动尝试一次；在油猴菜单可查看最近一次结果。使用扩展中 Cookie 文件所在的 WebDAV 目录，两端就能共享配置。详见[油猴版使用说明](https://github.com/Xioaruan912/CookieSync/blob/tampermonkey/userscript/README.md)。
           EOF
           gh release create "$tag" "$script" "$RUNNER_TEMP/SHA256SUMS.txt" \
             --target "$GITHUB_SHA" --title "CookieSync 油猴版 $version" \
