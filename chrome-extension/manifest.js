@@ -34,7 +34,7 @@ const manifest = Object.assign(
     version: packageJson.version,
     ...(buildNumber ? { version_name: `${packageJson.version} (build ${buildNumber})` } : {}),
     description: '通过 WebDAV 同步 Cookie 与 LocalStorage；配置可随 Chrome 账号或 WebDAV 传递。',
-    permissions: ['cookies', 'activeTab', 'tabs', 'storage', 'alarms', 'downloads'].concat(
+    permissions: ['cookies', 'activeTab', 'tabs', 'storage', 'alarms', 'downloads', 'idle'].concat(
       sidePanelConfig.permissions,
     ),
     host_permissions: ['<all_urls>'],

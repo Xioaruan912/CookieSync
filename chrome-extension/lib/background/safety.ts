@@ -1,4 +1,5 @@
 import {
+  backupStatus,
   buildDiagnostics,
   buildWebdavUrl,
   editSyncJobs,
@@ -6,30 +7,24 @@ import {
   pushMultipleDomainCookies,
   refreshRemoteCookies,
   restoreBackup,
-  backupStatus,
+  RuntimeMessageType,
   syncDestinationKey,
   type DiagnosticsSite,
 } from '@sync-your-cookie/shared';
-import { isAutomaticCookieAllowed } from '@sync-your-cookie/storage/lib/commonSites';
 import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
+import { isAutomaticCookieAllowed, isSiteAllowed } from '@sync-your-cookie/storage/lib/commonSites';
 import { cookieStorage, type Cookie } from '@sync-your-cookie/storage/lib/cookieStorage';
 import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { siteActivityStorage } from '@sync-your-cookie/storage/lib/siteActivityStorage';
 import { siteHealthStorage } from '@sync-your-cookie/storage/lib/siteHealthStorage';
+import { readSiteRules } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
 import { snapshotStorage, type Snapshot } from '@sync-your-cookie/storage/lib/snapshotStorage';
 import { syncFeedbackStorage } from '@sync-your-cookie/storage/lib/syncFeedbackStorage';
+import { syncRuntimeStorage } from '@sync-your-cookie/storage/lib/syncRuntimeStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
-import { isSiteAllowed } from '@sync-your-cookie/storage/lib/commonSites';
-import { readSiteRules } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
+import { registerExtensionHandler } from './router';
 
-const truncatedKey = 'cookiesync-storage-truncated';
-const skippedIndexedDbKey = 'cookiesync-indexeddb-skipped';
-
-const fromExtensionPage = (sender: chrome.runtime.MessageSender) =>
-  sender.id === chrome.runtime.id && !!sender.url?.startsWith(chrome.runtime.getURL(''));
-
-/** Local rollback points come from the last applied copy; they are cheap and bounded. */
 export async function snapshotLocal(reason: Snapshot['reason'], domains?: string[]) {
   const cached = (await cookieStorage.get()).domainCookieMap || {};
   const config = await domainConfigStorage.get();
@@ -54,7 +49,6 @@ export async function snapshotLocal(reason: Snapshot['reason'], domains?: string
     .catch(() => {});
 }
 
-/** Remote rollback points keep the cloud copy that a push is about to replace. */
 export async function snapshotRemote(map: Cookie, reason: Snapshot['reason']) {
   const rules = await readSiteRules();
   const sites: Snapshot['sites'] = {};
@@ -116,26 +110,30 @@ async function rollback(id: string) {
 }
 
 async function diagnostics() {
-  const settings = await settingsStorage.get();
-  const config = await domainConfigStorage.get();
-  const rules = await readSiteRules();
-  const cached = (await cookieStorage.get()).domainCookieMap || {};
-  const key = await syncDestinationKey();
+  const [settings, config, rules, cachedMap, key, health, activity, truncated, indexedDbSkipped, dav, feedback] =
+    await Promise.all([
+      settingsStorage.get(),
+      domainConfigStorage.get(),
+      readSiteRules(),
+      cookieStorage.get(),
+      syncDestinationKey(),
+      siteHealthStorage.get(),
+      siteActivityStorage.get(),
+      syncRuntimeStorage.getTruncatedMap(),
+      syncRuntimeStorage.getSkippedIndexedDbMap(),
+      webdavStorage.get(),
+      syncFeedbackStorage.get(),
+    ]);
+  const cached = cachedMap.domainCookieMap || {};
   const pending = ((await chrome.storage.local.get(key))[key] || {}) as Record<string, Record<string, unknown[]>>;
-  const health = await siteHealthStorage.get();
-  const activity = await siteActivityStorage.get();
-  const truncated = ((await chrome.storage.local.get(truncatedKey))[truncatedKey] || {}) as Record<string, number>;
-  const indexedDbSkipped = ((await chrome.storage.local.get(skippedIndexedDbKey))[skippedIndexedDbKey] || {}) as Record<
-    string,
-    string[]
-  >;
-  const dav = await webdavStorage.get();
+
   let destination: { origin?: string; path?: string };
   try {
     destination = { origin: dav.url?.trim() ? new URL(buildWebdavUrl(dav)).origin : undefined, path: dav.path };
   } catch {
     destination = { path: dav.path };
   }
+
   const sites: DiagnosticsSite[] = Object.keys({ ...config.domainMap, ...cached }).map(domain => {
     const entry = cached[domain];
     const pendingEntry = pending[domain] as Record<string, unknown[]> | undefined;
@@ -165,7 +163,7 @@ async function diagnostics() {
       error: activity[domain]?.lastPushOk === false ? activity[domain]?.message : undefined,
     };
   });
-  const feedback = await syncFeedbackStorage.get();
+
   return buildDiagnostics({
     version: chrome.runtime.getManifest().version,
     now: Date.now(),
@@ -192,39 +190,28 @@ async function diagnostics() {
 }
 
 export function initSafety() {
-  chrome.runtime.onMessage.addListener((message, sender, reply) => {
-    if (!fromExtensionPage(sender)) return;
-    if (message?.type === 'CookieSyncRollback' && typeof message.id === 'string') {
-      void rollback(message.id)
-        .then(result => reply({ isOk: true, result }))
-        .catch(error => reply({ isOk: false, msg: error?.message || '回滚失败' }));
-      return true;
-    }
-    if (message?.type === 'CookieSyncDiagnostics') {
-      void diagnostics()
-        .then(result => reply({ isOk: true, result }))
-        .catch(error => reply({ isOk: false, msg: error?.message || '导出诊断失败' }));
-      return true;
-    }
-    if (message?.type === 'CookieSyncBackupInfo') {
-      void webdavStorage
-        .get()
-        .then(config => backupStatus(config))
-        .then(result => reply({ isOk: true, result }))
-        .catch(error => reply({ isOk: false, msg: error?.message || '读取备份信息失败' }));
-      return true;
-    }
-    if (message?.type === 'CookieSyncRestoreBackup' && Number.isInteger(message.slot)) {
-      void (async () => {
-        const config = await webdavStorage.get();
-        const result = await restoreBackup(config, message.slot);
-        await refreshRemoteCookies();
-        return result;
-      })()
-        .then(result => reply({ isOk: true, result }))
-        .catch(error => reply({ isOk: false, msg: error?.message || '恢复备份失败' }));
-      return true;
-    }
-    return;
+  registerExtensionHandler(RuntimeMessageType.Rollback, async message => {
+    if (typeof message.id !== 'string') throw new Error('回滚点 ID 无效');
+    const result = await rollback(message.id);
+    return { isOk: true, msg: '回滚成功', result };
+  });
+
+  registerExtensionHandler(RuntimeMessageType.Diagnostics, async () => {
+    const result = await diagnostics();
+    return { isOk: true, msg: '诊断导出完成', result };
+  });
+
+  registerExtensionHandler(RuntimeMessageType.BackupInfo, async () => {
+    const config = await webdavStorage.get();
+    const result = await backupStatus(config);
+    return { isOk: true, msg: 'ok', result };
+  });
+
+  registerExtensionHandler(RuntimeMessageType.RestoreBackup, async message => {
+    if (!Number.isInteger(message.slot)) throw new Error('备份槽位无效');
+    const config = await webdavStorage.get();
+    const result = await restoreBackup(config, Number(message.slot));
+    await refreshRemoteCookies();
+    return { isOk: true, msg: '备份恢复成功', result };
   });
 }

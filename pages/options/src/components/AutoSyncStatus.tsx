@@ -76,6 +76,36 @@ export function AutoSyncStatus() {
 
   return (
     <div className="mx-6 mb-6 grid gap-3 text-sm" aria-label="自动同步状态">
+      <div className="grid gap-2.5 rounded-2xl bg-muted/60 p-4 border border-border/70">
+        <label className="flex items-start gap-2.5 font-medium">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={settings.activeDeviceSync !== false}
+            onChange={event => void settingsStorage.update({ activeDeviceSync: event.target.checked })}
+          />
+          <span>
+            双机活跃自动交接（默认开启 · 推荐）
+            <small className="block font-normal text-muted-foreground mt-0.5">
+              自动识别你正在使用哪台电脑：关键登录 5 秒上云，离开 90 秒传完即静默；换到另一台电脑一用就自动接班拉取。
+            </small>
+          </span>
+        </label>
+        <label className="flex items-start gap-2.5 font-medium">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={settings.discardIdleSingleSessionTabs !== false}
+            onChange={event => void settingsStorage.update({ discardIdleSingleSessionTabs: event.target.checked })}
+          />
+          <span>
+            不关机电脑待机/失租时自动休眠 115 后台标签页（默认开启）
+            <small className="block font-normal text-muted-foreground mt-0.5">
+              绝不关闭标签页、不打扰正在用的电脑；仅在离开锁屏或另一台电脑接班后暂停闲置机上的 115 后台心跳，彻底防互踢。
+            </small>
+          </span>
+        </label>
+      </div>
       <label className="flex items-start gap-2">
         <input
           type="checkbox"

@@ -9,4 +9,5 @@ import type { SiteProfile } from './index';
 export const profileXiaohongshu: SiteProfile = {
   domain: 'xiaohongshu.com',
   loginKeys: ['web_session'],
+  fastSync: true,
 };

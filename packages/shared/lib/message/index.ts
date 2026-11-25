@@ -2,7 +2,9 @@ import { ICookie, ILocalStorageItem } from '@sync-your-cookie/protobuf';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import pTimeout from 'p-timeout';
 import { pageOrigin } from '../cookie/storageScope';
+
 export type { ICookie };
+
 export enum MessageType {
   PushCookie = 'PushCookie',
   RefreshCookies = 'RefreshCookies',
@@ -10,15 +12,34 @@ export enum MessageType {
   RemoveCookie = 'RemoveCookie',
   RemoveCookieItem = 'RemoveCookieItem',
   EditCookieItem = 'EditCookieItem',
-  // LocalStorage
+  // Page storage
   GetLocalStorage = 'GetLocalStorage',
   SetLocalStorage = 'SetLocalStorage',
-  // Origin-tagged localStorage + sessionStorage (1.16+). The content script of
-  // an extension version that was reloaded mid-session does not know these, so
-  // callers fall back to the two messages above.
   GetPageStorage = 'GetPageStorage',
   SetPageStorage = 'SetPageStorage',
 }
+
+/** Unified background command & content event identifiers. */
+export const RuntimeMessageType = {
+  RunAutomaticSync: 'CookieSyncRunAutomaticSync',
+  PullAll: 'CookieSyncPullAll',
+  PushAll: 'CookieSyncPushAll',
+  Overview: 'CookieSyncOverview',
+  PushSite: 'CookieSyncPushSite',
+  PullSite: 'CookieSyncPullSite',
+  Rollback: 'CookieSyncRollback',
+  Diagnostics: 'CookieSyncDiagnostics',
+  BackupInfo: 'CookieSyncBackupInfo',
+  RestoreBackup: 'CookieSyncRestoreBackup',
+  CheckSiteHealth: 'CookieSyncCheckSiteHealth',
+  TakeoverNow: 'CookieSyncTakeoverNow',
+  RenameDevice: 'CookieSyncRenameDevice',
+  // Content-script events
+  LocalStorageChanged: 'CookieSyncLocalStorageChanged',
+  PageReady: 'CookieSyncPageReady',
+} as const;
+
+export type RuntimeMessageName = (typeof RuntimeMessageType)[keyof typeof RuntimeMessageType];
 
 export enum MessageErrorCode {
   AccountCheck = 'AccountCheck',
@@ -85,7 +106,6 @@ export type SetPageStoragePayload = {
   localStorageItems?: ILocalStorageItem[];
   sessionStorageItems?: ILocalStorageItem[];
   indexedDBRecords?: IndexedDbRecordPayload[];
-  /** Session storage is per tab, so restoring replaces the whole set. */
   replaceSession?: boolean;
   replaceIndexedDB?: boolean;
 };
@@ -100,153 +120,96 @@ export type PageStorageResult = {
 
 export type MessageMap = {
   [MessageType.RefreshCookies]: { type: MessageType.RefreshCookies; payload: Record<string, never> };
-  [MessageType.PushCookie]: {
-    type: MessageType.PushCookie;
-    payload: PushCookieMessagePayload;
-  };
-  [MessageType.RemoveCookie]: {
-    type: MessageType.RemoveCookie;
-    payload: RemoveCookieMessagePayload;
-  };
-  [MessageType.PullCookie]: {
-    type: MessageType.PullCookie;
-    payload: PullCookieMessagePayload;
-  };
-  [MessageType.RemoveCookieItem]: {
-    type: MessageType.RemoveCookieItem;
-    payload: RemoveCookieItemMessagePayload;
-  };
-  [MessageType.EditCookieItem]: {
-    type: MessageType.EditCookieItem;
-    payload: EditCookieItemMessagePayload;
-  };
-  // LocalStorage
-  [MessageType.GetLocalStorage]: {
-    type: MessageType.GetLocalStorage;
-    payload: DomainPayload;
-  };
-  [MessageType.SetLocalStorage]: {
-    type: MessageType.SetLocalStorage;
-    payload: SetLocalStorageMessagePayload;
-  };
-  [MessageType.GetPageStorage]: {
-    type: MessageType.GetPageStorage;
-    payload: PageStoragePayload;
-  };
-  [MessageType.SetPageStorage]: {
-    type: MessageType.SetPageStorage;
-    payload: SetPageStoragePayload;
-  };
+  [MessageType.PushCookie]: { type: MessageType.PushCookie; payload: PushCookieMessagePayload };
+  [MessageType.RemoveCookie]: { type: MessageType.RemoveCookie; payload: RemoveCookieMessagePayload };
+  [MessageType.PullCookie]: { type: MessageType.PullCookie; payload: PullCookieMessagePayload };
+  [MessageType.RemoveCookieItem]: { type: MessageType.RemoveCookieItem; payload: RemoveCookieItemMessagePayload };
+  [MessageType.EditCookieItem]: { type: MessageType.EditCookieItem; payload: EditCookieItemMessagePayload };
+  [MessageType.GetLocalStorage]: { type: MessageType.GetLocalStorage; payload: DomainPayload };
+  [MessageType.SetLocalStorage]: { type: MessageType.SetLocalStorage; payload: SetLocalStorageMessagePayload };
+  [MessageType.GetPageStorage]: { type: MessageType.GetPageStorage; payload: PageStoragePayload };
+  [MessageType.SetPageStorage]: { type: MessageType.SetPageStorage; payload: SetPageStoragePayload };
 };
-
-// export type Message<T extends MessageType = MessageType> = {
-//   type: T;
-//   payload: MessagePayloadMap[T];
-// };
 
 export type Message<T extends MessageType = MessageType> = MessageMap[T];
 
-export type SendResponse = {
+export type SendResponse<T = unknown> = {
   isOk: boolean;
   msg: string;
-  result?: unknown;
+  result?: T;
   code?: MessageErrorCode;
 };
 
-export function sendMessage<T extends MessageType>(message: Message<T>, isTab = false, useTimeout: boolean = false) {
-  const send = (resolve: (value: SendResponse | PromiseLike<SendResponse>) => void, reject: (reason?: any) => void) => {
-    chrome.runtime.sendMessage(message, function (result: SendResponse) {
-      if (result?.isOk) {
-        resolve(result);
-      } else {
-        reject(result as SendResponse);
-      }
+export function sendMessage<T extends MessageType>(message: Message<T>, isTab = false, useTimeout = false) {
+  const send = (
+    resolve: (value: SendResponse | PromiseLike<SendResponse>) => void,
+    reject: (reason?: unknown) => void,
+  ) => {
+    chrome.runtime.sendMessage(message, (result: SendResponse) => {
+      if (result?.isOk) resolve(result);
+      else reject(result || { isOk: false, msg: chrome.runtime.lastError?.message || '请求失败' });
     });
   };
   const fn = () => {
     if (isTab) {
       return new Promise<SendResponse>((resolve, reject) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, async function (tabs) {
-          if (tabs.length === 0) {
-            // const allOpendTabs = await chrome.tabs.query({});
-
-            // reject({ isOk: false, msg: 'No active tab found' } as SendResponse);
+        chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+          if (!tabs.length || tabs[0].id === undefined) {
             send(resolve, reject);
             return;
           }
-          chrome.tabs.sendMessage(tabs[0].id!, message, function (result) {
-            if (result?.isOk) {
-              resolve(result);
-            } else {
-              reject(result as SendResponse);
-            }
+          chrome.tabs.sendMessage(tabs[0].id, message, result => {
+            if (result?.isOk) resolve(result);
+            else reject(result || { isOk: false, msg: chrome.runtime.lastError?.message || '页面未响应' });
           });
         });
       });
     }
-    return new Promise<SendResponse>((resolve, reject) => {
-      send(resolve, reject);
-    });
+    return new Promise<SendResponse>((resolve, reject) => send(resolve, reject));
   };
   if (useTimeout) {
     return pTimeout(fn(), {
       milliseconds: 5000,
-      fallback: () => {
-        return { isOk: false, msg: 'Timeout' } as SendResponse;
-      },
+      fallback: () => ({ isOk: false, msg: 'Timeout' }) as SendResponse,
     });
   }
   return fn();
 }
 
+export async function sendRuntimeCommand<T = unknown>(
+  message: { type: RuntimeMessageName; [key: string]: unknown },
+): Promise<SendResponse<T>> {
+  const response = (await chrome.runtime.sendMessage(message)) as SendResponse<T> | undefined;
+  if (!response) return { isOk: false, msg: '后台服务未响应' };
+  return response;
+}
+
 export function pushCookieUsingMessage(payload: PushCookieMessagePayload) {
-  return sendMessage<MessageType.PushCookie>({
-    payload,
-    type: MessageType.PushCookie,
-  });
+  return sendMessage<MessageType.PushCookie>({ payload, type: MessageType.PushCookie });
 }
 
 export function removeCookieUsingMessage(payload: RemoveCookieMessagePayload) {
-  return sendMessage<MessageType.RemoveCookie>({
-    payload,
-    type: MessageType.RemoveCookie,
-  });
+  return sendMessage<MessageType.RemoveCookie>({ payload, type: MessageType.RemoveCookie });
 }
 
 export function pullCookieUsingMessage(payload: PullCookieMessagePayload) {
-  return sendMessage<MessageType.PullCookie>({
-    payload,
-    type: MessageType.PullCookie,
-  });
+  return sendMessage<MessageType.PullCookie>({ payload, type: MessageType.PullCookie });
 }
 
 export function removeCookieItemUsingMessage(payload: RemoveCookieItemMessagePayload) {
-  const sendType = MessageType.RemoveCookieItem;
-  return sendMessage<typeof sendType>({
-    payload,
-    type: sendType,
-  });
+  return sendMessage<MessageType.RemoveCookieItem>({ payload, type: MessageType.RemoveCookieItem });
 }
 
 export function editCookieItemUsingMessage(payload: EditCookieItemMessagePayload) {
-  const sendType = MessageType.EditCookieItem;
-  return sendMessage<typeof sendType>({
-    payload,
-    type: sendType,
-  });
+  return sendMessage<MessageType.EditCookieItem>({ payload, type: MessageType.EditCookieItem });
 }
 
-export const getTabsByHost = async (host: string) => {
-  return new Promise<chrome.tabs.Tab[]>((resolve, reject) => {
-    try {
-      chrome.tabs.query({}, function (tabs) {
-        const matchedTabs = tabs.filter(tab => tab.url && tab.id && tab.url.includes(host));
-        resolve(matchedTabs);
-      });
-    } catch (error) {
-      reject(error);
-    }
-  });
+export const refreshCookiesUsingMessage = () =>
+  sendMessage<MessageType.RefreshCookies>({ type: MessageType.RefreshCookies, payload: {} });
+
+export const getTabsByHost = async (host: string): Promise<chrome.tabs.Tab[]> => {
+  const tabs = await chrome.tabs.query({});
+  return tabs.filter(tab => tab.url && tab.id && tab.url.includes(host));
 };
 
 const validItems = (value: unknown): ILocalStorageItem[] | undefined =>
@@ -256,23 +219,24 @@ const validItems = (value: unknown): ILocalStorageItem[] | undefined =>
     : undefined;
 
 /**
- * Reads one tab's origin-tagged storage. Falls back to the pre-1.16 message so
- * pages that still run an older content script (the extension was reloaded
- * while they stayed open) keep working: their snapshot is tagged with the tab's
- * own origin and carries no session storage.
+ * Gently reads one active tab's origin-tagged page storage without ever
+ * opening new tabs or force-reloading user tabs. Falls back to legacy
+ * GetLocalStorage if the tab runs an older content script.
  */
 export const sendPageStorageMessage = async (
   host: string,
-  isTry = true,
+  _isTry = true,
   includeSessionStorage = true,
   includeIndexedDB = false,
 ): Promise<PageStorageResult | undefined> => {
-  const read = async (): Promise<PageStorageResult> => {
+  await settingsStorage.update({ localStorageGetting: true }).catch(() => {});
+  try {
     const newer = await sendMessage(
       {
         type: MessageType.GetPageStorage,
         payload: { domain: host, includeSessionStorage, includeIndexedDB },
       },
+      true,
       true,
     ).catch(() => undefined);
     if (newer?.isOk) {
@@ -280,7 +244,7 @@ export const sendPageStorageMessage = async (
       const localStorageItems = validItems(result?.localStorageItems);
       const indexedDBRecords = Array.isArray(result?.indexedDBRecords) ? result?.indexedDBRecords : undefined;
       const skippedIndexedDB = Array.isArray(result?.skippedIndexedDB) ? result?.skippedIndexedDB : undefined;
-      if (localStorageItems)
+      if (localStorageItems) {
         return {
           origin: typeof result?.origin === 'string' ? result.origin : '',
           localStorageItems,
@@ -288,6 +252,7 @@ export const sendPageStorageMessage = async (
           ...(indexedDBRecords ? { indexedDBRecords } : {}),
           ...(skippedIndexedDB ? { skippedIndexedDB } : {}),
         };
+      }
     }
     const legacy = await sendMessage(
       {
@@ -295,67 +260,16 @@ export const sendPageStorageMessage = async (
         payload: { domain: host },
       },
       true,
-    );
-    const localStorageItems = validItems(legacy.result);
-    if (!legacy.isOk || !localStorageItems) throw new Error(legacy.msg || 'getLocalStorage fail');
-    // Older content script: derive the origin from the tab we just read.
-    const tab = await new Promise<chrome.tabs.Tab | undefined>(resolve =>
-      chrome.tabs.query({ active: true, currentWindow: true }, tabs => resolve(tabs[0])),
-    );
-    return { origin: pageOrigin(tab?.url) || '', localStorageItems, sessionStorageItems: [] };
-  };
-
-  return new Promise<PageStorageResult | undefined>(async (resolve, reject) => {
-    const myResolve = (value: PageStorageResult | undefined) => {
-      settingsStorage.update({
-        localStorageGetting: false,
-      });
-      resolve(value);
-    };
-    const myReject = (err: any) => {
-      settingsStorage.update({
-        localStorageGetting: false,
-      });
-      reject(err);
-    };
-    settingsStorage.update({
-      localStorageGetting: true,
-    });
-    try {
-      myResolve(await read());
-    } catch {
-      if (isTry == false) {
-        myReject(new Error('getLocalStorage fail'));
-        return;
-      }
-      const matchedTabs = await getTabsByHost(host);
-      if (matchedTabs.length === 0) {
-        await chrome.tabs.create({
-          url: 'https://' + host,
-        });
-      } else {
-        const activeTab = matchedTabs.find(tab => tab.active);
-        if (activeTab) {
-          chrome.tabs.reload(activeTab.id!);
-        } else {
-          matchedTabs.forEach(function (tab) {
-            chrome.tabs.reload(tab.id!);
-          });
-        }
-      }
-      setTimeout(async () => {
-        try {
-          myResolve(await sendPageStorageMessage(host, false, includeSessionStorage, includeIndexedDB));
-        } catch (error) {
-          myReject(error);
-        }
-      }, 500);
-    }
-  });
+      true,
+    ).catch(() => undefined);
+    const localStorageItems = validItems(legacy?.result);
+    if (!legacy?.isOk || !localStorageItems) return undefined;
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => [] as chrome.tabs.Tab[]);
+    return { origin: pageOrigin(tabs[0]?.url) || '', localStorageItems, sessionStorageItems: [] };
+  } finally {
+    await settingsStorage.update({ localStorageGetting: false }).catch(() => {});
+  }
 };
 
 export const sendGetLocalStorageMessage = async (host: string, isTry = true) =>
   (await sendPageStorageMessage(host, isTry))?.localStorageItems || [];
-
-export const refreshCookiesUsingMessage = () =>
-  sendMessage<MessageType.RefreshCookies>({ type: MessageType.RefreshCookies, payload: {} });

@@ -2,37 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
+html,
 body {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: hidden;
   background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-text);
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Manager header: a quiet sticky instrument bar, not a colored block. */
+.sidepanel-shell {
+  min-height: 100vh;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  padding: 10px;
+}
+
 .manager-header {
   position: sticky;
-  top: 0;
-  z-index: 10;
+  top: 8px;
+  z-index: 20;
+  margin-bottom: 10px;
+  border-radius: 18px;
   color: hsl(var(--foreground));
-  background: hsl(var(--background) / 0.88);
-  backdrop-filter: blur(10px) saturate(1.2);
-  -webkit-backdrop-filter: blur(10px) saturate(1.2);
-  border-bottom: 1px solid hsl(var(--border));
+  background: var(--surface-glass);
+  border: 1px solid var(--surface-edge);
+  box-shadow: var(--surface-shadow);
+  backdrop-filter: blur(22px) saturate(185%);
+  -webkit-backdrop-filter: blur(22px) saturate(185%);
 }
 .manager-header h2 {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 650;
   letter-spacing: -0.02em;
 }
 .manager-header button {
   color: hsl(var(--foreground));
-}
-.manager-header button:enabled {
-  transition: transform var(--dur-1) var(--ease-out);
-}
-@media (prefers-reduced-motion: no-preference) {
-  .manager-header button:enabled:hover {
-    transform: translateY(-1px);
-  }
-  .manager-header button:enabled:active {
-    transform: translateY(0.5px);
-  }
 }

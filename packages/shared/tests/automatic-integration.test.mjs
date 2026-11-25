@@ -79,7 +79,22 @@ globalThis.chrome = {
   tabs: { query: async () => openTabs, sendMessage: async () => ({ isOk: true, result: pageLocalItems }) },
   alarms: { get: async () => ({ periodInMinutes: 2 }), create: async () => {}, onAlarm: events() },
 };
+const sideFiles = new Map();
 const server = createServer(async (req, res) => {
+  const url = req.url || '/dav/cookies.txt';
+  if (!url.endsWith('/cookies.txt')) {
+    if (req.method === 'GET') {
+      const entry = sideFiles.get(url);
+      res.writeHead(entry ? 200 : 404, { ETag: `"${entry?.etag || 0}"` }).end(entry?.body || '');
+      return;
+    }
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    const prev = sideFiles.get(url);
+    sideFiles.set(url, { body, etag: (prev?.etag || 0) + 1 });
+    res.writeHead(204).end();
+    return;
+  }
   if (req.method === 'GET') {
     reads++;
     if (failRead) {

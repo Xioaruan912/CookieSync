@@ -1,109 +1,91 @@
 import { BaseStorage, createStorage, StorageType } from './base';
 
-type DomainItemConfig = {
+export type DomainStatusItem = {
   pulling?: boolean;
   pushing?: boolean;
 };
 
-interface DomainConfig {
+export interface DomainStatusState {
   pulling: boolean;
   pushing: boolean;
   domainMap: {
-    [host: string]: DomainItemConfig;
+    [host: string]: DomainStatusItem;
   };
 }
+
 const key = 'domainStatus-storage-key';
 
-const cacheStorageMap = new Map();
-const initStorage = (): BaseStorage<DomainConfig> => {
-  if (cacheStorageMap.has(key)) {
-    return cacheStorageMap.get(key);
-  }
-  const storage: BaseStorage<DomainConfig> = createStorage<DomainConfig>(
-    key,
-    {
-      pulling: false,
-      pushing: false,
-      domainMap: {},
-    },
-    {
-      storageType: StorageType.Session,
-      liveUpdate: true,
-      // onLoad: onLoad,
-    },
-  );
-  cacheStorageMap.set(key, storage);
-  return storage;
-};
-
-const storage = initStorage();
+const storage: BaseStorage<DomainStatusState> = createStorage<DomainStatusState>(
+  key,
+  {
+    pulling: false,
+    pushing: false,
+    domainMap: {},
+  },
+  {
+    storageType: StorageType.Session,
+    liveUpdate: true,
+  },
+);
 
 export const domainStatusStorage = {
   ...storage,
   resetState: async () => {
     return await storage.set(currentInfo => {
-      const domainMap = currentInfo?.domainMap || {};
-      for (const domain in domainMap) {
-        if (domain) {
-          domainMap[domain] = {
-            ...domainMap[domain],
-            pulling: false,
-            pushing: false,
-          };
-        } else {
-          delete domainMap[domain];
-        }
+      const domainMap: DomainStatusState['domainMap'] = {};
+      for (const [domain, item] of Object.entries(currentInfo?.domainMap || {})) {
+        if (!domain) continue;
+        domainMap[domain] = {
+          ...item,
+          pulling: false,
+          pushing: false,
+        };
       }
-      const resetInfo = {
+      return {
         pulling: false,
         pushing: false,
-        domainMap: domainMap,
+        domainMap,
       };
-      return resetInfo;
     });
   },
-  updateItem: async (host: string, updateConf: DomainItemConfig) => {
+  updateItem: async (host: string, updateConf: DomainStatusItem) => {
     return await storage.set(currentInfo => {
-      const domainMap = currentInfo?.domainMap || {};
+      const domainMap = { ...(currentInfo?.domainMap || {}) };
       domainMap[host] = {
         ...domainMap[host],
         ...updateConf,
       };
-      return { ...(currentInfo || {}), domainMap };
+      return { ...(currentInfo || { pulling: false, pushing: false }), domainMap };
     });
   },
-  update: async (updateInfo: Partial<DomainConfig>) => {
-    return await storage.set(currentInfo => {
-      return { ...currentInfo, ...updateInfo };
-    });
+  update: async (updateInfo: Partial<DomainStatusState>) => {
+    return await storage.set(currentInfo => ({ ...currentInfo, ...updateInfo }));
   },
   removeItem: async (domain: string) => {
     await storage.set(currentInfo => {
-      const domainCookieMap = currentInfo.domainMap || {};
-      delete domainCookieMap[domain];
-      return { ...currentInfo, domainCookieMap };
+      const domainMap = { ...(currentInfo?.domainMap || {}) };
+      delete domainMap[domain];
+      return { ...currentInfo, domainMap };
     });
   },
-
   togglePullingState: async (domain: string, checked?: boolean) => {
     return await storage.set(currentInfo => {
-      const domainMap = currentInfo?.domainMap || {};
+      const domainMap = { ...(currentInfo?.domainMap || {}) };
       domainMap[domain] = {
         ...domainMap[domain],
         pulling: checked ?? !domainMap[domain]?.pulling,
       };
-      return { ...(currentInfo || {}), domainMap };
+      return { ...(currentInfo || { pulling: false, pushing: false }), domainMap };
     });
   },
-
   togglePushingState: async (domain: string, checked?: boolean) => {
     return await storage.set(currentInfo => {
-      const domainMap = currentInfo?.domainMap || {};
+      const domainMap = { ...(currentInfo?.domainMap || {}) };
       domainMap[domain] = {
         ...domainMap[domain],
         pushing: checked ?? !domainMap[domain]?.pushing,
       };
-      return { ...(currentInfo || {}), domainMap };
+      return { ...(currentInfo || { pulling: false, pushing: false }), domainMap };
     });
   },
 };

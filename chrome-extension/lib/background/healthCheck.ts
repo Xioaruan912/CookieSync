@@ -1,12 +1,14 @@
+import { RuntimeMessageType } from '@sync-your-cookie/shared';
 import { checkProfileHealth, siteProfileFor } from '@sync-your-cookie/shared/lib/siteProfiles';
 import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
 import { siteHealthStorage } from '@sync-your-cookie/storage/lib/siteHealthStorage';
+import { isDeviceStandby } from './activeDevice/leaseManager';
+import { registerExtensionHandler } from './router';
 
 /**
  * Login health checks ask the site — with the restored cookie jar — whether
- * the synced session is actually alive. Checks run only after a restore, on
- * explicit request, or once daily: never on the two-minute sync loop, because
- * each call carries the user's session to an external API.
+ * the synced session is actually alive. Checks ONLY run on the active device
+ * (never on a standby PC, so idle PCs never poke 115 servers from another IP).
  */
 const alarmName = 'cookiesync-site-health';
 const minIntervalMs = 10 * 60000;
@@ -14,6 +16,7 @@ const minIntervalMs = 10 * 60000;
 const checking = new Map<string, Promise<void>>();
 
 export async function checkSiteHealth(domain: string, options?: { force?: boolean }): Promise<void> {
+  if (!options?.force && isDeviceStandby()) return;
   const profile = siteProfileFor(domain);
   if (!profile?.healthCheck) return;
   if (checking.has(profile.domain)) return checking.get(profile.domain);
@@ -39,6 +42,7 @@ export async function checkSiteHealth(domain: string, options?: { force?: boolea
 }
 
 async function runDailyChecks() {
+  if (isDeviceStandby()) return;
   try {
     const config = await domainConfigStorage.get();
     for (const domain of Object.keys(config.domainMap)) {
@@ -54,17 +58,8 @@ export function initSiteHealthChecks() {
   chrome.alarms.onAlarm.addListener(alarm => {
     if (alarm.name === alarmName) void runDailyChecks();
   });
-  chrome.runtime.onMessage.addListener((message, sender, reply) => {
-    if (
-      message?.type === 'CookieSyncCheckSiteHealth' &&
-      sender.id === chrome.runtime.id &&
-      sender.url?.startsWith(chrome.runtime.getURL(''))
-    ) {
-      void checkSiteHealth(message.domain, { force: true })
-        .then(() => reply({ isOk: true }))
-        .catch(() => reply({ isOk: false }));
-      return true;
-    }
-    return false;
+  registerExtensionHandler(RuntimeMessageType.CheckSiteHealth, async message => {
+    await checkSiteHealth(String(message.domain || ''), { force: true });
+    return { isOk: true, msg: '健康检查完成' };
   });
 }

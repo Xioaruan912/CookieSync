@@ -39,6 +39,10 @@ export interface SiteProfile {
   healthCheck?: SiteHealthCheckConfig;
   /** The site rejects sessions whose browser fingerprint changed (OpenList #2502). */
   uaSensitive?: boolean;
+  /** True for sites where concurrent tabs on two PCs invalidate the session (e.g. 115). */
+  singleSession?: boolean;
+  /** True for key login sites that should flush within ~5s after login cookie changes. */
+  fastSync?: boolean;
   qrLogin?: SiteQrLoginConfig;
 }
 
@@ -68,6 +72,48 @@ export function missingLoginKeys(
 ): string[] {
   const names = new Set((cookies || []).map(cookie => cookie.name || ''));
   return profile.loginKeys.filter(key => !names.has(key));
+}
+
+export function isSingleSessionSite(host: string): boolean {
+  return !!siteProfileFor(host)?.singleSession;
+}
+
+export function isFastSyncSite(host: string): boolean {
+  return !!siteProfileFor(host)?.fastSync;
+}
+
+export interface LoginGuardVerdict {
+  blocked: boolean;
+  missingKeys: string[];
+  reason?: string;
+}
+
+/**
+ * Anti-downgrade login guard: never let an incomplete/logged-out local snapshot
+ * automatically overwrite a complete cloud session for profiled sites (e.g. 115).
+ */
+export function evaluateLoginGuard(
+  host: string,
+  localCookies: { name?: string | null }[] | null | undefined,
+  cloudCookies: { name?: string | null }[] | null | undefined,
+): LoginGuardVerdict {
+  const profile = siteProfileFor(host);
+  if (!profile || !profile.loginKeys.length) {
+    return { blocked: false, missingKeys: [] };
+  }
+  const localMissing = missingLoginKeys(profile, localCookies);
+  if (!localMissing.length) {
+    return { blocked: false, missingKeys: [] };
+  }
+  const cloudMissing = missingLoginKeys(profile, cloudCookies);
+  if (cloudCookies && cloudCookies.length > 0 && cloudMissing.length === 0) {
+    return {
+      blocked: true,
+      missingKeys: localMissing,
+      reason: `本机缺少 ${profile.domain} 登录核心凭证（${localMissing.join('、')}），已拦截自动上传以保护云端有效会话`,
+    };
+  }
+  return { blocked: false, missingKeys: localMissing };
 }
 
 /**

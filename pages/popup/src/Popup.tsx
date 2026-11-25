@@ -1,21 +1,24 @@
-import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
-import { accountStorage, isLegacyProvider } from '@sync-your-cookie/storage/lib/accountStorage';
-import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
-import { updateStatusStorage } from '@sync-your-cookie/storage/lib/updateStatusStorage';
-import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
-import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
-import { isSiteAllowed } from '@sync-your-cookie/storage/lib/commonSites';
-import { sitePolicyStorage } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
-import { siteHealthStorage } from '@sync-your-cookie/storage/lib/siteHealthStorage';
-import { siteProfileFor } from '@sync-your-cookie/shared';
+import { useGSAP } from '@gsap/react';
 import {
   extractDomainAndPort,
+  RuntimeMessageType,
+  siteProfileFor,
   useStorageSuspense,
   useTheme,
   withErrorBoundary,
   withSuspense,
 } from '@sync-your-cookie/shared';
+import { accountStorage, isLegacyProvider } from '@sync-your-cookie/storage/lib/accountStorage';
+import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
+import { isSiteAllowed } from '@sync-your-cookie/storage/lib/commonSites';
+import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
+import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
+import { siteHealthStorage } from '@sync-your-cookie/storage/lib/siteHealthStorage';
+import { sitePolicyStorage } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
+import { updateStatusStorage } from '@sync-your-cookie/storage/lib/updateStatusStorage';
+import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { Button, Switch, Toaster } from '@sync-your-cookie/ui';
+import gsap from 'gsap';
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -26,12 +29,17 @@ import {
   PanelRightOpen,
   RefreshCw,
   Settings,
+  ShieldAlert,
+  ShieldCheck,
 } from 'lucide-react';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { useDomainConfig } from './hooks/useDomainConfig';
 
+gsap.registerPlugin(useGSAP);
+
 const Popup = () => {
+  const rootRef = useRef<HTMLElement>(null);
   const { theme } = useTheme();
   const status = useStorageSuspense(autoSyncStatusStorage);
   const settings = useStorageSuspense(settingsStorage);
@@ -44,6 +52,7 @@ const Popup = () => {
   const [tab, setTab] = useState<chrome.tabs.Tab>();
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<'push' | 'pull'>();
+  const [takingOver, setTakingOver] = useState(false);
   const [saving, setSaving] = useState(false);
   const { domain, setDomain, handlePush, handlePull, pushing, pulling, domainItemStatus, domainItemConfig } =
     useDomainConfig();
@@ -61,6 +70,20 @@ const Popup = () => {
       .finally(() => setLoading(false));
   }, [setDomain]);
 
+  // Crisp Control Center entrance (< 260ms total, zero delay to clickability)
+  useGSAP(
+    () => {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const tl = gsap.timeline({ defaults: { ease: 'power3.out', clearProps: 'transform,opacity' } });
+      tl.from('.cc-hero', { y: 8, scale: 0.985, opacity: 0, duration: 0.22 }).from(
+        '.cc-tile',
+        { y: 6, opacity: 0, duration: 0.18, stagger: 0.03 },
+        0.04,
+      );
+    },
+    { scope: rootRef },
+  );
+
   const legacy = isLegacyProvider(account);
   const connected = !legacy && !!webdav.url;
   const listed = !!domain && !!policy && isSiteAllowed(domain, policy);
@@ -74,9 +97,9 @@ const Popup = () => {
           ? '登录已失效'
           : healthEntry?.state === 'unknown'
             ? '验证未完成'
-            : '未验证'
+            : '尚未验证'
       : healthEntry?.loginKeysMissing
-        ? '缺少登录 Cookie'
+        ? '缺少登录凭证'
         : healthEntry
           ? '登录要素齐全'
           : '未检查'
@@ -89,10 +112,13 @@ const Popup = () => {
   const sessionStorageOn = domainItemConfig.includeSessionStorage ?? settings.includeSessionStorage ?? false;
   const indexedDbOn = domainItemConfig.includeIndexedDB ?? settings.includeIndexedDB ?? false;
   const busy = !!action || pushing || pulling || !!domainItemStatus.pushing || !!domainItemStatus.pulling;
+  const role = status.deviceRole || 'active';
+  const isStandby = role === 'standby';
+
   const siteState = !listed
     ? '未加入名单'
     : !connected
-      ? '等待配置连接'
+      ? '等待配置 WebDAV'
       : !background
         ? '后台同步已关闭'
         : !registered && settings.autoDiscoverSites === false
@@ -102,7 +128,7 @@ const Popup = () => {
             : !registered
               ? '等待自动登记'
               : autoPush && autoPull
-                ? '自动收发'
+                ? '双向无感同步'
                 : autoPush
                   ? '仅自动推送'
                   : '仅自动拉取';
@@ -115,6 +141,20 @@ const Popup = () => {
       else await handlePull(tab.url, domain, true);
     } finally {
       setAction(undefined);
+    }
+  };
+
+  const takeoverNow = async () => {
+    if (!connected || takingOver) return;
+    setTakingOver(true);
+    try {
+      const res = await chrome.runtime.sendMessage({ type: RuntimeMessageType.TakeoverNow });
+      if (!res?.isOk) throw new Error(res?.msg || '接班同步失败');
+      toast.success(res.msg || '已完成双机接班同步');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '接班同步失败');
+    } finally {
+      setTakingOver(false);
     }
   };
 
@@ -131,7 +171,6 @@ const Popup = () => {
 
   const openManager = async () => {
     try {
-      // Use the current tab's window directly so Chrome retains the click gesture.
       if (tab?.windowId !== undefined) await chrome.sidePanel.open({ windowId: tab.windowId });
       else await chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel/index.html') });
     } catch {
@@ -139,65 +178,107 @@ const Popup = () => {
     }
   };
 
+  const routeActive =
+    listed &&
+    connected &&
+    background &&
+    (registered || settings.autoDiscoverSites !== false) &&
+    (autoPush || autoPull);
+
   return (
-    <main className="sync-popup">
-      <header className="popup-header">
-        <div className="popup-brand">
-          <img src={chrome.runtime.getURL('options/logo.png')} className="size-6 object-contain" alt="" />
-          <div>
+    <main ref={rootRef} className="cc-popup">
+      <header className="cc-header">
+        <div className="cc-brand">
+          <img
+            src={chrome.runtime.getURL('options/logo.png')}
+            className="size-6 shrink-0 rounded-md object-contain"
+            alt=""
+          />
+          <div className="min-w-0">
             <strong>CookieSync</strong>
-            <small>登录状态同步</small>
+            <small>{status.localDeviceName || '双机无感同步'}</small>
           </div>
         </div>
-        <Button variant="ghost" size="icon" aria-label="打开设置" onClick={() => void chrome.runtime.openOptionsPage()}>
-          <Settings size={16} aria-hidden />
-        </Button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {connected ? (
+            <button
+              type="button"
+              className="cc-role-pill"
+              data-standby={isStandby}
+              disabled={takingOver}
+              title="点击立即检查并接班同步"
+              onClick={() => void takeoverNow()}>
+              <span className="live-orb" data-state={isStandby ? 'standby' : 'live'} aria-hidden="true" />
+              <span>{takingOver ? '接班中…' : isStandby ? '待机中' : '本机当家'}</span>
+            </button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            aria-label="打开设置"
+            onClick={() => void chrome.runtime.openOptionsPage()}>
+            <Settings size={16} aria-hidden />
+          </Button>
+        </div>
       </header>
+
+      {/* Obsidian Control Center Signal Card */}
       <section
-        className="signal-card"
+        className="cc-hero"
         data-state={listed && connected ? (healthBad ? 'warn' : 'live') : 'idle'}
         aria-labelledby="current-site">
-        <div className="signal-top">
-          <span className="signal-dot" aria-hidden="true" />
-          <span className="signal-tag">{legacy ? '旧后端待迁移' : connected ? 'WebDAV' : '尚未配置连接'}</span>
-        </div>
-        <h1 id="current-site">{loading ? '正在识别网站…' : domain || '当前页面不支持同步'}</h1>
-        <p className="signal-state">{domain ? (policy ? siteState : '正在读取名单…') : '同步目的地'}</p>
-        <div className="signal-route" aria-hidden="true">
-          <Laptop size={16} />
-          <span className="signal-line">
-            <i
-              data-moving={action}
-              data-active={
-                listed &&
-                connected &&
-                background &&
-                (registered || settings.autoDiscoverSites !== false) &&
-                (autoPush || autoPull)
-              }
+        <div className="cc-hero-top">
+          <span className="cc-live-tag">
+            <span
+              className="live-orb"
+              data-state={!connected ? 'warn' : healthBad ? 'warn' : isStandby ? 'standby' : 'live'}
+              aria-hidden="true"
             />
+            {domain ? (policy ? siteState : '正在读取名单…') : '当前页无需同步'}
           </span>
-          <Cloud size={18} />
+          <span className="cc-proto-tag">{legacy ? '待迁移' : connected ? 'WebDAV' : '未连接'}</span>
+        </div>
+
+        <h1 id="current-site">{loading ? '正在识别网站…' : domain || '非普通网页'}</h1>
+
+        <div className="cc-bridge" aria-hidden="true">
+          <Laptop size={15} />
+          <div className="cc-beam-track" data-moving={action} data-active={routeActive}>
+            <svg viewBox="0 0 180 24" preserveAspectRatio="none">
+              <path d="M 4 12 C 55 3, 125 21, 176 12" stroke="rgba(255,255,255,0.16)" strokeWidth="1.8" fill="none" />
+              <path
+                className="cc-beam-line"
+                d="M 4 12 C 55 3, 125 21, 176 12"
+                stroke={healthBad ? '#FF453A' : action === 'pull' ? '#30D158' : '#38BDF8'}
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </svg>
+          </div>
+          <Cloud size={16} />
         </div>
       </section>
-      {domain && policy && (
-        <section className="popup-controls" aria-label="当前网站操作">
+
+      {domain && policy ? (
+        <section className="cc-controls" aria-label="当前网站操作">
           {!listed ? (
-            <div className="popup-note">
-              <Globe2 size={17} aria-hidden />
-              <span>加入名单后可为此网站开启自动同步。</span>
+            <div className="cc-tile cc-note">
+              <Globe2 size={16} aria-hidden />
+              <span>加入名单后即可自动同步此站</span>
               <Button
                 size="sm"
-                variant="outline"
+                className="rounded-full"
                 disabled={saving}
                 onClick={() => void changeSite(() => sitePolicyStorage.setRule(domain, true))}>
                 加入名单
               </Button>
             </div>
           ) : (
-            <div className="popup-directions">
-              <label>
-                自动推送
+            <div className="cc-switches">
+              <label className="cc-tile cc-switch-item">
+                <span>自动推送</span>
                 <Switch
                   aria-label="自动推送"
                   checked={autoPush}
@@ -207,8 +288,8 @@ const Popup = () => {
                   }
                 />
               </label>
-              <label>
-                自动拉取
+              <label className="cc-tile cc-switch-item">
+                <span>自动拉取</span>
                 <Switch
                   aria-label="自动拉取"
                   checked={autoPull}
@@ -220,13 +301,44 @@ const Popup = () => {
               </label>
             </div>
           )}
-          {listed && (
-            <details className="popup-modes">
-              <summary>设置此电脑的同步方向</summary>
-              <div className="mt-2 flex gap-2">
+
+          <div className="cc-actions">
+            <Button
+              className="cc-tile cc-action-btn"
+              variant="outline"
+              aria-label="推送并合并 Cookie"
+              disabled={busy || !connected}
+              onClick={() => void transfer('push')}>
+              {action === 'push' ? (
+                <RefreshCw className="mr-1.5 animate-spin" size={14} />
+              ) : (
+                <ArrowUpFromLine className="mr-1.5" size={14} />
+              )}
+              {action === 'push' ? '正在推送…' : '推送到云端'}
+            </Button>
+            <Button
+              className="cc-tile cc-action-btn"
+              variant="outline"
+              aria-label="拉取并应用 Cookie"
+              disabled={busy || !connected}
+              onClick={() => void transfer('pull')}>
+              {action === 'pull' ? (
+                <RefreshCw className="mr-1.5 animate-spin" size={14} />
+              ) : (
+                <ArrowDownToLine className="mr-1.5" size={14} />
+              )}
+              {action === 'pull' ? '正在拉取…' : '拉取到本机'}
+            </Button>
+          </div>
+
+          {listed ? (
+            <details className="cc-tile cc-details">
+              <summary>方向与高级存储选项</summary>
+              <div className="mt-2.5 flex gap-1.5">
                 <Button
                   size="sm"
                   variant="outline"
+                  className="flex-1 rounded-full text-xs"
                   disabled={saving || busy}
                   onClick={() =>
                     void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: true, autoPull: false }))
@@ -236,6 +348,7 @@ const Popup = () => {
                 <Button
                   size="sm"
                   variant="outline"
+                  className="flex-1 rounded-full text-xs"
                   disabled={saving || busy}
                   onClick={() =>
                     void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: false, autoPull: true }))
@@ -245,6 +358,7 @@ const Popup = () => {
                 <Button
                   size="sm"
                   variant="outline"
+                  className="flex-1 rounded-full text-xs"
                   disabled={saving || busy}
                   onClick={() =>
                     void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: true, autoPull: true }))
@@ -252,129 +366,108 @@ const Popup = () => {
                   双向同步
                 </Button>
               </div>
-              <div className="popup-session mt-3 border-t pt-3">
+              <div className="cc-sub-switches">
                 <label>
-                  同时同步 sessionStorage（此站）
+                  <span>同步 sessionStorage</span>
                   <Switch
                     aria-label="同步此网站的 sessionStorage"
                     checked={sessionStorageOn}
                     disabled={saving || busy}
                     onCheckedChange={checked =>
-                      void changeSite(() =>
-                        domainConfigStorage.updateItem(domain, { includeSessionStorage: checked }),
-                      )
+                      void changeSite(() => domainConfigStorage.updateItem(domain, { includeSessionStorage: checked }))
                     }
                   />
                 </label>
                 <label>
-                  同步 IndexedDB（实验，此站）
+                  <span>同步 IndexedDB（实验）</span>
                   <Switch
                     aria-label="同步此网站的 IndexedDB"
                     checked={indexedDbOn}
                     disabled={saving || busy}
                     onCheckedChange={checked =>
-                      void changeSite(() =>
-                        domainConfigStorage.updateItem(domain, { includeIndexedDB: checked }),
-                      )
+                      void changeSite(() => domainConfigStorage.updateItem(domain, { includeIndexedDB: checked }))
                     }
                   />
                 </label>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  会话存储按标签页存在，恢复时会刷新此站页面一次；默认关闭以免易变值产生多余上传。
-                  IndexedDB 只同步体积较小的对象仓库，且需要页面已存在同名数据库，超出上限的仓库会跳过。
-                </p>
               </div>
             </details>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="outline"
-              aria-label="推送并合并 Cookie"
-              disabled={busy || !connected}
-              onClick={() => void transfer('push')}>
-              {action === 'push' ? (
-                <RefreshCw className="mr-2 animate-spin" size={15} />
-              ) : (
-                <ArrowUpFromLine className="mr-2" size={15} />
-              )}
-              {action === 'push' ? '正在推送…' : '推送到云端'}
-            </Button>
-            <Button
-              variant="outline"
-              aria-label="拉取并应用 Cookie"
-              disabled={busy || !connected}
-              onClick={() => void transfer('pull')}>
-              {action === 'pull' ? (
-                <RefreshCw className="mr-2 animate-spin" size={15} />
-              ) : (
-                <ArrowDownToLine className="mr-2" size={15} />
-              )}
-              {action === 'pull' ? '正在拉取…' : '拉取到此电脑'}
-            </Button>
-          </div>
+          ) : null}
         </section>
-      )}
-      {!connected && (
-        <Button onClick={() => void chrome.runtime.openOptionsPage()}>
-          {legacy ? '旧后端已移除，配置 WebDAV' : '配置同步连接'}
+      ) : null}
+
+      {!connected ? (
+        <Button className="rounded-full" onClick={() => void chrome.runtime.openOptionsPage()}>
+          {legacy ? '旧后端已移除，前往配置 WebDAV' : '前往配置 WebDAV 连接'}
         </Button>
-      )}
-      {(update.state === 'available' || update.state === 'ready') && (
-        <button
-          type="button"
-          className="popup-update"
-          onClick={() => void chrome.runtime.openOptionsPage()}>
-          <Download size={15} aria-hidden="true" />
-          <span>
-            新版本 {update.latestVersion}
-            {update.latestBuild ? `（build ${update.latestBuild}）` : ''}
-            {update.state === 'ready' ? '已下载，待完成更新' : '已发布'}
-          </span>
-        </button>
-      )}
+      ) : null}
+
       {healthProfile ? (
         <button
           type="button"
-          className="popup-site-health"
+          className="cc-tile cc-health-row"
           data-state={healthBad ? 'warn' : healthEntry?.state}
           onClick={() => {
             if (healthBad && healthProfile.qrLogin)
               void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#automation') });
             else void chrome.runtime.openOptionsPage();
           }}>
-          <span>
-            {healthProfile.domain} 会话：{healthText}
+          <span className="flex items-center gap-2">
+            {healthBad ? <ShieldAlert size={15} /> : <ShieldCheck size={15} />}
+            <span>
+              {healthProfile.domain} · {healthText}
+            </span>
           </span>
-          {healthBad && healthProfile.qrLogin ? <span>去修复 →</span> : null}
+          {healthBad && healthProfile.qrLogin ? <strong>去修复 →</strong> : null}
         </button>
       ) : null}
-      <footer className="popup-footer">
-        <div className="min-w-0" role="status">
-          <div className="font-medium">
-            {status.phase === 'uploading'
-              ? '正在上传'
-              : status.phase === 'checking'
-                ? '正在检查'
-                : status.error
-                  ? '后台同步待重试'
-                  : status.pendingCount
-                    ? `${status.pendingCount} 个网站待上传`
-                    : '后台同步记录'}
+
+      {update.state === 'available' || update.state === 'ready' ? (
+        <button
+          type="button"
+          className="cc-tile cc-update-row"
+          onClick={() => void chrome.runtime.openOptionsPage()}>
+          <Download size={14} aria-hidden="true" />
+          <span>
+            新版本 {update.latestVersion}
+            {update.latestBuild ? ` (build ${update.latestBuild})` : ''}
+            {update.state === 'ready' ? '已下载，待重载' : '可更新'}
+          </span>
+        </button>
+      ) : null}
+
+      <footer className="cc-footer">
+        <div className="min-w-0 flex-1 overflow-hidden" role="status">
+          <div className="font-semibold text-xs">
+            {status.phase === 'taking-over'
+              ? '正在自动接班同步…'
+              : status.phase === 'uploading'
+                ? '正在上传改动…'
+                : status.phase === 'checking'
+                  ? '正在比对云端…'
+                  : status.error
+                    ? '后台同步待重试'
+                    : status.pendingCount
+                      ? `${status.pendingCount} 个网站待上传`
+                      : isStandby
+                        ? '待机护航中'
+                        : '全部同步就绪'}
           </div>
-          <div className="break-words text-muted-foreground">
+          <div className="truncate text-[11px] text-muted-foreground">
             {status.error ||
+              status.note ||
               (status.lastSuccess
-                ? `最近上传 ${new Date(status.lastSuccess).toLocaleString('zh-CN')}`
+                ? `最近上传 ${new Date(status.lastSuccess).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
                 : status.lastCheck
-                  ? `最近检查 ${new Date(status.lastCheck).toLocaleString('zh-CN')}`
-                  : '尚无记录')}
+                  ? `最近检查 ${new Date(status.lastCheck).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+                  : '尚无同步记录')}
           </div>
         </div>
-        <Button variant="ghost" size="sm" aria-label="打开同步管理" onClick={() => void openManager()}>
-          <PanelRightOpen size={15} className="mr-1.5" aria-hidden />
-          同步管理
+        <Button variant="ghost" size="sm" className="rounded-full shrink-0" aria-label="打开同步管理" onClick={() => void openManager()}>
+          <PanelRightOpen size={14} className="mr-1" aria-hidden />
+          管理
         </Button>
       </footer>
+
       <Toaster theme={theme} closeButton visibleToasts={1} richColors position="top-center" />
     </main>
   );
