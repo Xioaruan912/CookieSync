@@ -1,5 +1,7 @@
+export * from './remoteStore';
 export * from './withRemote';
 export * from './withStorage';
+export * from './siteTransfer';
 export * from './restore';
 
 export * from './automatic';

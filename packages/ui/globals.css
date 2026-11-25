@@ -3,78 +3,102 @@
 @tailwind utilities;
 
 /*
- * Brand: "offwhite-bottle-yellow", dealt with tasteskill 2.5 for a developer
- * tool (software kind, sharp radius, Geist pairing). Off-white paper ground,
- * bottle-green ink, caution yellow used only as a functional accent — an
- * instrument, not a landing page. Extensions run offline, so Geist resolves
- * from the local system and falls back to the platform stack.
+ * CookieSync 2.0 — Titanium Bento Design System (Apple Control Center Precision)
+ * Light mode: Anodized Titanium (#ECECEF) + Pure White frosted tiles + Obsidian Hero
+ * Dark mode:  Deep Smoked Titanium (#0E0E11) + Elevated Carbon tiles + Electric Cobalt
  */
 @layer base {
   :root {
-    --background: 0 0% 97%;
-    --foreground: 151 15% 11%;
+    --background: 240 11% 93%;
+    --foreground: 240 4% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 151 15% 11%;
+    --card-foreground: 240 4% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 151 15% 11%;
-    --primary: 151 15% 11%;
-    --primary-foreground: 0 0% 97%;
-    --secondary: 0 0% 93%;
-    --secondary-foreground: 151 15% 13%;
-    --muted: 0 0% 94%;
-    --muted-foreground: 151 8% 38%;
-    --accent: 54 93% 53%;
-    --accent-foreground: 151 15% 11%;
-    --destructive: 0 72% 42%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89%;
-    --input: 0 0% 86%;
-    --ring: 151 15% 25%;
-    --radius: 0.25rem;
-    --chart-1: 151 15% 11%;
-    --chart-2: 151 8% 38%;
-    --chart-3: 54 93% 53%;
-    --chart-4: 0 0% 89%;
-    --chart-5: 0 72% 42%;
-    --font-display: 'Geist', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif;
-    --font-text: 'Geist', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif;
-    --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
-    --display-weight: 500;
-    --display-tracking: -0.03em;
-    --display-tracking-xl: -0.045em;
-    /* Motion layer: one easing family, two durations, one lift. */
+    --popover-foreground: 240 4% 11%;
+    --primary: 210 100% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 9% 95%;
+    --secondary-foreground: 240 4% 15%;
+    --muted: 240 9% 95%;
+    --muted-foreground: 240 4% 43%;
+    --accent: 210 100% 45%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 4 86% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 7% 86%;
+    --input: 240 7% 84%;
+    --ring: 210 100% 45%;
+    --radius: 1.125rem;
+
+    /* Apple Titanium Semantic Tokens */
+    --surface-glass: rgba(255, 255, 255, 0.78);
+    --surface-glass-strong: rgba(255, 255, 255, 0.9);
+    --surface-edge: rgba(255, 255, 255, 0.92);
+    --surface-shadow: 0 14px 36px -20px rgba(15, 23, 42, 0.14), 0 1px 2px rgba(15, 23, 42, 0.04);
+    --surface-shadow-hover: 0 22px 48px -20px rgba(15, 23, 42, 0.2), 0 2px 6px rgba(15, 23, 42, 0.06);
+    --obsidian-bg: linear-gradient(142deg, #161619 0%, #242429 58%, #1a1d26 100%);
+    --obsidian-border: rgba(255, 255, 255, 0.12);
+    --live-green: #24a148;
+    --live-green-soft: rgba(48, 209, 88, 0.14);
+    --cobalt: #0071e3;
+    --cobalt-soft: rgba(0, 113, 227, 0.12);
+    --amber: #d97706;
+    --amber-soft: rgba(255, 159, 10, 0.15);
+
+    /* Optical Typography */
+    --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', 'Microsoft YaHei UI', 'Segoe UI', system-ui, sans-serif;
+    --font-text: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei UI', 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+    --display-weight: 650;
+    --display-tracking: -0.028em;
+    --display-tracking-xl: -0.04em;
+
+    /* Apple Fluid Motion Tokens */
+    --ease-apple: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
     --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-    --dur-1: 140ms;
-    --dur-2: 220ms;
-    --lift: -2px;
+    --dur-press: 90ms;
+    --dur-1: 160ms;
+    --dur-2: 240ms;
+    --dur-stage: 440ms;
+    --lift: -3px;
   }
 
   .dark {
-    --background: 151 15% 8%;
-    --foreground: 0 0% 94%;
-    --card: 151 12% 11%;
-    --card-foreground: 0 0% 94%;
-    --popover: 151 12% 11%;
-    --popover-foreground: 0 0% 94%;
-    --primary: 0 0% 94%;
-    --primary-foreground: 151 15% 9%;
-    --secondary: 151 10% 17%;
-    --secondary-foreground: 0 0% 94%;
-    --muted: 151 9% 15%;
-    --muted-foreground: 151 8% 62%;
-    --accent: 54 80% 55%;
-    --accent-foreground: 151 15% 9%;
-    --destructive: 0 62% 52%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 151 8% 21%;
-    --input: 151 8% 25%;
-    --ring: 0 0% 88%;
-    --chart-1: 0 0% 94%;
-    --chart-2: 151 8% 62%;
-    --chart-3: 54 80% 55%;
-    --chart-4: 151 8% 21%;
-    --chart-5: 0 62% 52%;
+    --background: 240 10% 6%;
+    --foreground: 240 6% 96%;
+    --card: 240 9% 11%;
+    --card-foreground: 240 6% 96%;
+    --popover: 240 10% 12%;
+    --popover-foreground: 240 6% 96%;
+    --primary: 211 100% 52%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 8% 16%;
+    --secondary-foreground: 240 6% 95%;
+    --muted: 240 8% 16%;
+    --muted-foreground: 240 5% 63%;
+    --accent: 211 100% 52%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 4 90% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 7% 20%;
+    --input: 240 7% 23%;
+    --ring: 211 100% 52%;
+
+    --surface-glass: rgba(24, 24, 29, 0.78);
+    --surface-glass-strong: rgba(26, 26, 32, 0.92);
+    --surface-edge: rgba(255, 255, 255, 0.1);
+    --surface-shadow: 0 20px 44px -22px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --surface-shadow-hover: 0 28px 58px -20px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    --obsidian-bg: linear-gradient(142deg, #121520 0%, #1a2133 55%, #12141c 100%);
+    --obsidian-border: rgba(96, 165, 250, 0.25);
+    --live-green: #30d158;
+    --live-green-soft: rgba(48, 209, 88, 0.16);
+    --cobalt: #0a84ff;
+    --cobalt-soft: rgba(10, 132, 255, 0.18);
+    --amber: #ff9f0a;
+    --amber-soft: rgba(255, 159, 10, 0.18);
   }
 }
 
@@ -88,12 +112,15 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-text);
+    font-optical-sizing: auto;
+    font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    transition: background-color 260ms var(--ease-apple), color 260ms var(--ease-apple);
   }
   ::selection {
-    background: hsl(var(--accent));
-    color: hsl(var(--accent-foreground));
+    background: hsl(var(--primary) / 0.22);
+    color: hsl(var(--foreground));
   }
   h1,
   h2,
@@ -117,66 +144,108 @@
   select {
     font-family: inherit;
   }
-  /* Quiet scrollbars, one step quieter than the page. */
   * {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;
   }
 }
 
-/*
- * Motion layer (tasteskill rule 5): buttons step on hover and press on click,
- * linked cards lift 2px, underlines draw, status dots breathe on a 3s loop.
- * Nothing tilts, nothing parallaxes. Everything rests under reduced motion.
- */
+/* Tactile Apple Pointer Feedback & Keyframes */
 @layer base {
   a {
     transition:
-      color var(--dur-1) var(--ease-out),
-      background-size var(--dur-2) var(--ease-out);
+      color var(--dur-1) var(--ease-apple),
+      background-color var(--dur-1) var(--ease-apple),
+      transform var(--dur-1) var(--ease-apple);
   }
   button:enabled,
   [role='button'] {
     transition:
-      transform var(--dur-1) var(--ease-out),
-      background-color var(--dur-1) var(--ease-out),
-      border-color var(--dur-1) var(--ease-out),
-      color var(--dur-1) var(--ease-out),
-      box-shadow var(--dur-1) var(--ease-out),
-      opacity var(--dur-1) var(--ease-out);
+      transform var(--dur-press) var(--ease-apple),
+      background-color var(--dur-1) var(--ease-apple),
+      border-color var(--dur-1) var(--ease-apple),
+      color var(--dur-1) var(--ease-apple),
+      box-shadow var(--dur-1) var(--ease-apple);
   }
-  @media (prefers-reduced-motion: no-preference) {
+  button:enabled:active,
+  [role='button']:active {
+    transform: scale(0.97);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
     button:enabled:hover,
     [role='button']:hover {
       transform: translateY(-1px);
     }
     button:enabled:active,
     [role='button']:active {
-      transform: translateY(0.5px) scale(0.995);
+      transform: scale(0.97);
     }
-    .lift-card {
+    .bento-lift {
       transition:
-        transform var(--dur-2) var(--ease-out),
-        box-shadow var(--dur-2) var(--ease-out),
-        border-color var(--dur-1) var(--ease-out);
+        transform var(--dur-2) var(--ease-apple),
+        box-shadow var(--dur-2) var(--ease-apple),
+        border-color var(--dur-1) var(--ease-apple);
     }
-    .lift-card:hover {
+    .bento-lift:hover {
       transform: translateY(var(--lift));
-      box-shadow: 0 14px 28px -22px hsl(151 15% 11% / 0.45);
-    }
-    .dot-live {
-      animation: dot-pulse 3s var(--ease-in-out) infinite;
+      box-shadow: var(--surface-shadow-hover);
     }
   }
-  @keyframes dot-pulse {
-    0%,
+
+  @keyframes pulse-ring {
+    0% {
+      transform: scale(0.9);
+      opacity: 0.72;
+    }
+    75% {
+      transform: scale(1.9);
+      opacity: 0;
+    }
     100% {
-      box-shadow: 0 0 0 0 hsl(var(--accent) / 0.45);
+      transform: scale(1.9);
+      opacity: 0;
+    }
+  }
+
+  @keyframes beam-travel {
+    0% {
+      stroke-dashoffset: 220;
+      opacity: 0.25;
+    }
+    35% {
+      opacity: 1;
+    }
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0.25;
+    }
+  }
+
+  @keyframes qr-scan-laser {
+    0% {
+      transform: translateY(0%);
+      opacity: 0.4;
     }
     50% {
-      box-shadow: 0 0 0 4px hsl(var(--accent) / 0);
+      transform: translateY(196px);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(0%);
+      opacity: 0.4;
     }
   }
+
+  @keyframes rim-sheen {
+    0% {
+      transform: translateX(-130%) skewX(-20deg);
+    }
+    100% {
+      transform: translateX(240%) skewX(-20deg);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -187,24 +256,53 @@
       scroll-behavior: auto !important;
     }
     button:enabled:hover,
-    [role='button']:hover,
-    .lift-card:hover {
+    button:enabled:active,
+    .bento-lift:hover {
       transform: none !important;
-      box-shadow: none !important;
+    }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    :root {
+      --surface-glass: #ffffff;
+      --surface-glass-strong: #ffffff;
+    }
+    .dark {
+      --surface-glass: #1a1a1f;
+      --surface-glass-strong: #1a1a1f;
     }
   }
 }
 
 @layer components {
-  /* Underline that draws in, for quiet text links. */
-  .link-draw {
-    background-image: linear-gradient(currentColor, currentColor);
-    background-repeat: no-repeat;
-    background-position: 0 100%;
-    background-size: 0% 1px;
-    transition: background-size var(--dur-2) var(--ease-out);
+  .live-orb {
+    position: relative;
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--live-green);
+    flex-shrink: 0;
   }
-  .link-draw:hover {
-    background-size: 100% 1px;
+  .live-orb::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 999px;
+    border: 2px solid var(--live-green);
+    animation: pulse-ring 2.2s var(--ease-apple) infinite;
+  }
+  .live-orb[data-state='standby'] {
+    background: var(--amber);
+  }
+  .live-orb[data-state='standby']::after {
+    border-color: var(--amber);
+    animation-duration: 3.2s;
+  }
+  .live-orb[data-state='warn'] {
+    background: hsl(var(--destructive));
+  }
+  .live-orb[data-state='warn']::after {
+    border-color: hsl(var(--destructive));
   }
 }

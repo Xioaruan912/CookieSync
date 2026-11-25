@@ -16,7 +16,7 @@ export interface Snapshot {
   at: number;
   /** Where the snapshot came from and where it can be restored to. */
   kind: 'local' | 'remote';
-  reason: 'pull-all' | 'push-all' | 'pull-site' | 'push-site';
+  reason: 'pull-all' | 'push-all' | 'pull-site' | 'push-site' | 'takeover';
   sites: Record<string, SnapshotSite>;
 }
 

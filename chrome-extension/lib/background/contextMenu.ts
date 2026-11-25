@@ -1,22 +1,30 @@
-let globalMenuId: number | string = '';
+const MENU_ID = 'openSidePanel';
+let clickListenerBound = false;
 
 export const initContextMenu = () => {
-  globalMenuId = chrome.contextMenus.create({
-    id: 'openSidePanel',
-    title: '打开 Cookie 同步管理',
-    contexts: ['all'],
+  if (!chrome.contextMenus) return;
+  chrome.contextMenus.remove(MENU_ID, () => {
+    void chrome.runtime.lastError;
+    chrome.contextMenus.create({
+      id: MENU_ID,
+      title: '打开 Cookie 同步管理',
+      contexts: ['all'],
+    });
   });
-  chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === 'openSidePanel' && tab?.windowId) {
-      // This will open the panel in all the pages on the current window.
 
-      chrome.sidePanel.open({ windowId: tab.windowId });
-    }
-  });
+  if (!clickListenerBound) {
+    clickListenerBound = true;
+    chrome.contextMenus.onClicked.addListener((info, tab) => {
+      if (info.menuItemId === MENU_ID && tab?.windowId) {
+        void chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+      }
+    });
+  }
 };
 
 export const removeContextMenu = () => {
-  if (globalMenuId) {
-    chrome.contextMenus.remove(globalMenuId);
-  }
+  if (!chrome.contextMenus) return;
+  chrome.contextMenus.remove(MENU_ID, () => {
+    void chrome.runtime.lastError;
+  });
 };

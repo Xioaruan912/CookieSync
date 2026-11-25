@@ -211,7 +211,14 @@ export function SiteHealthSettings() {
               </p>
             ) : qrStage.stage === 'waiting' || qrStage.stage === 'scanned' ? (
               <>
-                <img src={qrStage.dataUrl} alt="登录二维码" width={220} height={220} />
+                <div className="relative overflow-hidden rounded-2xl">
+                  <img src={qrStage.dataUrl} alt="登录二维码" width={220} height={220} />
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-2 top-2 h-0.5 rounded-full bg-sky-400 shadow-[0_0_12px_#38bdf8]"
+                    style={{ animation: 'qr-scan-laser 2.4s ease-in-out infinite' }}
+                  />
+                </div>
                 <p className="qr-status">
                   {qrStage.stage === 'scanned' ? '已扫码，请在手机上确认登录' : '使用 115 手机 APP 扫码'}
                 </p>

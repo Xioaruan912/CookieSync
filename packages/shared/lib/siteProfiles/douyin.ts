@@ -8,4 +8,5 @@ import type { SiteProfile } from './index';
 export const profileDouyin: SiteProfile = {
   domain: 'douyin.com',
   loginKeys: ['sessionid'],
+  fastSync: true,
 };

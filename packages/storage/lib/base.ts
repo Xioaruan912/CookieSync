@@ -63,64 +63,28 @@ type StorageConfig<D = string> = {
   sessionAccessForContentScripts?: boolean;
   /**
    * Keeps state live in sync between all instances of the extension. Like between popup, side panel and content scripts.
-   * To allow chrome background scripts to stay in sync as well, use {@link StorageType.Session} storage area with
-   * {@link StorageConfig.sessionAccessForContentScripts} potentially also set to true.
-   * @see https://stackoverflow.com/a/75637138/2763239
    * @default false
    */
   liveUpdate?: boolean;
   /**
-   * An optional props for converting values from storage and into it.
+   * Optional serializer/deserializer for non-native storage values.
    * @default undefined
    */
   serialization?: {
-    /**
-     * convert non-native values to string to be saved in storage
-     */
     serialize: (value: D) => string;
-    /**
-     * convert string value from storage to non-native values
-     */
     deserialize: (text: string) => D;
   };
 };
 
-/**
- * Sets or updates an arbitrary cache with a new value or the result of an update function.
- */
-async function updateCache<D>(valueOrUpdate: ValueOrUpdate<D>, cache: D | null): Promise<D> {
-  // Type guard to check if our value or update is a function
-  function isFunction<D>(value: ValueOrUpdate<D>): value is (prev: D) => D | Promise<D> {
-    return typeof value === 'function';
+async function resolveUpdate<D>(valueOrUpdate: ValueOrUpdate<D>, current: D): Promise<D> {
+  if (typeof valueOrUpdate === 'function') {
+    return await (valueOrUpdate as (prev: D) => Promise<D> | D)(current);
   }
-
-  // Type guard to check in case of a function, if its a Promise
-  function returnsPromise<D>(func: (prev: D) => D | Promise<D>): func is (prev: D) => Promise<D> {
-    // Use ReturnType to infer the return type of the function and check if it's a Promise
-    return (func as (prev: D) => Promise<D>) instanceof Promise;
-  }
-
-  if (isFunction(valueOrUpdate)) {
-    // Check if the function returns a Promise
-    if (returnsPromise(valueOrUpdate)) {
-      return await valueOrUpdate(cache as D);
-    } else {
-      return valueOrUpdate(cache as D);
-    }
-  } else {
-    return valueOrUpdate;
-  }
+  return valueOrUpdate;
 }
 
-/**
- * If one session storage needs access from content scripts, we need to enable it globally.
- * @default false
- */
 let globalSessionAccessLevelFlag: StorageConfig['sessionAccessForContentScripts'] = false;
 
-/**
- * Checks if the storage permission is granted in the manifest.json.
- */
 function checkStoragePermission(storageType: StorageType): void {
   if (chrome.storage[storageType] === undefined) {
     throw new Error(`Check your storage permission in manifest.json: ${storageType} is not defined`);
@@ -128,18 +92,19 @@ function checkStoragePermission(storageType: StorageType): void {
 }
 
 /**
- * Creates a storage area for persisting and exchanging data.
+ * Creates a serialized, race-free storage wrapper over chrome.storage.
  */
 export function createStorage<D = string>(key: string, fallback: D, config?: StorageConfig<D>): BaseStorage<D> {
   let cache: D | null = null;
   let initedCache = false;
+  let inFlightWrites = 0;
+  let writeQueue: Promise<void> = Promise.resolve();
   let listeners: Array<() => void> = [];
   const storageType = config?.storageType ?? StorageType.Local;
   const liveUpdate = config?.liveUpdate ?? false;
   const serialize = config?.serialization?.serialize ?? ((v: D) => v);
   const deserialize = config?.serialization?.deserialize ?? (v => v as D);
 
-  // Set global session storage access level for StoryType.Session, only when not already done but needed.
   if (
     globalSessionAccessLevelFlag === false &&
     storageType === StorageType.Session &&
@@ -152,50 +117,44 @@ export function createStorage<D = string>(key: string, fallback: D, config?: Sto
       })
       .catch(error => {
         console.warn(error);
-        console.warn('Please call setAccessLevel into different context, like a background script.');
       });
     globalSessionAccessLevelFlag = true;
   }
 
-  // Register life cycle methods
   const _getDataFromStorage = async (): Promise<D> => {
     checkStoragePermission(storageType);
     const value = await chrome.storage[storageType].get([key]);
-    return deserialize(value[key]) ?? fallback;
+    const raw = value[key];
+    return raw === undefined ? fallback : (deserialize(raw) ?? fallback);
   };
 
   const _emitChange = () => {
     listeners.forEach(listener => listener());
   };
 
-  let setUpdatePromise: Promise<D> | null = null;
-  let setStoragePromise: Promise<void> | null = null;
-
-  const set = async (valueOrUpdate: ValueOrUpdate<D>) => {
-    if (initedCache === false) {
-      cache = await _getDataFromStorage();
-    }
-    await Promise.allSettled([setUpdatePromise, setStoragePromise]);
-    setUpdatePromise = updateCache(valueOrUpdate, cache);
-    cache = await setUpdatePromise.then(val => {
-      setUpdatePromise = null;
-      return val;
-    });
-    // if (!liveUpdate) {
-    // }
-    _emitChange();
-    if (cache) {
-      //FIXME: 存在 set 执行完之后，onChanged 尚没有执行，，如果在 onchange 中再次改变 cache 值，在连续段时间内操作多次 set 操作，最终结果会不符合预期
-      setStoragePromise = chrome.storage[storageType].set({ [key]: serialize(cache) });
-      await setStoragePromise.then(async () => {
-        setStoragePromise = null;
-        return await new Promise(resolve => {
-          setTimeout(() => {
-            resolve(undefined);
-          }, 200);
-        });
-      });
-    }
+  const set = (valueOrUpdate: ValueOrUpdate<D>): Promise<void> => {
+    const task = async () => {
+      inFlightWrites++;
+      try {
+        if (!initedCache) {
+          cache = await _getDataFromStorage();
+          initedCache = true;
+        }
+        const current = cache !== null && cache !== undefined ? cache : fallback;
+        const next = await resolveUpdate(valueOrUpdate, current);
+        cache = next;
+        _emitChange();
+        if (next !== null && next !== undefined) {
+          checkStoragePermission(storageType);
+          await chrome.storage[storageType].set({ [key]: serialize(next) });
+        }
+      } finally {
+        inFlightWrites--;
+      }
+    };
+    const result = writeQueue.then(task, task);
+    writeQueue = result.catch(() => {});
+    return result;
   };
 
   const subscribe = (listener: () => void) => {
@@ -205,31 +164,32 @@ export function createStorage<D = string>(key: string, fallback: D, config?: Sto
     };
   };
 
-  const getSnapshot = () => {
-    return cache;
-  };
+  const getSnapshot = () => cache;
 
-  _getDataFromStorage().then(data => {
-    cache = data;
-    initedCache = true;
-    _emitChange();
-  });
+  _getDataFromStorage()
+    .then(data => {
+      if (!initedCache && inFlightWrites === 0) {
+        cache = data;
+        initedCache = true;
+        _emitChange();
+      }
+    })
+    .catch(() => {});
 
-  // Listener for live updates from the browser
-  async function _updateFromStorageOnChanged(changes: { [key: string]: chrome.storage.StorageChange }) {
-    // Check if the key we are listening for is in the changes object
+  function _updateFromStorageOnChanged(changes: { [key: string]: chrome.storage.StorageChange }) {
     if (changes[key] === undefined) return;
+    // Ignore echoed change events while our own serialized writes are still committing.
+    if (inFlightWrites > 0) return;
 
-    const valueOrUpdate: ValueOrUpdate<D> = deserialize(changes[key].newValue);
+    const raw = changes[key].newValue;
+    const nextValue = raw === undefined ? fallback : (deserialize(raw) ?? fallback);
+    if (Object.is(cache, nextValue)) return;
 
-    if (cache === valueOrUpdate) return;
-
-    cache = await updateCache(valueOrUpdate, cache);
-
+    cache = nextValue;
+    initedCache = true;
     _emitChange();
   }
 
-  // Register listener for live updates for our storage area
   if (liveUpdate) {
     chrome.storage[storageType].onChanged.addListener(_updateFromStorageOnChanged);
   }

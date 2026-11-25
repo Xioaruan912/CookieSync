@@ -1,4 +1,5 @@
 import { readWebdav, writeWebdav, type WebdavConfig, type WebdavSnapshot } from './api';
+import { RUNTIME_STORAGE_KEYS } from '@sync-your-cookie/storage/lib/syncRuntimeStorage';
 
 /**
  * Daily rolling backups next to the cookie file. The remote content is copied
@@ -7,7 +8,7 @@ import { readWebdav, writeWebdav, type WebdavConfig, type WebdavSnapshot } from 
  */
 export const backupPath = (path: string, slot: number) => `${path}.bak.${slot}`;
 export const backupSlots = [1, 2, 3] as const;
-const lastBackupKey = 'cookiesync-last-backup-at';
+const lastBackupKey = RUNTIME_STORAGE_KEYS.lastBackupAt;
 const intervalMs = 24 * 60 * 60 * 1000;
 
 const slotConfig = (config: WebdavConfig, slot: number): WebdavConfig => ({

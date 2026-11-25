@@ -18,6 +18,11 @@ export const profile115: SiteProfile = {
   },
   // 115 rejects cookie+UA combinations that do not match (OpenList #2502).
   uaSensitive: true,
+  // 115 web enforces single active session: idle/standby PCs must pause open 115 tabs
+  // so background heartbeats never kick the active PC offline.
+  singleSession: true,
+  // Push fresh 115 logins within ~5s so closing the browser immediately stays safe.
+  fastSync: true,
   // The same web-device QR flow the 115 login page runs. Any new web login
   // replaces the previous web session, exactly like logging in manually.
   qrLogin: {

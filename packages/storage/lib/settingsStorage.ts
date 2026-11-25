@@ -21,49 +21,45 @@ export interface ISettings {
   configChannel?: 'chrome-sync' | 'webdav' | 'off';
   /** Download a verified installation ZIP automatically once a newer version is found. */
   autoUpdateDownload?: boolean;
+  /** Active-device handover mode for single-user multi-PC use. On by default. */
+  activeDeviceSync?: boolean;
+  /** Pause idle single-session tabs (e.g. 115) when standby or after another PC takes over. On by default. */
+  discardIdleSingleSessionTabs?: boolean;
 }
+
 const key = 'settings-storage-key';
-const cacheStorageMap = new Map();
 
-const initStorage = (): BaseStorage<ISettings> => {
-  if (cacheStorageMap.has(key)) {
-    return cacheStorageMap.get(key);
-  }
-  const storage = createStorage<ISettings>(
-    key,
-    {
-      protobufEncoding: false,
-      includeLocalStorage: true,
-      includeSessionStorage: false,
-      includeIndexedDB: false,
-      rollingBackup: true,
-      contextMenu: false,
-      startupPull: true,
-      backgroundSync: true,
-      autoDiscoverSites: true,
-      syncIntervalMinutes: 2,
-      configChannel: 'chrome-sync',
-      autoUpdateDownload: true,
-    },
-    {
-      storageType: StorageType.Sync,
-      liveUpdate: true,
-    },
-  );
-  cacheStorageMap.set(key, storage);
-  return storage;
-};
-
-const storage = initStorage();
+const storage = createStorage<ISettings>(
+  key,
+  {
+    protobufEncoding: false,
+    includeLocalStorage: true,
+    includeSessionStorage: false,
+    includeIndexedDB: false,
+    rollingBackup: true,
+    contextMenu: false,
+    startupPull: true,
+    backgroundSync: true,
+    autoDiscoverSites: true,
+    syncIntervalMinutes: 2,
+    configChannel: 'chrome-sync',
+    autoUpdateDownload: true,
+    activeDeviceSync: true,
+    discardIdleSingleSessionTabs: true,
+  },
+  {
+    storageType: StorageType.Sync,
+    liveUpdate: true,
+  },
+);
 
 type TSettingsStorage = BaseStorage<ISettings> & {
   update: (updateInfo: Partial<ISettings>) => Promise<void>;
 };
+
 export const settingsStorage: TSettingsStorage = {
   ...storage,
   update: async (updateInfo: Partial<ISettings>) => {
-    await storage.set(currentInfo => {
-      return { ...currentInfo, ...updateInfo };
-    });
+    await storage.set(currentInfo => ({ ...currentInfo, ...updateInfo }));
   },
 };

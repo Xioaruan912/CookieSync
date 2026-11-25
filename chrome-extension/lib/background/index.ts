@@ -1,73 +1,66 @@
-import { initAutomaticSync, flushAutomaticSync, setAutomaticSyncReady, startAutomaticSession } from './automaticSync';
 // sort-imports-ignore
 import 'webextension-polyfill';
 
-import {
-  pullAndSetCookies,
-  pullCookies,
-  syncCookieDomain,
-  matchesSyncDomain,
-} from '@sync-your-cookie/shared';
+import { accountStorage } from '@sync-your-cookie/storage/lib/accountStorage';
 import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
-import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
 import { domainStatusStorage } from '@sync-your-cookie/storage/lib/domainStatusStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
-import { initContextMenu } from './contextMenu';
-import { refreshListen } from './listen';
-import { initSubscribe } from './subscribe';
-import { initUpdateChecks } from './update';
+import { initAutomaticSync, setAutomaticSyncReady, startAutomaticSession, flushAutomaticSync } from './automaticSync';
+import { initBadgeController } from './badgeController';
+import { initContextMenu, removeContextMenu } from './contextMenu';
+import { initCookieCrudHandlers } from './handlers/cookieCrud';
 import { initSiteHealthChecks } from './healthCheck';
 import { initOverview } from './overview';
+import { ensureRouterMounted } from './router';
 import { initSafety } from './safety';
+import { initUpdateChecks } from './update';
 
-const ping = () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, async function (tabs) {
-    if (tabs.length === 0) {
-      // const allOpendTabs = await chrome.tabs.query({});
-
-      // reject({ isOk: false, msg: 'No active tab found' } as SendResponse);
-      return;
-    }
-    chrome.tabs.sendMessage(tabs[0].id!, 'ping', function (result) {});
+function bindSettingsSubscriptions() {
+  let previousContextMenu: boolean | undefined;
+  settingsStorage.subscribe(() => {
+    const snapshot = settingsStorage.getSnapshot();
+    if (previousContextMenu === snapshot?.contextMenu) return;
+    previousContextMenu = snapshot?.contextMenu;
+    if (snapshot?.contextMenu) initContextMenu();
+    else removeContextMenu();
   });
-  // setTimeout(ping, 4000);
-};
+
+  let previousProvider = accountStorage.getSnapshot()?.selectedProvider;
+  accountStorage.subscribe(async () => {
+    const nextProvider = accountStorage.getSnapshot()?.selectedProvider;
+    if (nextProvider === previousProvider) return;
+    previousProvider = nextProvider;
+    await domainStatusStorage.resetState();
+    await cookieStorage.reset();
+  });
+}
 
 const init = async () => {
   try {
-    await refreshListen();
-
-    await initSubscribe(); // await state reset finish
-
-    await pullCookies(true);
-
-    // ping();
-  } catch (error) {}
+    await domainStatusStorage.resetState();
+    bindSettingsSubscriptions();
+  } catch {
+    /* Best-effort worker recovery. */
+  }
 };
 
 chrome.runtime.onInstalled.addListener(async () => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
-  const settingsSnapShot = await settingsStorage.get();
-  if (settingsSnapShot?.contextMenu) {
-    initContextMenu();
-  }
+  void chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false });
+  const settings = await settingsStorage.get();
+  if (settings?.contextMenu) initContextMenu();
 });
 
+// Register all modules onto the single message router before awaiting async init.
+ensureRouterMounted();
+initCookieCrudHandlers();
 initAutomaticSync();
 initUpdateChecks();
 initSiteHealthChecks();
 initOverview();
 initSafety();
+initBadgeController();
 
-chrome.tabs.onActivated.addListener(async function () {
-  const domainStatus = await domainStatusStorage.get();
-  const settingsStorageInfo = await settingsStorage.get();
-  if (!domainStatus.pulling && !domainStatus.pushing && !settingsStorageInfo.localStorageGetting) {
-    refreshListen();
-  }
-});
-
-// MV3 restarts the worker; listeners/subscriptions must be restored every time.
+// MV3 restarts the worker; restore state cleanly without duplicate startup pulls.
 const backgroundReady = init();
 setAutomaticSyncReady(backgroundReady);
 void backgroundReady.then(() => startAutomaticSession()).then(() => flushAutomaticSync());

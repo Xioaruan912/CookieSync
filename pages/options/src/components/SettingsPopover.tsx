@@ -23,7 +23,9 @@ export function SettingsPopover({ trigger }: SettingsPopoverProps) {
       | 'contextMenu'
       | 'encryptionEnabled'
       | 'startupPull'
-      | 'backgroundSync',
+      | 'backgroundSync'
+      | 'activeDeviceSync'
+      | 'discardIdleSingleSessionTabs',
   ) => {
     if (checkedKey === 'contextMenu') {
       void editRemotePreference('contextMenu', checked);
@@ -55,9 +57,11 @@ export function SettingsPopover({ trigger }: SettingsPopoverProps) {
           </div>
           <div className="gap-2">
             <div className="mb-4 space-y-3 border-b pb-4">
-              <p className="text-sm">无感同步：首次手动推送后，默认开启该网站的自动收发，可在弹窗单独关闭。</p>
+              <p className="text-sm">双机交接与无感同步：自动识别你正在使用哪台电脑，换机瞬间接班同步。</p>
               {(
                 [
+                  ['activeDeviceSync', '双机自动识别与单主交接（推荐）'],
+                  ['discardIdleSingleSessionTabs', '闲置/失租时休眠 115 后台页防互踢'],
                   ['startupPull', '浏览器启动时自动拉取'],
                   ['backgroundSync', '运行期间后台增量同步'],
                 ] as const
