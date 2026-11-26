@@ -1,7 +1,7 @@
 import { useGSAP } from '@gsap/react';
 import { useLocale } from '@sync-your-cookie/shared';
 import gsap from 'gsap';
-import { ArrowUpRight, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, Heart, ShieldCheck } from 'lucide-react';
 import { useRef } from 'react';
 
 gsap.registerPlugin(useGSAP);
@@ -96,6 +96,19 @@ export function AboutSettings() {
                 <span className="block about-link-sub">github.com/Xioaruan912/CookieSync/issues</span>
               </span>
               <ArrowUpRight size={16} aria-hidden="true" />
+            </a>
+            <a
+              href="https://ifdian.net/a/ppeea"
+              target="_blank"
+              rel="noreferrer"
+              className="about-link-row">
+              <span>
+                {t('爱发电 · 赞助支持', 'Support on Afdian')}
+                <span className="block about-link-sub">
+                  {t('自愿赞助，助力开源持续维护（ifdian.net/a/ppeea）', 'Voluntary open-source sponsorship (ifdian.net/a/ppeea)')}
+                </span>
+              </span>
+              <Heart size={16} aria-hidden="true" />
             </a>
             <a
               href="https://github.com/jackluson/sync-your-cookie"
