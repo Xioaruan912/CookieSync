@@ -283,3 +283,39 @@ test('quickAddCurrentSite adds normalized page domain and checkScriptUpdate comp
   assert.equal(upd.remoteVersion, '2.3.0');
   assert.equal(upd.localVersion, '2.2.0');
 });
+
+test('iOS Stay compatibility: works without GM.getValues/GM.setValues and with callback-only GM.xmlHttpRequest', async () => {
+  const sharedData = new Map([['webdav-connection', connection]]);
+  const exports = {};
+  const gmStay = {
+    listValues: async () => [...sharedData.keys()],
+    getValue: async (key, fallback) => structuredClone(sharedData.has(key) ? sharedData.get(key) : fallback),
+    setValue: async (key, value) => sharedData.set(key, structuredClone(value)),
+    // Stay / Violentmonkey callback-only xmlHttpRequest (returns void, not a Promise)
+    xmlHttpRequest: options => {
+      setTimeout(() => {
+        if (options.url.endsWith('CookieSync-config-v1.json') && options.method === 'GET') {
+          options.onload({ status: 404, responseText: '' });
+        } else {
+          options.onload({ status: 201, responseText: '' });
+        }
+      }, 5);
+    },
+    registerMenuCommand: () => {},
+  };
+  vm.runInNewContext(source.replace("  start();", 'Object.assign(exports, { syncConfig, dataKey, quickAddCurrentSite });'), {
+    exports,
+    GM: gmStay,
+    URL,
+    TextEncoder,
+    btoa,
+    clearTimeout,
+    setTimeout,
+    crypto,
+    location: { hostname: '115.com' },
+  });
+  const added = await exports.quickAddCurrentSite();
+  assert.equal(added, '115.com');
+  const msg = await exports.syncConfig(connection);
+  assert.match(msg, /已合并并同步/);
+});

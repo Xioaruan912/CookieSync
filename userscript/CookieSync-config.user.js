@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      2.2.0
+// @version      2.2.1
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
@@ -55,6 +55,62 @@
   const defaults = { theme: 'light', contextMenu: false, syncIntervalMinutes: 2 };
   const empty = () => ({ version: 1, rules: {}, preferences: {} });
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
+
+  // Cross-manager compatibility (iOS Stay / Safari Userscripts / Violentmonkey / Tampermonkey).
+  const gmGetValue = (key, fallback) => GM.getValue(key, fallback);
+  const gmSetValue = (key, value) => GM.setValue(key, value);
+  const gmListValues = async () => (typeof GM.listValues === 'function' ? await GM.listValues() : []);
+  const gmGetValues = async keys => {
+    if (typeof GM.getValues === 'function') return GM.getValues(keys);
+    const out = {};
+    await Promise.all(
+      keys.map(async key => {
+        const value = await gmGetValue(key, undefined);
+        if (value !== undefined) out[key] = value;
+      }),
+    );
+    return out;
+  };
+  const gmSetValues = async entries => {
+    if (typeof GM.setValues === 'function') return GM.setValues(entries);
+    await Promise.all(Object.entries(entries).map(([key, value]) => gmSetValue(key, value)));
+  };
+  const gmRequest = (options, timeoutMs = 20000) =>
+    new Promise((resolve, reject) => {
+      let settled = false;
+      let handle;
+      const finish = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn(arg);
+      };
+      const timer = setTimeout(() => {
+        try {
+          handle?.abort?.();
+        } catch {
+          /* ignore */
+        }
+        finish(reject, new Error('timeout'));
+      }, timeoutMs);
+      try {
+        handle = GM.xmlHttpRequest({
+          ...options,
+          onload: res => finish(resolve, res),
+          onerror: () => finish(reject, new Error('network')),
+          ontimeout: () => finish(reject, new Error('timeout')),
+          onabort: () => finish(reject, new Error('abort')),
+        });
+        if (handle && typeof handle.then === 'function') {
+          handle.then(
+            res => finish(resolve, res),
+            err => finish(reject, err),
+          );
+        }
+      } catch (error) {
+        finish(reject, error);
+      }
+    });
 
   function normalizeDomain(input) {
     const raw = input.trim();
@@ -139,19 +195,23 @@
     const bytes = new TextEncoder().encode(connection.username.trim() + ':' + connection.password);
     const authorization = 'Basic ' + btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''));
     let response;
-    let timer;
     try {
-      const pending = GM.xmlHttpRequest({ method, url, data, anonymous: true, redirect: 'error', nocache: true,
-        headers: { Authorization: authorization, ...headers } });
-      response = await Promise.race([pending, new Promise((_, reject) => {
-        timer = setTimeout(() => { reject(new Error('timeout')); pending.abort(); }, 20000);
-      })]);
+      response = await gmRequest(
+        {
+          method,
+          url,
+          data,
+          anonymous: true,
+          redirect: 'error',
+          nocache: true,
+          headers: { Authorization: authorization, ...headers },
+        },
+        20000,
+      );
     } catch {
       throw new Error('WebDAV 请求失败，请检查域名授权、网络及最终目录地址');
-    } finally {
-      clearTimeout(timer);
     }
-    if (response.finalUrl !== url) throw new Error('WebDAV 地址发生重定向，请填写最终地址');
+    if (response.finalUrl && response.finalUrl !== url) throw new Error('WebDAV 地址发生重定向，请填写最终地址');
     return response;
   }
 
@@ -174,8 +234,8 @@
 
   async function readConfig(connection) {
     const prefix = editPrefix(connection);
-    const keys = (await GM.listValues()).filter(key => key.startsWith(prefix));
-    const stored = await GM.getValues([dataKey(connection), cacheKey(connection), ...keys]);
+    const keys = (await gmListValues()).filter(key => key.startsWith(prefix));
+    const stored = await gmGetValues([dataKey(connection), cacheKey(connection), ...keys]);
     const edits = empty();
     for (const key of keys) {
       const [group, name] = key.slice(prefix.length).split(':');
@@ -344,24 +404,17 @@
   }
 
   async function checkScriptUpdate() {
-    const localVersion = (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '2.2.0';
-    let timer;
+    const localVersion = (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '2.2.1';
     try {
-      const pending = GM.xmlHttpRequest({
-        method: 'GET',
-        url: scriptDownloadUrl,
-        anonymous: true,
-        nocache: true,
-      });
-      const response = await Promise.race([
-        pending,
-        new Promise((_, reject) => {
-          timer = setTimeout(() => {
-            reject(new Error('timeout'));
-            pending.abort?.();
-          }, 15000);
-        }),
-      ]);
+      const response = await gmRequest(
+        {
+          method: 'GET',
+          url: scriptDownloadUrl,
+          anonymous: true,
+          nocache: true,
+        },
+        15000,
+      );
       if (response.status < 200 || response.status >= 300) {
         throw new Error('检查更新失败（HTTP ' + response.status + '）');
       }
@@ -376,8 +429,6 @@
       };
     } catch (error) {
       throw new Error(error instanceof Error && error.message !== 'timeout' ? error.message : '无法连接 GitHub 检查更新');
-    } finally {
-      clearTimeout(timer);
     }
   }
 
@@ -1045,7 +1096,7 @@
         if (value !== displayed[name])
           changes[editKey(connection, 'preferences', name)] = revision(value, effective.preferences[name], 'value');
       }
-      if (Object.keys(changes).length) await GM.setValues(changes);
+      if (Object.keys(changes).length) await gmSetValues(changes);
     }
     get('save').onclick = run(async () => {
       await savePreferences();
