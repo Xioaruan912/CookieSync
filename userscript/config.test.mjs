@@ -19,6 +19,9 @@ function setup(remoteResponse, local = payload(), sharedData = new Map()) {
     getValue: async (key, fallback) => structuredClone(data.get(key) ?? fallback),
     setValue: async (key, value) => data.set(key, structuredClone(value)),
     xmlHttpRequest: async options => {
+      if (options.url === connection.url + 'CookieSync-lease-v1.json') {
+        return { finalUrl: options.url, status: options.method === 'GET' ? 404 : 201, responseText: '' };
+      }
       assert.equal(options.url, url);
       assert.equal(options.anonymous, true);
       assert.equal(options.redirect, 'error');
@@ -177,4 +180,69 @@ test('maybeSync automatically yields when the CookieSync Chrome extension marker
   });
   await exports.maybeSync();
   assert.equal(requests.length, 0);
+});
+
+test('publishSlotLease updates mobile slot while preserving existing desktop slot intact', async () => {
+  const sharedData = new Map([['webdav-connection', connection]]);
+  const leaseUrl = connection.url + 'CookieSync-lease-v1.json';
+  let writtenLease = null;
+  const exports = {};
+  const gm = {
+    listValues: async () => [...sharedData.keys()],
+    getValues: async keys => Object.fromEntries(keys.filter(key => sharedData.has(key)).map(key => [key, structuredClone(sharedData.get(key))])),
+    getValue: async (key, fallback) => structuredClone(sharedData.get(key) ?? fallback),
+    setValue: async (key, value) => sharedData.set(key, structuredClone(value)),
+    xmlHttpRequest: async options => {
+      if (options.url === leaseUrl && options.method === 'GET') {
+        return {
+          finalUrl: leaseUrl,
+          status: 200,
+          responseHeaders: 'etag: "lease-1"\r\n',
+          responseText: JSON.stringify({
+            version: 1,
+            activeDeviceId: 'pc-office',
+            activeDeviceName: '工位主机',
+            userAgentFamily: 'windows-chrome',
+            leaseAt: 1000,
+            epoch: 3,
+            dataRevision: 'rev-pc',
+            lastDataWriteAt: 1000,
+            slots: {
+              desktop: {
+                deviceId: 'pc-office',
+                deviceName: '工位主机',
+                userAgentFamily: 'windows-chrome',
+                leaseAt: 1000,
+                epoch: 3,
+                dataRevision: 'rev-pc',
+                lastDataWriteAt: 1000,
+              },
+            },
+          }),
+        };
+      }
+      if (options.url === leaseUrl && options.method === 'PUT') {
+        writtenLease = JSON.parse(options.data);
+        return { finalUrl: leaseUrl, status: 204, responseText: '' };
+      }
+      return { finalUrl: options.url, status: 200, responseText: JSON.stringify(payload()) };
+    },
+    registerMenuCommand: () => {},
+  };
+  vm.runInNewContext(source.replace("  start();", 'Object.assign(exports, { publishSlotLease });'), {
+    exports,
+    GM: gm,
+    URL,
+    TextEncoder,
+    btoa,
+    clearTimeout,
+    setTimeout,
+    crypto,
+    navigator: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1' },
+  });
+  await exports.publishSlotLease(connection);
+  assert.ok(writtenLease, 'mobile lease must be written');
+  assert.equal(writtenLease.slots.desktop.deviceName, '工位主机', 'desktop slot must remain intact');
+  assert.equal(writtenLease.slots.mobile.deviceName, 'iPhone Safari', 'mobile slot must record phone name');
+  assert.equal(writtenLease.slots.mobile.epoch, 1);
 });

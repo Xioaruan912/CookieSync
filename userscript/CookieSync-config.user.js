@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      2.0.0
+// @version      2.1.0
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
@@ -27,7 +27,9 @@
   'use strict';
 
   const fileName = 'CookieSync-config-v1.json';
+  const leaseFileName = 'CookieSync-lease-v1.json';
   const connectionKey = 'webdav-connection';
+  const deviceKey = 'cookiesync-device-identity';
   const intervalMs = 30 * 60 * 1000;
   const defaults = { theme: 'light', contextMenu: false, syncIntervalMinutes: 2 };
   const empty = () => ({ version: 1, rules: {}, preferences: {} });
@@ -103,16 +105,16 @@
     return url;
   }
 
-  function destination(connection) {
+  function destination(connection, targetFile = fileName) {
     const url = webdavDirectory(connection.url);
     if (!connection.username.trim() || connection.username.includes(':') || !connection.password)
       throw new Error('请填写 WebDAV 用户名和应用密码，用户名不能含冒号');
-    url.pathname = url.pathname.replace(/\/?$/, '/') + fileName;
+    url.pathname = url.pathname.replace(/\/?$/, '/') + targetFile;
     return url.href;
   }
 
-  async function request(connection, method, headers = {}, data) {
-    const url = destination(connection);
+  async function request(connection, method, headers = {}, data, targetFile = fileName) {
+    const url = destination(connection, targetFile);
     const bytes = new TextEncoder().encode(connection.username.trim() + ':' + connection.password);
     const authorization = 'Basic ' + btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''));
     let response;
@@ -167,6 +169,124 @@
     return status ? new Date(status.at).toLocaleString('zh-CN') + ' · ' + status.message : '尚未同步';
   }
 
+  function detectDeviceProfile() {
+    const ua = typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '';
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+    const os = /iPhone/i.test(ua)
+      ? 'iPhone'
+      : /iPad/i.test(ua)
+        ? 'iPad'
+        : /Android/i.test(ua)
+          ? 'Android'
+          : /Mac/i.test(ua)
+            ? 'macOS'
+            : /Win/i.test(ua)
+              ? 'Windows'
+              : '设备';
+    const browser = /Edg/i.test(ua)
+      ? 'Edge'
+      : /Firefox|FxiOS/i.test(ua)
+        ? 'Firefox'
+        : /CriOS|Chrome/i.test(ua)
+          ? 'Chrome'
+          : /Safari/i.test(ua)
+            ? 'Safari'
+            : '浏览器';
+    return {
+      slot: isMobile ? 'mobile' : 'desktop',
+      defaultName: `${os} ${browser}`,
+      uaFamily: `${os.toLowerCase()}-${browser.toLowerCase()}`,
+    };
+  }
+
+  async function ensureDeviceIdentity() {
+    const saved = await GM.getValue(deviceKey, null);
+    const profile = detectDeviceProfile();
+    if (saved && typeof saved.deviceId === 'string' && saved.deviceId.trim()) {
+      return {
+        deviceId: saved.deviceId,
+        deviceName: saved.deviceName || profile.defaultName,
+        slot: profile.slot,
+        uaFamily: profile.uaFamily,
+      };
+    }
+    const created = {
+      deviceId: `${profile.slot}-${crypto.randomUUID().slice(0, 8)}`,
+      deviceName: profile.defaultName,
+    };
+    await GM.setValue(deviceKey, created);
+    return { ...created, slot: profile.slot, uaFamily: profile.uaFamily };
+  }
+
+  async function publishSlotLease(connection) {
+    try {
+      const id = await ensureDeviceIdentity();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const read = await request(connection, 'GET', {}, undefined, leaseFileName);
+        if (![200, 404].includes(read.status)) return;
+        let existing = null;
+        if (read.status === 200 && read.responseText) {
+          try {
+            existing = JSON.parse(read.responseText);
+          } catch {
+            existing = null;
+          }
+        }
+        const now = Date.now();
+        const prevDesktop = existing?.slots?.desktop || (existing?.activeDeviceId ? {
+          deviceId: existing.activeDeviceId,
+          deviceName: existing.activeDeviceName || existing.activeDeviceId.slice(0, 8),
+          userAgentFamily: existing.userAgentFamily || '',
+          leaseAt: Number(existing.leaseAt) || 0,
+          epoch: Number(existing.epoch) || 0,
+          dataRevision: existing.dataRevision || '',
+          lastDataWriteAt: Number(existing.lastDataWriteAt) || 0,
+        } : undefined);
+        const prevMobile = existing?.slots?.mobile;
+        const prevSelf = id.slot === 'mobile' ? prevMobile : prevDesktop;
+        const nextSlot = {
+          deviceId: id.deviceId,
+          deviceName: id.deviceName,
+          userAgentFamily: id.uaFamily,
+          leaseAt: now,
+          epoch: (Number(prevSelf?.epoch) || 0) + 1,
+          dataRevision: crypto.randomUUID(),
+          lastDataWriteAt: now,
+        };
+        const desktop = id.slot === 'desktop' ? nextSlot : prevDesktop;
+        const mobile = id.slot === 'mobile' ? nextSlot : prevMobile;
+        const primary = desktop || nextSlot;
+        const merged = {
+          version: 1,
+          activeDeviceId: primary.deviceId,
+          activeDeviceName: primary.deviceName,
+          userAgentFamily: primary.userAgentFamily,
+          leaseAt: primary.leaseAt,
+          epoch: primary.epoch,
+          dataRevision: primary.dataRevision,
+          lastDataWriteAt: primary.lastDataWriteAt,
+          slots: {
+            ...(desktop ? { desktop } : {}),
+            ...(mobile ? { mobile } : {}),
+          },
+        };
+        const etag = read.responseHeaders?.match(/^etag:[ \t]*([^\r\n]+)/im)?.[1].trim();
+        const condition = read.status === 404 ? { 'If-None-Match': '*' } : etag ? { 'If-Match': etag } : {};
+        const write = await request(
+          connection,
+          'PUT',
+          { 'Content-Type': 'application/json; charset=utf-8', ...condition },
+          JSON.stringify(merged),
+          leaseFileName,
+        );
+        if (write.status >= 200 && write.status < 300) return;
+        if (write.status !== 412) return;
+      }
+    } catch {
+      /* Lease update is auxiliary; never fail config sync. */
+    }
+  }
+
   async function reportSync(connection) {
     let message;
     try {
@@ -176,6 +296,7 @@
       throw error;
     }
     await GM.setValue(statusKey(connection), { at: Date.now(), message, ok: true });
+    await publishSlotLease(connection);
     return message;
   }
 
