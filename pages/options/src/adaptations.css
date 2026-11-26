@@ -113,6 +113,7 @@ html:has(.titanium-shell[data-section='adaptations']) {
 
 .adapt-deck-nav {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
@@ -120,14 +121,14 @@ html:has(.titanium-shell[data-section='adaptations']) {
 .adapt-deck-tab {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 36px;
-  padding-inline: 16px;
+  gap: 6px;
+  height: 34px;
+  padding-inline: 13px;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--sbo-muted);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 420;
   cursor: pointer;
   white-space: nowrap;

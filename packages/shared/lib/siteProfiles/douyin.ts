@@ -9,4 +9,5 @@ export const profileDouyin: SiteProfile = {
   domain: 'douyin.com',
   loginKeys: ['sessionid'],
   fastSync: true,
+  loginPageUrl: 'https://www.douyin.com/',
 };

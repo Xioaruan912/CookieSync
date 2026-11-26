@@ -28,11 +28,19 @@ globalThis.chrome = {
 };
 const { sitePolicyStorage, storeSiteRules } = require('../../storage/lib/sitePolicyStorage.ts');
 
-test('300 unique bundled sites allow known families, exclude lookalikes and normalize custom domains', () => {
-  assert.equal(commonSites.length, 300);
-  assert.equal(new Set(commonSites.map(s => s.domain)).size, 300);
+test('300+ unique bundled sites allow known families, exclude lookalikes and normalize custom domains', () => {
+  assert.ok(commonSites.length >= 300);
+  assert.equal(new Set(commonSites.map(s => s.domain)).size, commonSites.length);
   for (const site of commonSites) assert.equal(normalizeSiteDomain(site.domain), site.domain);
-  for (const host of ['www.nodeseek.com', 'xiaohongshu.com', 'www.douyin.com', '115.com', 'passport.jd.com'])
+  for (const host of [
+    'www.nodeseek.com',
+    'xiaohongshu.com',
+    'www.douyin.com',
+    '115.com',
+    'pan.xunlei.com',
+    'mypikpak.com',
+    'passport.jd.com',
+  ])
     assert.equal(isSiteAllowed(host), true, host);
   for (const host of ['unlisted.example', 'evilnodeseek.com', 'nodeseek.com.evil.example'])
     assert.equal(isSiteAllowed(host), false, host);
@@ -100,7 +108,7 @@ test('Chrome Sync stores only overrides, supports 300 disabled sites, and never 
     commonSites.map(s => [s.domain, { enabled: false, updatedAt: 1, revision: 'fixture' }]),
   );
   await storeSiteRules(rules);
-  assert.equal(Object.keys(data).length, 300);
+  assert.equal(Object.keys(data).length, commonSites.length);
   assert.ok(Object.entries(data).every(([k, v]) => JSON.stringify({ [k]: v }).length < 8192));
   assert.ok(JSON.stringify(data).length < 90000);
   assert.equal((await sitePolicyStorage.get())['nodeseek.com'].enabled, false);

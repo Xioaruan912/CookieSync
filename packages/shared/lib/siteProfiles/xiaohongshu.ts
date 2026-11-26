@@ -10,4 +10,5 @@ export const profileXiaohongshu: SiteProfile = {
   domain: 'xiaohongshu.com',
   loginKeys: ['web_session'],
   fastSync: true,
+  loginPageUrl: 'https://www.xiaohongshu.com/',
 };

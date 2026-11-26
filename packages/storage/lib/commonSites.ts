@@ -11,7 +11,7 @@ export const commonSiteGroups = {
   购物: '淘宝|taobao.com 天猫|tmall.com 京东|jd.com 拼多多|pinduoduo.com 苏宁易购|suning.com 唯品会|vip.com 当当|dangdang.com 1688|1688.com 闲鱼|goofish.com 得物|dewu.com',
   垂直电商:
     '考拉海购|kaola.com 网易严选|you.163.com 小米有品|xiaomiyoupin.com 小米商城|mi.com 华为商城|vmall.com 宜家|ikea.cn 孔夫子旧书网|kongfz.com 转转|zhuanzhuan.com 盒马|freshhema.com 东方甄选|eastbuy.com',
-  网盘: '115网盘|115.com 百度网盘|pan.baidu.com 阿里云盘|alipan.com 阿里云盘旧域名|aliyundrive.com 夸克网盘|pan.quark.cn 天翼云盘|cloud.189.cn 中国移动云盘|yun.139.com 123云盘|123pan.com 蓝奏云|lanzou.com 坚果云|jianguoyun.com',
+  网盘: '115网盘|115.com 百度网盘|pan.baidu.com 阿里云盘|alipan.com 阿里云盘旧域名|aliyundrive.com 夸克网盘|pan.quark.cn 天翼云盘|cloud.189.cn 迅雷云盘|pan.xunlei.com PikPak|mypikpak.com 中国移动云盘|yun.139.com 123云盘|123pan.com 蓝奏云|lanzou.com 坚果云|jianguoyun.com',
   云开发:
     '阿里云|aliyun.com 腾讯云|cloud.tencent.com 华为云|huaweicloud.com 火山引擎|volcengine.com 百度智能云|cloud.baidu.com 七牛云|qiniu.com 又拍云|upyun.com 金山云|ksyun.com 天翼云|ctyun.cn UCloud|ucloud.cn',
   开发工具:

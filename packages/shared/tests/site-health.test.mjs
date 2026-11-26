@@ -151,3 +151,52 @@ test('a profile without a health endpoint reports unknown instead of guessing', 
   const result = await profiles.checkProfileHealth(bare);
   assert.equal(result.state, 'unknown');
 });
+
+test('baidu pan, quark pan, and bilibili use read-only health endpoints and parse honestly', async () => {
+  const baidu = profiles.siteProfileFor('pan.baidu.com');
+  const quark = profiles.siteProfileFor('pan.quark.cn');
+  const bili = profiles.siteProfileFor('www.bilibili.com');
+  const cloud189 = profiles.siteProfileFor('cloud.189.cn');
+
+  assert.ok(baidu?.healthCheck?.url.includes('pan.baidu.com/api/loginStatus'));
+  assert.ok(quark?.healthCheck?.url.includes('pan.quark.cn/account/info'));
+  assert.ok(bili?.healthCheck?.url.includes('api.bilibili.com/x/web-interface/nav'));
+  assert.deepEqual(cloud189?.loginKeys, ['COOKIE_LOGIN_USER']);
+  assert.equal(cloud189?.singleSession, true);
+
+  // Baidu Pan: ok / invalid / unknown
+  globalThis.fetch = async () => reply({ errno: 0, login_info: { username: 'baidu-user', uk: 123 } });
+  const bdOk = await profiles.checkProfileHealth(baidu);
+  assert.equal(bdOk.state, 'ok');
+  assert.equal(bdOk.userName, 'baidu-user');
+
+  globalThis.fetch = async () => reply({ errno: -6 });
+  assert.equal((await profiles.checkProfileHealth(baidu)).state, 'invalid');
+
+  globalThis.fetch = async () => reply({ errno: 999 });
+  assert.equal((await profiles.checkProfileHealth(baidu)).state, 'unknown');
+
+  // Quark Pan: ok / invalid / unknown
+  globalThis.fetch = async () => reply({ success: true, code: 'OK', data: { nickname: 'quark-user' } });
+  const qkOk = await profiles.checkProfileHealth(quark);
+  assert.equal(qkOk.state, 'ok');
+  assert.equal(qkOk.userName, 'quark-user');
+
+  globalThis.fetch = async () => reply({ success: true, code: 'OK', data: null });
+  assert.equal((await profiles.checkProfileHealth(quark)).state, 'invalid');
+
+  globalThis.fetch = async () => reply({ success: false, code: 'RATE_LIMIT' }, 429);
+  assert.equal((await profiles.checkProfileHealth(quark)).state, 'unknown');
+
+  // Bilibili: ok / invalid / unknown
+  globalThis.fetch = async () => reply({ code: 0, data: { isLogin: true, uname: 'bili-user' } });
+  const biOk = await profiles.checkProfileHealth(bili);
+  assert.equal(biOk.state, 'ok');
+  assert.equal(biOk.userName, 'bili-user');
+
+  globalThis.fetch = async () => reply({ code: -101, message: '账号未登录', data: { isLogin: false } });
+  assert.equal((await profiles.checkProfileHealth(bili)).state, 'invalid');
+
+  globalThis.fetch = async () => reply({ code: -412, message: '风控拦截' }, 412);
+  assert.equal((await profiles.checkProfileHealth(bili)).state, 'unknown');
+});

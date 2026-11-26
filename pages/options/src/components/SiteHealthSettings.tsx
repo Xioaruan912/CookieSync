@@ -53,7 +53,7 @@ export function SiteHealthSettings() {
   const pollTimer = useRef<ReturnType<typeof setTimeout> | undefined>();
 
   const trackedProfiles = siteProfiles.filter(
-    profile => profile.healthCheck || profile.qrLogin || profile.singleSession,
+    profile => profile.healthCheck || profile.qrLogin || profile.singleSession || profile.loginPageUrl,
   );
   const activeProfile = trackedProfiles[profileIndex] || trackedProfiles[0];
   const entry = activeProfile ? health[activeProfile.domain] : undefined;
@@ -194,7 +194,7 @@ export function SiteHealthSettings() {
                 slideDir.current = index > profileIndex ? 1 : -1;
                 setProfileIndex(index);
               }}>
-              <em>0{index + 1}</em>
+              <em>{String(index + 1).padStart(2, '0')}</em>
               <span>{profile.domain}</span>
             </button>
           ))}
@@ -220,6 +220,7 @@ export function SiteHealthSettings() {
                   />
                   <span>
                     {stateText(activeProfile, entry)}
+                    {entry?.userName ? `（${entry.userName}）` : ''}
                     {entry?.checkedAt ? ` · ${new Date(entry.checkedAt).toLocaleString('zh-CN')}` : ''}
                   </span>
                 </div>
@@ -228,8 +229,14 @@ export function SiteHealthSettings() {
 
                 <p className="adapt-desc">
                   {activeProfile.healthCheck && activeProfile.qrLogin
-                    ? '恢复后使用只读接口校验登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，并支持内置扫码一键修复。'
-                    : '核心登录凭证不完整时自动拦截不覆盖云端，待机时自动休眠后台标签页防止双机互踢。'}
+                    ? '恢复后使用只读接口校验服务端登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，并支持内置扫码一键修复。'
+                    : activeProfile.healthCheck && activeProfile.singleSession
+                      ? '支持只读接口校验服务端登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，待机时自动休眠后台标签页防互踢。'
+                      : activeProfile.healthCheck
+                        ? '支持只读接口校验服务端登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，登录变更后快速同步。'
+                        : activeProfile.singleSession
+                          ? '核心登录凭证不完整时自动拦截不覆盖云端，待机时自动休眠后台标签页防止双机互踢。'
+                          : '核心登录凭证不完整时自动拦截不覆盖云端，登录态变化后快速同步并支持一键跳转重新登录。'}
                 </p>
 
                 {activeProfile.loginKeys?.length ? (
@@ -305,7 +312,7 @@ export function SiteHealthSettings() {
                     <Label htmlFor="adaptations-idle-tabs" className="adapt-switch-copy">
                       <strong>待机时休眠单会话网站</strong>
                       <span>
-                        离开 90 秒或另一台电脑接班时，自动休眠闲置机上的 115 后台标签页防互踢；绝不关闭标签页，也不打扰正在使用的电脑。
+                        离开 90 秒或另一台电脑接班时，自动休眠闲置机上的单会话网盘后台标签页防互踢；绝不关闭标签页，也不打扰正在使用的电脑。
                       </span>
                     </Label>
                     <Switch
@@ -322,12 +329,12 @@ export function SiteHealthSettings() {
                     <dd>已开启</dd>
                   </div>
                   <div>
-                    <dt>恢复前清理冲突旧 Cookie</dt>
-                    <dd>已开启</dd>
+                    <dt>单会话待机休眠</dt>
+                    <dd>{activeProfile.singleSession ? '已开启' : '无需休眠'}</dd>
                   </div>
                   <div>
                     <dt>健康巡检模式</dt>
-                    <dd>只读接口 · 待机静默</dd>
+                    <dd>{activeProfile.healthCheck ? '只读接口 · 待机静默' : '本机凭证校验 · 待机静默'}</dd>
                   </div>
                 </dl>
               </div>

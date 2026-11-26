@@ -19,6 +19,8 @@
 import { profile115 } from './115';
 import { profileAlipan } from './alipan';
 import { profileBaiduPan } from './baiduPan';
+import { profileBilibili } from './bilibili';
+import { profileCloud189 } from './cloud189';
 import { profileDouyin } from './douyin';
 import { profileQuark } from './quark';
 import { profileXiaohongshu } from './xiaohongshu';
@@ -26,6 +28,8 @@ import { profileXiaohongshu } from './xiaohongshu';
 export interface SiteHealthCheckConfig {
   url: string;
   referrer: string;
+  /** Optional site-specific JSON parser. Defaults to 115's `{ state, error, data.user_name }` format. */
+  parse?: (data: Record<string, unknown>, status: number) => SiteHealthResult;
 }
 
 export interface SiteQrLoginConfig {
@@ -155,6 +159,9 @@ export async function checkProfileHealth(profile: SiteProfile): Promise<SiteHeal
           ? '验证响应无法识别（不是 JSON），可能被站点风控或代理拦截'
           : `验证请求返回 HTTP ${response.status}，无法判断登录状态`,
       };
+    }
+    if (config.parse) {
+      return config.parse(data as Record<string, unknown>, response.status);
     }
     if (response.ok && data.state === true)
       return { state: 'ok', userName: data.data?.user_name ? String(data.data.user_name) : undefined };
@@ -307,9 +314,11 @@ export async function completeQrLogin(profile: SiteProfile, token: QrToken): Pro
 
 export const siteProfiles: SiteProfile[] = [
   profile115,
+  profileBaiduPan,
   profileQuark,
   profileAlipan,
-  profileBaiduPan,
+  profileCloud189,
+  profileBilibili,
   profileXiaohongshu,
   profileDouyin,
 ];
