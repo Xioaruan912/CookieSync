@@ -312,3 +312,59 @@ test('badge state machine priority and unified router auth guard work reliably',
   });
   assert.equal(unauthorizedReply?.isOk, false);
 });
+
+test('dual-slot lease keeps desktop and mobile independent and guards against rapid multi-device flapping', () => {
+  const {
+    buildMergedLease,
+    decodeLease,
+    evaluateLeaseHandover,
+    evaluateSlotFlap,
+    getLeaseSlot,
+    slotOutranks,
+  } = require('../lib/webdav/lease.ts');
+
+  const pcSlot = {
+    deviceId: 'pc-office',
+    deviceName: '工位主机',
+    userAgentFamily: 'windows-chrome',
+    leaseAt: 1000,
+    epoch: 2,
+    dataRevision: 'rev-pc-1',
+    lastDataWriteAt: 1000,
+  };
+  const phoneSlot = {
+    deviceId: 'ios-iphone',
+    deviceName: 'iPhone Safari',
+    userAgentFamily: 'ios-safari',
+    leaseAt: 2000,
+    epoch: 1,
+    dataRevision: 'rev-mob-1',
+    lastDataWriteAt: 2000,
+  };
+
+  // PC claims desktop, then Phone claims mobile -> both coexist without kicking each other
+  const afterPc = buildMergedLease(null, 'desktop', pcSlot);
+  const afterPhone = buildMergedLease(afterPc, 'mobile', phoneSlot);
+  const decoded = decodeLease(JSON.stringify(afterPhone));
+
+  assert.equal(getLeaseSlot(decoded, 'desktop')?.deviceName, '工位主机');
+  assert.equal(getLeaseSlot(decoded, 'mobile')?.deviceName, 'iPhone Safari');
+  assert.equal(evaluateLeaseHandover('pc-office', 'rev-pc-1', decoded, 'desktop').action, 'owner');
+  assert.equal(evaluateLeaseHandover('ios-iphone', 'rev-mob-1', decoded, 'mobile').action, 'owner');
+
+  // Second phone triggers takeover ONLY on mobile slot; PC slot remains owner
+  assert.equal(evaluateLeaseHandover('android-pixel', undefined, decoded, 'mobile').action, 'takeover');
+  assert.equal(evaluateLeaseHandover('pc-office', 'rev-pc-1', decoded, 'desktop').action, 'owner');
+
+  // Monotonic epoch wins over skewed wall-clock timestamps
+  assert.equal(
+    slotOutranks({ ...pcSlot, epoch: 3, leaseAt: 500 }, { ...pcSlot, deviceId: 'pc-home', epoch: 2, leaseAt: 999999 }),
+    true,
+  );
+
+  // Rapid flapping (>= 2 takeovers within 30s) triggers 60s read-only cooldown
+  const first = evaluateSlotFlap([], 10000);
+  assert.equal(first.cooldownUntil, 0);
+  const second = evaluateSlotFlap(first.recent, 22000);
+  assert.equal(second.cooldownUntil, 82000);
+});

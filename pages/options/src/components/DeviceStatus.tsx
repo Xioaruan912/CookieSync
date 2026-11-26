@@ -4,7 +4,7 @@ import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncSta
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { Button, Input } from '@sync-your-cookie/ui';
 import gsap from 'gsap';
-import { Pencil, RefreshCw } from 'lucide-react';
+import { Pencil, RefreshCw, Smartphone } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { OverviewDialog } from './OverviewDialog';
@@ -35,6 +35,11 @@ export function DeviceStatus({ connected, operation, busy, onSync }: Props) {
   const takingOver = starting || status.deviceRole === 'taking-over' || status.phase === 'taking-over';
   const peer =
     connected && status.activeDeviceId && status.activeDeviceId !== status.localDeviceId ? status.activeDeviceName : '';
+  const mobileActive =
+    connected &&
+    !!status.activeMobileDeviceName &&
+    (!status.activeMobileLeaseAt || Date.now() - status.activeMobileLeaseAt < 24 * 60 * 60 * 1000);
+  const mobileName = mobileActive ? status.activeMobileDeviceName : '';
 
   const flow = !connected
     ? undefined
@@ -144,6 +149,15 @@ export function DeviceStatus({ connected, operation, busy, onSync }: Props) {
             {roleText}
             {connected ? ` · ${lastSyncText}` : ''}
           </span>
+          {mobileName ? (
+            <span
+              className="ml-2 inline-flex items-center gap-1 rounded-full border border-[var(--sbo-line)] px-2.5 py-0.5 text-[11.5px] text-[var(--sbo-ink)]"
+              title="手机端独立槽位在线，与主机并行同步互不干扰">
+              <Smartphone size={11} aria-hidden="true" />
+              <span>{mobileName}</span>
+              <span className="text-[var(--sbo-ok)]">在线</span>
+            </span>
+          ) : null}
         </div>
       </div>
 

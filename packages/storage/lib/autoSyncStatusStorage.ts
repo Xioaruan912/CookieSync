@@ -27,6 +27,12 @@ export interface AutoSyncStatus {
   guardedDomains?: string[];
   /** Number of idle single-session tabs (e.g. 115) currently paused to prevent cross-PC kicks. */
   discardedTabsCount?: number;
+  /** Online mobile device holding the independent mobile slot (coexists with PC). */
+  activeMobileDeviceId?: string;
+  activeMobileDeviceName?: string;
+  activeMobileLeaseAt?: number;
+  /** Timestamp until which auto-uploading pauses due to rapid multi-PC lease flapping. */
+  flapCooldownUntil?: number;
 }
 
 const storage = createStorage<AutoSyncStatus>(

@@ -1,6 +1,9 @@
 import {
+  buildMergedLease,
   buildWebdavUrl,
   evaluateLeaseHandover,
+  evaluateSlotFlap,
+  getLeaseSlot,
   readWebdavLease,
   writeWebdavLease,
   type RemoteDeviceLease,
@@ -21,7 +24,29 @@ export type ActivityTrigger = 'startup' | 'focus' | 'idle-active' | 'manual';
 let currentRole: DeviceSyncRole = 'active';
 let handoverInFlight: Promise<HandoverOutcome> | undefined;
 let lastOwnerCheckAt = 0;
+let recentTakeovers: number[] = [];
+let flapCooldownUntil = 0;
 const ownerRecheckCooldownMs = 15000;
+
+function mobilePatchFromLease(lease: RemoteDeviceLease | null | undefined) {
+  const mobile = getLeaseSlot(lease, 'mobile');
+  if (!mobile) {
+    return {
+      activeMobileDeviceId: undefined,
+      activeMobileDeviceName: undefined,
+      activeMobileLeaseAt: undefined,
+    };
+  }
+  return {
+    activeMobileDeviceId: mobile.deviceId,
+    activeMobileDeviceName: mobile.deviceName,
+    activeMobileLeaseAt: mobile.leaseAt,
+  };
+}
+
+export function isLeaseFlapCooldownActive(now = Date.now()): boolean {
+  return flapCooldownUntil > now;
+}
 
 export interface HandoverOutcome {
   role: DeviceSyncRole;
@@ -117,7 +142,8 @@ export async function handleUserActivity(
     const localState = await localLeaseStateStorage.get();
     const { lease: remoteLease, snapshot } = await readWebdavLease(config);
     lastOwnerCheckAt = Date.now();
-    const decision = evaluateLeaseHandover(identity.deviceId, localState.dataRevision, remoteLease);
+    const mobilePatch = mobilePatchFromLease(remoteLease);
+    const decision = evaluateLeaseHandover(identity.deviceId, localState.dataRevision, remoteLease, 'desktop');
     const localUaFamily = currentUserAgentFamily();
 
     if (decision.action === 'owner') {
@@ -131,51 +157,75 @@ export async function handleUserActivity(
         activeDeviceId: identity.deviceId,
         activeDeviceName: identity.deviceName,
         discardedTabsCount: 0,
+        ...mobilePatch,
       });
       await restoreStandbySwitchedTabs();
       return { role: 'active', tookOver: false };
     }
 
     if (decision.action === 'claim') {
-      const nextLease: RemoteDeviceLease = {
-        version: 1,
-        activeDeviceId: identity.deviceId,
-        activeDeviceName: identity.deviceName,
+      const now = Date.now();
+      const prevDesktop = getLeaseSlot(remoteLease, 'desktop');
+      const nextLease = buildMergedLease(remoteLease, 'desktop', {
+        deviceId: identity.deviceId,
+        deviceName: identity.deviceName,
         userAgentFamily: localUaFamily,
-        leaseAt: Date.now(),
+        leaseAt: now,
+        epoch: (prevDesktop?.epoch || 0) + 1,
         dataRevision: localState.dataRevision || crypto.randomUUID(),
-        lastDataWriteAt: Date.now(),
-      };
-      const claimed = await writeWebdavLease(config, nextLease, snapshot).catch(() => ({
+        lastDataWriteAt: now,
+      });
+      const claimed = await writeWebdavLease(config, nextLease, snapshot, 'desktop').catch(() => ({
         claimed: true,
         lease: nextLease,
       }));
+      const claimedDesktop = getLeaseSlot(claimed.lease, 'desktop')!;
       await localLeaseStateStorage.update({
         role: 'active',
-        activeDeviceId: claimed.lease.activeDeviceId,
-        activeDeviceName: claimed.lease.activeDeviceName,
-        dataRevision: claimed.lease.dataRevision,
-        leaseAt: claimed.lease.leaseAt,
-        lastCheckedAt: Date.now(),
+        activeDeviceId: claimedDesktop.deviceId,
+        activeDeviceName: claimedDesktop.deviceName,
+        dataRevision: claimedDesktop.dataRevision,
+        leaseAt: claimedDesktop.leaseAt,
+        lastCheckedAt: now,
       });
       await setRole('active', {
-        activeDeviceId: claimed.lease.activeDeviceId,
-        activeDeviceName: claimed.lease.activeDeviceName,
+        activeDeviceId: claimedDesktop.deviceId,
+        activeDeviceName: claimedDesktop.deviceName,
+        ...mobilePatchFromLease(claimed.lease),
       });
       return { role: 'active', tookOver: false };
     }
 
-    // Takeover or pull-newer: pause local pushing, adopt cloud state first, then claim lease.
+    // Takeover or pull-newer: pause local pushing, adopt cloud state first, then claim desktop slot.
     const fromOtherDevice = decision.action === 'takeover';
     const remote = decision.remote;
+    const remoteDesktop = decision.slot;
     const uaMismatch =
-      !!remote.userAgentFamily && !!localUaFamily && remote.userAgentFamily !== localUaFamily;
+      !!remoteDesktop.userAgentFamily && !!localUaFamily && remoteDesktop.userAgentFamily !== localUaFamily;
+
+    if (fromOtherDevice && trigger !== 'manual') {
+      const flap = evaluateSlotFlap(recentTakeovers, Date.now());
+      recentTakeovers = flap.recent;
+      if (flap.cooldownUntil > Date.now()) {
+        flapCooldownUntil = flap.cooldownUntil;
+        await setRole('standby', {
+          phase: 'idle',
+          activeDeviceId: remoteDesktop.deviceId,
+          activeDeviceName: remoteDesktop.deviceName,
+          flapCooldownUntil,
+          note: `检测到多台主机同时活跃（${remoteDesktop.deviceName}），已进入 60 秒只拉不推保护期`,
+          ...mobilePatch,
+        });
+        return { role: 'standby', tookOver: false, previousDeviceName: remoteDesktop.deviceName };
+      }
+    }
 
     await setRole('taking-over', {
       phase: 'taking-over',
-      activeDeviceId: remote.activeDeviceId,
-      activeDeviceName: remote.activeDeviceName,
+      activeDeviceId: remoteDesktop.deviceId,
+      activeDeviceName: remoteDesktop.deviceName,
       error: '',
+      ...mobilePatch,
     });
 
     try {
@@ -187,55 +237,59 @@ export async function handleUserActivity(
         await callbacks.onTakeover(remote);
       }
 
-      const freshSnapshot = (await readWebdavLease(config)).snapshot;
-      const nextLease: RemoteDeviceLease = {
-        version: 1,
-        activeDeviceId: identity.deviceId,
-        activeDeviceName: identity.deviceName,
+      const fresh = await readWebdavLease(config);
+      const latestDesktop = getLeaseSlot(fresh.lease, 'desktop');
+      const now = Date.now();
+      const nextLease = buildMergedLease(fresh.lease, 'desktop', {
+        deviceId: identity.deviceId,
+        deviceName: identity.deviceName,
         userAgentFamily: localUaFamily,
-        leaseAt: Date.now(),
-        dataRevision: remote.dataRevision || crypto.randomUUID(),
-        lastDataWriteAt: remote.lastDataWriteAt || Date.now(),
-      };
-      const claimResult = await writeWebdavLease(config, nextLease, freshSnapshot).catch(() => ({
+        leaseAt: now,
+        epoch: Math.max(remoteDesktop.epoch || 0, latestDesktop?.epoch || 0) + 1,
+        dataRevision: remoteDesktop.dataRevision || crypto.randomUUID(),
+        lastDataWriteAt: remoteDesktop.lastDataWriteAt || now,
+      });
+      const claimResult = await writeWebdavLease(config, nextLease, fresh.snapshot, 'desktop').catch(() => ({
         claimed: true,
         lease: nextLease,
       }));
+      const claimedDesktop = getLeaseSlot(claimResult.lease, 'desktop')!;
 
-      const now = Date.now();
       await localLeaseStateStorage.update({
         role: 'active',
-        activeDeviceId: claimResult.lease.activeDeviceId,
-        activeDeviceName: claimResult.lease.activeDeviceName,
-        userAgentFamily: claimResult.lease.userAgentFamily,
-        dataRevision: claimResult.lease.dataRevision,
-        leaseAt: claimResult.lease.leaseAt,
+        activeDeviceId: claimedDesktop.deviceId,
+        activeDeviceName: claimedDesktop.deviceName,
+        userAgentFamily: claimedDesktop.userAgentFamily,
+        dataRevision: claimedDesktop.dataRevision,
+        leaseAt: claimedDesktop.leaseAt,
         lastCheckedAt: now,
         ...(fromOtherDevice ? { lastTakeoverAt: now } : {}),
       });
 
       const note = fromOtherDevice
         ? uaMismatch
-          ? `已从「${remote.activeDeviceName}」自动接班同步（注意：两端系统/浏览器不同，115 等风控站点可能要求重新验证）`
-          : `已从「${remote.activeDeviceName}」自动接班同步`
+          ? `已从「${remoteDesktop.deviceName}」自动接班同步（注意：两端系统/浏览器不同，115 等风控站点可能要求重新验证）`
+          : `已从「${remoteDesktop.deviceName}」自动接班同步`
         : '已同步云端最新改动';
 
       await setRole('active', {
         phase: 'idle',
-        activeDeviceId: claimResult.lease.activeDeviceId,
-        activeDeviceName: claimResult.lease.activeDeviceName,
+        activeDeviceId: claimedDesktop.deviceId,
+        activeDeviceName: claimedDesktop.deviceName,
         lastCheck: now,
         ...(fromOtherDevice ? { lastTakeoverAt: now } : {}),
         note,
         error: '',
         discardedTabsCount: 0,
+        flapCooldownUntil: 0,
+        ...mobilePatchFromLease(claimResult.lease),
       });
 
       await restoreStandbySwitchedTabs();
       return {
         role: 'active',
         tookOver: fromOtherDevice,
-        previousDeviceName: remote.activeDeviceName,
+        previousDeviceName: remoteDesktop.deviceName,
         uaMismatch,
       };
     } catch (error) {
@@ -270,32 +324,35 @@ export async function publishDataWriteLease(): Promise<void> {
 
   try {
     const identity = await ensureDeviceMetadata();
-    const { snapshot } = await readWebdavLease(config);
+    const { lease: existingLease, snapshot } = await readWebdavLease(config);
+    const prevDesktop = getLeaseSlot(existingLease, 'desktop');
     const now = Date.now();
-    const nextLease: RemoteDeviceLease = {
-      version: 1,
-      activeDeviceId: identity.deviceId,
-      activeDeviceName: identity.deviceName,
+    const nextLease = buildMergedLease(existingLease, 'desktop', {
+      deviceId: identity.deviceId,
+      deviceName: identity.deviceName,
       userAgentFamily: currentUserAgentFamily(),
       leaseAt: now,
+      epoch: (prevDesktop?.epoch || 0) + 1,
       dataRevision: crypto.randomUUID(),
       lastDataWriteAt: now,
-    };
-    await writeWebdavLease(config, nextLease, snapshot);
+    });
+    const written = await writeWebdavLease(config, nextLease, snapshot, 'desktop');
+    const finalDesktop = getLeaseSlot(written.lease, 'desktop')!;
     lastOwnerCheckAt = now;
     await localLeaseStateStorage.update({
       role: 'active',
-      activeDeviceId: identity.deviceId,
-      activeDeviceName: identity.deviceName,
-      userAgentFamily: nextLease.userAgentFamily,
-      dataRevision: nextLease.dataRevision,
+      activeDeviceId: finalDesktop.deviceId,
+      activeDeviceName: finalDesktop.deviceName,
+      userAgentFamily: finalDesktop.userAgentFamily,
+      dataRevision: finalDesktop.dataRevision,
       leaseAt: now,
       lastCheckedAt: now,
     });
     await autoSyncStatusStorage.update({
       deviceRole: 'active',
-      activeDeviceId: identity.deviceId,
-      activeDeviceName: identity.deviceName,
+      activeDeviceId: finalDesktop.deviceId,
+      activeDeviceName: finalDesktop.deviceName,
+      ...mobilePatchFromLease(written.lease),
     });
   } catch {
     /* Lease update is auxiliary; main cookie data is already safely persisted. */
@@ -358,10 +415,12 @@ export async function checkIfLeaseLost(clearStaleQueue: () => Promise<void>): Pr
     const identity = await ensureDeviceMetadata();
     const { lease } = await readWebdavLease(config);
     lastOwnerCheckAt = Date.now();
-    if (lease && lease.activeDeviceId !== identity.deviceId) {
+    await autoSyncStatusStorage.update(mobilePatchFromLease(lease)).catch(() => {});
+    const desktopSlot = getLeaseSlot(lease, 'desktop');
+    if (desktopSlot && desktopSlot.deviceId !== identity.deviceId) {
       await enterStandby('lost-lease', {
         clearStaleQueue,
-        newOwner: { deviceId: lease.activeDeviceId, deviceName: lease.activeDeviceName },
+        newOwner: { deviceId: desktopSlot.deviceId, deviceName: desktopSlot.deviceName },
       });
       return true;
     }
