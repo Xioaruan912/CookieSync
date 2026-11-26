@@ -4,7 +4,8 @@ const packageJson = JSON.parse(fs.readFileSync('../package.json', 'utf8'));
 const google = JSON.parse(fs.readFileSync('./google-config.json', 'utf8'));
 
 const isFirefox = process.env.__FIREFOX__ === 'true';
-const isWebStore = process.env.__WEBSTORE__ === 'true';
+// The `chrome` branch targets Chrome Web Store by default (forbids `key`).
+const isWebStore = process.env.__WEBSTORE__ !== 'false';
 
 const sidePanelConfig = {
   side_panel: {
