@@ -1,0 +1,212 @@
+/* =========================================================================
+   CookieSync — Advanced Settings Popover
+   SB OAI Japan Inspired · Zero-Scroll 3-Tab Editorial Drawer
+   ========================================================================= */
+
+.sbo-pop {
+  --pop-bg: #ffffff;
+  --pop-ink: #000000;
+  --pop-muted: #666666;
+  --pop-faint: #999999;
+  --pop-line: #e6e6e6;
+  --pop-line-strong: #111111;
+  --pop-accent: #6f8dff;
+  --pop-accent-fg: #ffffff;
+  --pop-font-display:
+    'Inter', 'Helvetica Neue', 'SF Pro Display', 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+
+  width: min(404px, calc(100vw - 28px)) !important;
+  padding: 20px 22px 18px !important;
+  border-radius: 18px !important;
+  border: 1px solid var(--pop-line) !important;
+  background: var(--pop-bg) !important;
+  color: var(--pop-ink) !important;
+  box-shadow: 0 20px 48px -20px rgba(0, 0, 0, 0.16) !important;
+}
+
+.dark .sbo-pop {
+  --pop-bg: #08080a;
+  --pop-ink: #ffffff;
+  --pop-muted: #9a9a9a;
+  --pop-faint: #666666;
+  --pop-line: #242428;
+  --pop-line-strong: #ffffff;
+  --pop-accent: #7a96ff;
+  --pop-accent-fg: #ffffff;
+  box-shadow: 0 24px 56px -18px rgba(0, 0, 0, 0.72) !important;
+}
+
+.sbo-pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--pop-line);
+}
+
+.sbo-pop-title {
+  margin: 0;
+  font-family: var(--pop-font-display);
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  color: var(--pop-ink);
+}
+
+.sbo-pop-kicker {
+  font-family: var(--pop-font-display);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pop-faint);
+}
+
+.sbo-pop-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--pop-line);
+}
+
+.sbo-pop-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pop-muted);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.sbo-pop-tab:hover {
+  color: var(--pop-ink);
+}
+
+.sbo-pop-tab[aria-selected='true'] {
+  background: var(--pop-accent);
+  color: var(--pop-accent-fg);
+}
+
+.sbo-pop-tab-num {
+  font-family: var(--pop-font-display);
+  font-size: 10.5px;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+.sbo-pop-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.sbo-pop-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--pop-line);
+}
+
+.sbo-pop-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 4px;
+}
+
+.sbo-pop-row-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sbo-pop-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--pop-ink);
+}
+
+.sbo-pop-desc {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--pop-faint);
+}
+
+.sbo-pop-num-input {
+  width: 64px;
+  border: 0;
+  border-bottom: 1px solid var(--pop-line);
+  background: transparent;
+  color: var(--pop-ink);
+  font-family: var(--pop-font-display);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: 4px 0;
+  outline: none;
+  transition: border-color 150ms ease;
+}
+
+.sbo-pop-num-input:focus {
+  border-bottom-color: var(--pop-line-strong);
+}
+
+.sbo-pop-pw-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 4px;
+  border-bottom: 1px solid var(--pop-line);
+  transition: border-color 150ms ease;
+}
+
+.sbo-pop-pw-wrap:focus-within {
+  border-bottom-color: var(--pop-line-strong);
+}
+
+.sbo-pop-pw-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pop-ink);
+  font-size: 13px;
+  padding: 4px 0;
+  outline: none;
+}
+
+.sbo-pop-pw-input::placeholder {
+  color: var(--pop-faint);
+}
+
+.sbo-pop-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  color: var(--pop-faint);
+  cursor: pointer;
+}
+
+.sbo-pop-eye:hover {
+  color: var(--pop-ink);
+}
+
+.sbo-pop-note {
+  margin: 12px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--pop-muted);
+}

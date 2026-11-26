@@ -6,6 +6,7 @@ import '@src/connection.css';
 import '@src/adaptations.css';
 import '@src/sites.css';
 import '@src/about.css';
+import '@src/popover.css';
 import { ThemeProvider } from '@sync-your-cookie/shared';
 import '@sync-your-cookie/ui/css';
 import { createRoot } from 'react-dom/client';

@@ -1,16 +1,19 @@
 import { editRemotePreference } from '@sync-your-cookie/storage/lib/remotePreferences';
 import { useStorageSuspense } from '@sync-your-cookie/shared';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
-import { Input, Label, Popover, PopoverContent, PopoverTrigger, Switch, SyncTooltip } from '@sync-your-cookie/ui';
-import { Eye, EyeOff, Info, Lock } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger, Switch } from '@sync-your-cookie/ui';
+import { Eye, EyeOff } from 'lucide-react';
 import React, { useState } from 'react';
 
 interface SettingsPopoverProps {
   trigger: React.ReactNode;
 }
 
+type PopTab = 'rhythm' | 'scope' | 'security';
+
 export function SettingsPopover({ trigger }: SettingsPopoverProps) {
   const settingsInfo = useStorageSuspense(settingsStorage);
+  const [tab, setTab] = useState<PopTab>('rhythm');
   const [openEye, setOpenEye] = useState(false);
 
   const handleCheckChange = (
@@ -30,201 +33,241 @@ export function SettingsPopover({ trigger }: SettingsPopoverProps) {
       void editRemotePreference('contextMenu', checked);
       return;
     }
-    settingsStorage.update({
-      [checkedKey]: checked,
-    });
+    void settingsStorage.update({ [checkedKey]: checked });
   };
 
   const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    settingsStorage.update({
-      encryptionPassword: e.target.value,
-    });
-  };
-
-  const handleToggleEye = () => {
-    setOpenEye(!openEye);
+    void settingsStorage.update({ encryptionPassword: e.target.value });
   };
 
   return (
     <Popover>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align="start" className="w-[360px] max-h-[80vh] overflow-y-auto">
-        <div className="grid gap-4">
-          <div className="space-y-2">
-            <h3 className="leading-none font-medium text-base">高级设置</h3>
-            <p className="text-muted-foreground text-sm">设置同步节奏、数据范围与加密。</p>
-          </div>
-          <div className="gap-2">
-            <div className="mb-4 space-y-3 border-b pb-4">
-              <p className="text-sm">双机交接与无感同步：自动识别你正在使用哪台电脑，换机瞬间接班同步。</p>
-              {(
-                [
-                  ['activeDeviceSync', '双机自动识别与单主交接（推荐）'],
-                  ['startupPull', '浏览器启动时自动拉取'],
-                  ['backgroundSync', '运行期间后台增量同步'],
-                ] as const
-              ).map(([key, label]) => (
-                <div key={key} className="flex items-center justify-between gap-2">
-                  <Label htmlFor={key}>{label}</Label>
-                  <Switch
-                    id={key}
-                    checked={settingsInfo[key] !== false}
-                    onCheckedChange={checked => handleCheckChange(checked, key)}
-                  />
+      <PopoverContent align="end" sideOffset={10} className="sbo-pop">
+        <div className="sbo-pop-head">
+          <h3 className="sbo-pop-title">高级设置</h3>
+          <span className="sbo-pop-kicker">PREFERENCES</span>
+        </div>
+
+        <div className="sbo-pop-tabs" role="tablist" aria-label="高级设置分区">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'rhythm'}
+            className="sbo-pop-tab"
+            onClick={() => setTab('rhythm')}>
+            <span className="sbo-pop-tab-num">01</span>
+            <span>同步节奏</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'scope'}
+            className="sbo-pop-tab"
+            onClick={() => setTab('scope')}>
+            <span className="sbo-pop-tab-num">02</span>
+            <span>数据范围</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'security'}
+            className="sbo-pop-tab"
+            onClick={() => setTab('security')}>
+            <span className="sbo-pop-tab-num">03</span>
+            <span>隐私加密</span>
+          </button>
+        </div>
+
+        <div className="sbo-pop-body" role="tabpanel">
+          {tab === 'rhythm' ? (
+            <>
+              <div className="sbo-pop-row">
+                <div className="sbo-pop-row-text">
+                  <label htmlFor="activeDeviceSync" className="sbo-pop-label">
+                    双机自动交接
+                  </label>
+                  <span className="sbo-pop-desc">识别正在使用的电脑单主上传，离开 90 秒后静默待机</span>
                 </div>
-              ))}
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="sync-interval">后台同步间隔（分钟）</Label>
-                <Input
+                <Switch
+                  id="activeDeviceSync"
+                  checked={settingsInfo.activeDeviceSync !== false}
+                  onCheckedChange={checked => handleCheckChange(checked, 'activeDeviceSync')}
+                />
+              </div>
+
+              <div className="sbo-pop-row">
+                <div className="sbo-pop-row-text">
+                  <label htmlFor="startupPull" className="sbo-pop-label">
+                    启动时自动拉取
+                  </label>
+                  <span className="sbo-pop-desc">打开浏览器后自动拉齐云端最新登录状态</span>
+                </div>
+                <Switch
+                  id="startupPull"
+                  checked={settingsInfo.startupPull !== false}
+                  onCheckedChange={checked => handleCheckChange(checked, 'startupPull')}
+                />
+              </div>
+
+              <div className="sbo-pop-row">
+                <div className="sbo-pop-row-text">
+                  <label htmlFor="backgroundSync" className="sbo-pop-label">
+                    后台增量同步
+                  </label>
+                  <span className="sbo-pop-desc">运行期间静默监听变化，双端改动时自动保留较新一侧</span>
+                </div>
+                <Switch
+                  id="backgroundSync"
+                  checked={settingsInfo.backgroundSync !== false}
+                  onCheckedChange={checked => handleCheckChange(checked, 'backgroundSync')}
+                />
+              </div>
+
+              <div className="sbo-pop-row">
+                <div className="sbo-pop-row-text">
+                  <label htmlFor="sync-interval" className="sbo-pop-label">
+                    检查间隔（分钟）
+                  </label>
+                  <span className="sbo-pop-desc">默认每 2 分钟合并检查一次（1–60）</span>
+                </div>
+                <input
                   id="sync-interval"
-                  className="w-20 h-8"
                   type="number"
                   min={1}
                   max={60}
+                  className="sbo-pop-num-input"
                   value={settingsInfo.syncIntervalMinutes ?? 2}
                   onChange={event => {
                     const value = Number(event.target.value);
-                    if (Number.isFinite(value) && value >= 1 && value <= 60)
+                    if (Number.isFinite(value) && value >= 1 && value <= 60) {
                       void editRemotePreference('syncIntervalMinutes', value);
+                    }
                   }}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                默认每 2 分钟合并改动，启动时立即拉取；两端同时变化时保留较新一侧。
-              </p>
-            </div>
-            <div className="flex items-center gap-4 mb-4">
-              <Label className="whitespace-nowrap block w-[136px] justify-end text-right" htmlFor="encoding">
-                Protobuf 编码
-              </Label>
-              <Switch
-                onCheckedChange={checked => handleCheckChange(checked, 'protobufEncoding')}
-                checked={settingsInfo.protobufEncoding}
-                id="encoding"
-              />
-            </div>
+            </>
+          ) : null}
 
-            <div className="flex items-center gap-4 mb-4">
-              <Label
-                className="items-center whitespace-nowrap flex w-[136px] justify-end text-right"
-                htmlFor="include">
-                包含 LocalStorage
-              </Label>
-              <div className="flex items-center gap-1">
+          {tab === 'scope' ? (
+            <>
+              <div className="sbo-pop-row">
+                <div className="sbo-pop-row-text">
+                  <label htmlFor="include" className="sbo-pop-label">
+                    包含 LocalStorage
+                  </label>
+                  <span className="sbo-pop-desc">同步网站本地登录凭证与偏好，页面断连时自动注入自愈</span>
+                </div>
                 <Switch
-                  onCheckedChange={checked => handleCheckChange(checked, 'includeLocalStorage')}
-                  checked={settingsInfo.includeLocalStorage}
                   id="include"
+                  checked={settingsInfo.includeLocalStorage}
+                  onCheckedChange={checked => handleCheckChange(checked, 'includeLocalStorage')}
                 />
-                <SyncTooltip title="开启后台同步后，已启用网站会定期检测 LocalStorage 变化；首次手动读取失败时可能刷新页面重试。">
-                  <Info className="mx-2" size={18} />
-                </SyncTooltip>
               </div>
-            </div>
 
-            <div className="flex items-start gap-4 mb-4">
-              <Label
-                className="items-center whitespace-nowrap flex w-[136px] justify-end text-right pt-0.5"
-                htmlFor="include-session">
-                包含 sessionStorage
-              </Label>
-              <div className="flex items-start gap-1">
+              <div className="sbo-pop-row">
+                <div className="sbo-pop-row-text">
+                  <label htmlFor="include-session" className="sbo-pop-label">
+                    包含 sessionStorage
+                  </label>
+                  <span className="sbo-pop-desc">默认关闭；按标签页生效，也可在弹窗为单个网站开启</span>
+                </div>
                 <Switch
-                  onCheckedChange={checked => handleCheckChange(checked, 'includeSessionStorage')}
-                  checked={settingsInfo.includeSessionStorage === true}
                   id="include-session"
+                  checked={settingsInfo.includeSessionStorage === true}
+                  onCheckedChange={checked => handleCheckChange(checked, 'includeSessionStorage')}
                 />
-                <SyncTooltip title="默认关闭：部分单页应用把会话状态放在 sessionStorage，开启后才能随同步走。它是逐标签页状态，敏感站点可能因为易变值增加上传次数；可在弹窗为单个网站单独开启。恢复时会刷新该网站页面一次。">
-                  <Info className="mx-2 mt-1" size={18} />
-                </SyncTooltip>
               </div>
-            </div>
 
-            <div className="flex items-start gap-4 mb-4">
-              <Label
-                className="items-center whitespace-nowrap flex w-[136px] justify-end text-right pt-0.5"
-                htmlFor="include-idb">
-                包含 IndexedDB
-              </Label>
-              <div className="flex items-start gap-1">
+              <div className="sbo-pop-row">
+                <div className="sbo-pop-row-text">
+                  <label htmlFor="include-idb" className="sbo-pop-label">
+                    包含 IndexedDB（实验）
+                  </label>
+                  <span className="sbo-pop-desc">仅同步小型对象仓库，自动跳过超大缓存，默认关闭</span>
+                </div>
                 <Switch
-                  onCheckedChange={checked => handleCheckChange(checked, 'includeIndexedDB')}
-                  checked={settingsInfo.includeIndexedDB === true}
                   id="include-idb"
+                  checked={settingsInfo.includeIndexedDB === true}
+                  onCheckedChange={checked => handleCheckChange(checked, 'includeIndexedDB')}
                 />
-                <SyncTooltip title="实验性。只同步体积较小的对象仓库（每库 ≤ 16 KB 级数据、每站点 ≤ 512 KB），跳过无法无损编码的值与超大仓库；恢复前要求页面已存在同名数据库，并会清空该仓库后重写。默认关闭；可在弹窗为单个网站开启。">
-                  <Info className="mx-2 mt-1" size={18} />
-                </SyncTooltip>
               </div>
-            </div>
 
-            <div className="flex items-center gap-4 mb-4">
-              <Label
-                className="items-center whitespace-nowrap flex w-[136px] justify-end text-right"
-                htmlFor="contextMenu">
-                显示右键菜单
-              </Label>
-              <div className="flex items-center gap-1">
+              <div className="sbo-pop-row">
+                <div className="sbo-pop-row-text">
+                  <label htmlFor="contextMenu" className="sbo-pop-label">
+                    显示右键菜单
+                  </label>
+                  <span className="sbo-pop-desc">在网页右键菜单中提供快速推送与拉取入口</span>
+                </div>
                 <Switch
-                  onCheckedChange={checked => handleCheckChange(checked, 'contextMenu')}
-                  checked={settingsInfo.contextMenu}
                   id="contextMenu"
+                  checked={settingsInfo.contextMenu}
+                  onCheckedChange={checked => handleCheckChange(checked, 'contextMenu')}
                 />
               </div>
-            </div>
+            </>
+          ) : null}
 
-            <div className="border-t pt-4 mt-2">
-              <div className="flex items-center gap-4 mb-4">
-                <Label
-                  className="items-center whitespace-nowrap flex w-[136px] justify-end text-right"
-                  htmlFor="encryption">
-                  <Lock size={14} className="mr-1" />
-                  端到端加密
-                </Label>
-                <div className="flex items-center gap-1">
-                  <Switch
-                    onCheckedChange={checked => handleCheckChange(checked, 'encryptionEnabled')}
-                    checked={settingsInfo.encryptionEnabled}
-                    disabled={!settingsInfo.protobufEncoding}
-                    id="encryption"
-                  />
-                  <SyncTooltip title="需开启 Protobuf 编码。上传前使用 AES-256-GCM 加密，两台电脑须设置相同的加密密码。">
-                    <Info className="mx-2" size={18} />
-                  </SyncTooltip>
+          {tab === 'security' ? (
+            <>
+              <div className="sbo-pop-row">
+                <div className="sbo-pop-row-text">
+                  <label htmlFor="encoding" className="sbo-pop-label">
+                    Protobuf 紧凑编码
+                  </label>
+                  <span className="sbo-pop-desc">大幅减小网盘体积，开启端到端加密前需保持启用</span>
                 </div>
+                <Switch
+                  id="encoding"
+                  checked={settingsInfo.protobufEncoding}
+                  onCheckedChange={checked => handleCheckChange(checked, 'protobufEncoding')}
+                />
               </div>
 
-              {settingsInfo.encryptionEnabled && settingsInfo.protobufEncoding && (
-                <div className="flex items-center gap-2">
-                  <Label
-                    className="items-center mr-2 whitespace-nowrap flex w-[136px] justify-end text-right"
-                    htmlFor="encryptionPassword">
-                    密码
-                  </Label>
-                  <Input
-                    type={openEye ? 'text' : 'password'}
-                    id="encryptionPassword"
-                    value={settingsInfo.encryptionPassword || ''}
-                    onChange={handlePasswordChange}
-                    className="h-8 flex-1"
-                    placeholder="输入加密密码"
-                  />
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => handleToggleEye()}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        handleToggleEye();
-                      }
-                    }}
-                    className="cursor-pointer mr-4">
-                    {openEye ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </span>
+              <div className="sbo-pop-row">
+                <div className="sbo-pop-row-text">
+                  <label htmlFor="encryption" className="sbo-pop-label">
+                    端到端加密
+                  </label>
+                  <span className="sbo-pop-desc">上传前使用 AES-256-GCM 加密，云端仅保存密文</span>
                 </div>
+                <Switch
+                  id="encryption"
+                  checked={settingsInfo.encryptionEnabled}
+                  disabled={!settingsInfo.protobufEncoding}
+                  onCheckedChange={checked => handleCheckChange(checked, 'encryptionEnabled')}
+                />
+              </div>
+
+              {settingsInfo.encryptionEnabled && settingsInfo.protobufEncoding ? (
+                <div className="pt-2">
+                  <label htmlFor="encryptionPassword" className="sbo-pop-desc block">
+                    加密密码（两台电脑需设置一致）
+                  </label>
+                  <div className="sbo-pop-pw-wrap">
+                    <input
+                      type={openEye ? 'text' : 'password'}
+                      id="encryptionPassword"
+                      value={settingsInfo.encryptionPassword || ''}
+                      onChange={handlePasswordChange}
+                      className="sbo-pop-pw-input"
+                      placeholder="输入端到端加密密码"
+                    />
+                    <button
+                      type="button"
+                      className="sbo-pop-eye"
+                      aria-label={openEye ? '隐藏密码' : '显示密码'}
+                      onClick={() => setOpenEye(prev => !prev)}>
+                      {openEye ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="sbo-pop-note">开启端到端加密后，网盘内只保存密文；加密密码仅保存在本机。</p>
               )}
-            </div>
-          </div>
+            </>
+          ) : null}
         </div>
       </PopoverContent>
     </Popover>
