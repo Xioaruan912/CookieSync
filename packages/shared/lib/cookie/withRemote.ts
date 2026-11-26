@@ -142,6 +142,10 @@ export const mergeAndWriteMultipleDomainCookies = async (
     writes.push(item);
   }
 
+  if (writes.length === 0) {
+    return [{ success: true, errors: [], unchanged: true }, oldCookieMap, adopted];
+  }
+
   const newDomainCookieMap = {
     ...(oldCookieMap.domainCookieMap || {}),
   };

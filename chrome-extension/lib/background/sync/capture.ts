@@ -135,12 +135,30 @@ async function captureNow(host: string, observed: StorageSnapshot | undefined, s
   if ((!baseline || (skipEmpty && !urgent)) && collected.isEmpty) return;
   if (skipEmpty) {
     // Passive page and expiry notifications cannot prove a logout. Protect a
-    // newer queued session as well as the last synced copy during shutdown.
+    // newer queued session as well as the last synced copy during shutdown,
+    // and never trigger a re-upload when cookies only passively expired.
     const identity = (cookie: { domain?: string | null; name?: string | null; path?: string | null }) =>
       `${cookie.domain || ''}\0${cookie.path || '/'}\0${cookie.name || ''}`;
     const localIds = new Set(collected.cookies.map(identity));
     const knownCookies = pending?.cookies || previous?.cookies;
     if (knownCookies?.some(cookie => cookie.session && !localIds.has(identity(cookie)))) return;
+    if (knownCookies?.length && collected.cookies.length < knownCookies.length) {
+      const knownByKey = new Map(knownCookies.map(cookie => [identity(cookie), cookie.value || '']));
+      const onlyPassiveRemovals = collected.cookies.every(
+        cookie => knownByKey.get(identity(cookie)) === (cookie.value || ''),
+      );
+      if (onlyPassiveRemovals) {
+        const ref = pending || previous;
+        const storageHash = (entry?: Parameters<typeof domainContentHash>[0]) =>
+          domainContentHash({
+            cookies: [],
+            localStorageItems: entry?.localStorageItems || [],
+            sessionStorageItems: entry?.sessionStorageItems || [],
+            indexedDBRecords: entry?.indexedDBRecords || [],
+          });
+        if ((await storageHash(collected)) === (await storageHash(ref))) return;
+      }
+    }
   }
 
   // Profile health tracking + Anti-Downgrade Login Guard (protects 115 from broken overwrites).
