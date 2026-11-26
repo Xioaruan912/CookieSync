@@ -1,30 +1,20 @@
-# CookieSync 油猴版
+# CookieSync 油猴版（手机 + PC 双端适配）
 
-[安装油猴脚本](https://raw.githubusercontent.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config.user.js) · [GitHub Releases](https://github.com/Xioaruan912/CookieSync/releases)
+[一键安装油猴脚本](https://raw.githubusercontent.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config.user.js) · [Chrome 扩展主分支](https://github.com/Xioaruan912/CookieSync)
 
-1. 安装新版 Tampermonkey，再打开上面的脚本安装链接。
-2. 打开任意允许脚本运行的 HTTPS 网页，从油猴菜单选择「CookieSync · 配置同步」。面板会在当前页打开，包含「概览」「WebDAV」「网站名单」「扩展偏好」四个栏目。
-3. 填写 HTTPS WebDAV 目录和用户名，点击「保存连接」。首次保存时，在浏览器对话框输入应用密码。对话框会显示输入内容。首次访问服务器时，油猴可能请求域名授权，只选择自己使用的 WebDAV 域名。
-4. 保存连接后会打开「同步概览」。首次点「立即同步」验证连接并完成服务器域名授权。之后可等待自动同步。应用密码保存在油猴本机存储中。
+专为**手机端浏览器**（如 iOS Userscripts / Stay、Android Tampermonkey / Kiwi / Via）与轻量 PC 浏览器打造的 CookieSync 配置同步脚本，与 Chrome 扩展共用同一份私人 WebDAV 配置。
 
-## 自动同步
+## 手机与 PC 体验升级（v2.0.0）
 
-1.1.0 起，打开普通 HTTPS 网页或切回已打开的网页时，脚本会检查是否该同步。默认每个 WebDAV 配置目录和账号在同一浏览器里每 30 分钟最多自动尝试一次，失败后也会限频。浏览器停在空白页或内部页面时，等打开普通 HTTPS 网页才会触发。打开油猴菜单的「CookieSync · 查看同步状态」可以看到最近一次结果。
+- **手机端底部抽屉 + PC 极简居中弹窗**：手机屏幕自动以贴合单手操作的底部抽屉呈现（支持安全区避让），PC 端以纯白/纯黑 Swiss-Tokyo 极简弹窗展示，自动跟随系统浅色/深色外观。
+- **检测到 Chrome 扩展自动让位**：在 PC 上如果同时装了 CookieSync Chrome 扩展和油猴脚本，油猴脚本会自动检测到扩展存在并**静默停用后台自动同步**，彻底避免两端同时写入冲突；手机端无扩展时正常自动运行。
 
-可在设置面板关闭「打开网页时自动同步」，再点「保存连接」。需要立即同步时，手动点「立即同步」。可用「输入或更换应用密码」更新已保存的密码。
+## 快速上手
 
-如果普通网页里看不到 CookieSync 菜单，先确认脚本版本至少为 1.4.0、脚本已启用，再检查 Chrome 的 Tampermonkey 扩展详情是否允许用户脚本，以及浏览器是否允许油猴在当前网站访问网页。调整后刷新页面。
+1. 在手机或 PC 浏览器安装 Tampermonkey（或兼容油猴管理器），点击上方「一键安装油猴脚本」。
+2. 打开任意 HTTPS 网页，在油猴菜单选择 **「CookieSync · 配置同步」**。
+3. 填入与 Chrome 扩展相同的私人 WebDAV 目录地址、用户名与应用密码，保存后即可双向同步网站名单与基础偏好。
 
-## 和 Chrome 扩展共用配置
+## 许可证与致谢
 
-Chrome 扩展的设置页里，将配置同步通道选择为「WebDAV 配置文件」。假设扩展 WebDAV 地址为 `https://dav.example.com/dav/`，远程文件路径是 `sync/cookies.txt`，那么油猴版的目录填 `https://dav.example.com/dav/sync/`。两端会读写同一个 `CookieSync-config-v1.json`。
-
-「网站名单」支持按域名片段搜索、按允许或暂停状态筛选。脚本面板显示自定义及暂停规则。扩展的内置名单继续由扩展管理。普通设置包括主题、Chrome 右键菜单开关和 Chrome 同步间隔。网站登录状态和站点存储由扩展负责。
-
-不同网站或设置的改动会合并。同一项发生冲突时按修改时间与修订号决定。服务器返回 HTTP 412 时，脚本会重新拉取并尝试合并。服务器缺少强 ETag 时，本机仍保留改动。建议使用支持条件写入的 WebDAV。
-
-## 更新
-
-保持油猴中该脚本的更新检查和自动安装更新开启。脚本通过 GitHub 的 `tampermonkey` 分支检查更新，发布新版本时须递增脚本头的 `@version`。Chrome 扩展继续在 `main` 分支发布。
-
-原项目 [sync-your-cookie](https://github.com/jackluson/sync-your-cookie) 由 [jackluson](https://github.com/jackluson) 创建，采用 MIT 许可证。
+基于 [jackluson/sync-your-cookie](https://github.com/jackluson/sync-your-cookie) 二次开发，采用 **MIT 许可证**。

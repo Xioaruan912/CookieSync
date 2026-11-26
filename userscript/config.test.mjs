@@ -148,3 +148,33 @@ test('edits from separate sites merge with the existing journal', async () => {
   await app.syncConfig(connection);
   assert.deepEqual(Object.keys(app.data.get(app.key).rules), ['old.example']);
 });
+
+test('maybeSync automatically yields when the CookieSync Chrome extension marker is present', async () => {
+  const sharedData = new Map([['webdav-connection', connection]]);
+  const requests = [];
+  const exports = {};
+  const gm = {
+    listValues: async () => [...sharedData.keys()],
+    getValues: async keys => Object.fromEntries(keys.filter(key => sharedData.has(key)).map(key => [key, structuredClone(sharedData.get(key))])),
+    getValue: async (key, fallback) => structuredClone(sharedData.get(key) ?? fallback),
+    setValue: async (key, value) => sharedData.set(key, structuredClone(value)),
+    xmlHttpRequest: async options => {
+      requests.push(options);
+      return { finalUrl: url, status: 200, responseText: JSON.stringify(payload()) };
+    },
+    registerMenuCommand: () => {},
+  };
+  vm.runInNewContext(source.replace("  start();", 'Object.assign(exports, { maybeSync });'), {
+    exports,
+    GM: gm,
+    URL,
+    TextEncoder,
+    btoa,
+    clearTimeout,
+    setTimeout,
+    crypto,
+    document: { documentElement: { hasAttribute: name => name === 'data-cookiesync-ext' } },
+  });
+  await exports.maybeSync();
+  assert.equal(requests.length, 0);
+});

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      1.7.0
+// @version      2.0.0
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
@@ -133,7 +133,15 @@
   }
 
   const dataKey = connection => 'config:' + JSON.stringify([destination(connection), connection.username.trim()]);
-  const withLock = action => navigator.locks.request('cookiesync-userscript-config', action);
+  let localLock = Promise.resolve();
+  const withLock = action => {
+    if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') {
+      return navigator.locks.request('cookiesync-userscript-config', action);
+    }
+    const next = localLock.then(action, action);
+    localLock = next.catch(() => {});
+    return next;
+  };
   const cacheKey = connection => dataKey(connection) + ':remote-cache';
   const scheduleKey = connection => dataKey(connection) + ':schedule';
   const statusKey = connection => dataKey(connection) + ':status';
@@ -171,9 +179,14 @@
     return message;
   }
 
+  function isExtensionActive() {
+    return typeof document !== 'undefined' && Boolean(document.documentElement?.hasAttribute?.('data-cookiesync-ext'));
+  }
+
   // GM storage is shared across sites, while Web Locks are scoped to an origin.
   // The shared claim coalesces restored tabs; conditional PUT handles any overlap.
   async function maybeSync() {
+    if (isExtensionActive()) return;
     const connection = await GM.getValue(connectionKey, null);
     if (!connection || connection.automatic === false) return;
     const key = scheduleKey(connection);
@@ -234,203 +247,184 @@
     stylesheet.replaceSync(`
       :host { all: initial }
       dialog {
-        --surface: #fcfaff; --recess: #f4eff8; --ink: #281f35; --muted: #62536f;
-        --line: #e3d9eb; --field: #8e7e9d; --accent: #55318e; --on-accent: #fff;
-        --selected: #ede3f6; --good: #276245; --warning: #795120; --error: #9b342e;
-        --hero: #f4edf9; --route: #e9ddf4; --device: #f8f3fc; --track: #a38ab9;
-        width: min(880px, calc(100vw - 32px)); max-width: none;
-        max-height: min(710px, calc(100dvh - 32px)); padding: 0; overflow: hidden;
-        border: 0; border-radius: 24px; background: var(--surface); color: var(--ink);
-        box-shadow: 0 24px 80px #26173457; color-scheme: light;
-        font: 15px/1.55 "Instrument Sans", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+        --surface: #ffffff; --recess: #ffffff; --ink: #000000; --muted: #666666;
+        --faint: #999999; --line: #e4e4e4; --line-strong: #111111;
+        --accent: #6f8dff; --accent-hover: #5b7bff; --on-accent: #ffffff;
+        --good: #16a34a; --warning: #d97706; --error: #dc2626;
+        width: min(820px, calc(100vw - 40px)); max-width: none;
+        max-height: min(680px, calc(100dvh - 40px)); padding: 0; overflow: hidden;
+        border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--ink);
+        box-shadow: 0 28px 72px -24px rgba(0, 0, 0, 0.22); color-scheme: light;
+        font: 14px/1.55 "Noto Sans SC", "PingFang SC", "Helvetica Neue", "Inter", -apple-system, sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
-      dialog[open] { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto }
-      dialog::backdrop { background: #26193685 }
+      dialog[open] { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto }
+      dialog::backdrop { background: rgba(0, 0, 0, 0.34); backdrop-filter: blur(4px) }
       *, *::before, *::after { box-sizing: border-box }
-      ::selection { color: var(--ink); background: var(--selected) }
       [hidden] { display: none !important }
       .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden;
         clip-path: inset(50%); white-space: nowrap }
       h2, h3, h4, p, dl, dd { margin: 0 }
       button, input, select { font: inherit; color: inherit }
+      .sheet-handle { display: none }
       .top, footer {
-        display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 24px;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 26px;
       }
       .top { border-bottom: 1px solid var(--line) }
-      .wordmark { display: flex; align-items: center; gap: 11px }
-      .brand-mark { position: relative; width: 32px; height: 32px; border-radius: 10px;
-        background: var(--selected); color: var(--accent); flex: none }
-      .brand-mark::before, .brand-mark::after { content: ""; position: absolute; width: 13px; height: 10px;
-        border: 2px solid currentColor; border-radius: 4px; transform: rotate(-35deg) }
-      .brand-mark::before { left: 7px; top: 13px }
-      .brand-mark::after { left: 12px; top: 8px }
-      #close { min-height: 44px; border: 0; background: transparent; color: var(--muted) }
-      #close:hover:enabled { background: var(--selected) }
-      .top h2 { font-size: 19px; font-weight: 750; letter-spacing: -.025em; line-height: 1.2 }
-      .top p { font-size: 12px }
-      nav { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--line);
-        padding: 0; background: var(--surface) }
-      button, input, select { min-height: 44px; border: 1px solid var(--field); border-radius: 10px;
-        background: var(--surface); padding: 7px 12px; min-width: 0 }
-      button { font-weight: 650; cursor: pointer }
-      button:hover:enabled:not([aria-disabled="true"]) { background: var(--selected) }
-      button:disabled, button[aria-disabled="true"] { opacity: .62; cursor: wait }
-      nav button { border: 0; border-radius: 0; background: transparent; color: var(--muted);
-        padding: 6px 4px }
-      nav button[aria-pressed="true"] { color: var(--accent) }
-      .nav-indicator { position: absolute; inset: auto auto 0 0; width: 25%; height: 3px; pointer-events: none;
-        background: var(--accent); transform: translateX(calc(var(--view-index, 0) * 100%)) }
+      .wordmark { display: flex; align-items: center; gap: 10px }
+      .brand-mark { width: 28px; height: 28px; flex: none; display: block }
+      .top h2 { font-size: 16px; font-weight: 500; letter-spacing: -.02em; line-height: 1.1 }
+      .top-sub { font-size: 11px; color: var(--faint); margin-left: 6px; font-weight: 400 }
+      .yield-banner {
+        padding: 10px 26px; border-bottom: 1px solid var(--line);
+        font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 8px;
+      }
+      .yield-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--good); flex: none }
+      nav {
+        display: flex; align-items: center; gap: 6px; padding: 12px 26px;
+        border-bottom: 1px solid var(--line); background: var(--surface);
+      }
+      button, input, select { min-height: 40px; min-width: 0 }
+      button {
+        padding: 8px 18px; border: 1px solid var(--line); border-radius: 999px;
+        background: transparent; color: var(--ink); font-size: 13px; font-weight: 400;
+        cursor: pointer; transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+      }
+      button:hover:enabled:not([aria-disabled="true"]) { border-color: var(--line-strong) }
+      button:disabled, button[aria-disabled="true"] { opacity: .48; cursor: wait }
+      #close { border-color: var(--line); color: var(--muted); padding: 6px 14px; min-height: 34px; font-size: 12.5px }
+      nav button {
+        border: 1px solid transparent; border-radius: 999px; background: transparent;
+        color: var(--muted); padding: 6px 14px; min-height: 34px; font-size: 13px;
+      }
+      nav button:hover:enabled { border-color: transparent; color: var(--ink) }
+      nav button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); font-weight: 500 }
       :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
-      nav button:focus-visible { outline-offset: -4px }
-      .content { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain;
-        scrollbar-color: var(--field) transparent }
-      section { display: grid; gap: 18px; align-content: start; padding: 24px; min-height: 340px }
-      .heading { display: grid; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--line) }
-      h3 { font-size: 25px; font-weight: 720; letter-spacing: -.03em; line-height: 1.2 }
-      h4 { font-size: 15px }
-      .hint, small { font-size: 13px; color: var(--muted); overflow-wrap: anywhere }
+      .content { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain }
+      section { display: grid; gap: 18px; align-content: start; padding: 26px; min-height: 320px }
+      .heading { display: grid; gap: 5px; padding-bottom: 14px; border-bottom: 1px solid var(--line) }
+      h3 { font-size: 24px; font-weight: 400; letter-spacing: -.03em; line-height: 1.15 }
+      h4 { font-size: 15px; font-weight: 400 }
+      .hint, small { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere }
       #overview { padding: 0; gap: 0 }
       .status-panel {
-        background: var(--hero); padding: 42px 36px; min-height: 286px;
-        display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .92fr);
-        align-items: center; gap: 28px;
+        padding: 36px 26px 30px; min-height: 248px;
+        display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+        align-items: center; gap: 32px;
       }
-      .result { display: grid; justify-items: start; gap: 11px; min-width: 0 }
+      .result { display: grid; justify-items: start; gap: 12px; min-width: 0 }
       .result h4 {
-        font-size: clamp(34px, 4.3vw, 55px); font-weight: 750; letter-spacing: -.04em;
+        font-size: clamp(28px, 3.6vw, 40px); font-weight: 400; letter-spacing: -.035em;
         line-height: 1.08; text-wrap: balance;
       }
-      .result p { color: var(--muted); font-size: 15px; max-width: 37ch; overflow-wrap: anywhere }
-      #overview-action {
-        margin-top: 5px; padding: 8px 19px; min-width: 112px; border-radius: 24px;
-      }
+      .result p { color: var(--muted); font-size: 13.5px; max-width: 38ch; overflow-wrap: anywhere; line-height: 1.6 }
+      #overview-action { margin-top: 4px; padding: 9px 22px; min-width: 118px }
       .sync-route {
         --signal: var(--accent);
-        display: grid; grid-template-columns: 64px minmax(28px, 1fr) 64px; column-gap: 8px;
-        align-items: start; min-width: 0; color: var(--muted); padding: 29px 18px 23px;
-        background: var(--route); border-radius: 16px;
+        display: flex; flex-direction: column; gap: 14px; padding: 22px 20px;
+        border-left: 1px solid var(--line); min-width: 0; color: var(--muted);
       }
       .sync-route[data-state="ok"] { --signal: var(--good) }
       .sync-route[data-state="error"] { --signal: var(--error) }
       .sync-route[data-pending] { --signal: var(--accent) }
-      .route-node { display: grid; gap: 11px; justify-items: center; min-width: 0; font-size: 13px; font-weight: 650 }
-      .device {
-        position: relative; display: block; width: 60px; height: 52px; border-radius: 14px;
-        border: 1px solid var(--track); background: var(--device); color: var(--signal);
+      .route-kicker { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint) }
+      .route-track { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--ink) }
+      .route-dots { flex: 1; display: flex; align-items: center; justify-content: space-evenly }
+      .route-dot { width: 5px; height: 5px; border-radius: 999px; background: var(--signal); opacity: .45 }
+      .route-sub { font-size: 12px; color: var(--faint) }
+      .overview-meta {
+        display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px; padding: 14px 26px; border-top: 1px solid var(--line);
       }
-      .device-local::before {
-        content: ""; position: absolute; inset: 12px 14px 15px; border-radius: 3px; border: 2px solid currentColor;
-      }
-      .device-local::after {
-        content: ""; position: absolute; inset: auto 11px 13px; height: 2px; background: currentColor;
-      }
-      .device-remote::before, .device-remote::after {
-        content: ""; position: absolute; inset: 12px 13px auto; height: 11px; border-radius: 3px;
-        border: 2px solid currentColor;
-      }
-      .device-remote::after { top: auto; bottom: 12px }
-      .device-light {
-        position: absolute; width: 3px; height: 3px; border-radius: 50%;
-        top: 16px; right: 18px; background: currentColor;
-      }
-      .device-local .device-light { display: none }
-      .route-line { position: relative; height: 2px; margin-top: 25px; background: var(--track) }
-      .route-mark {
-        position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%);
-        width: 29px; height: 29px; border-radius: 50%; border: 1px solid var(--track);
-        background: var(--device); color: var(--signal);
-      }
-      .route-mark::before, .route-mark::after {
-        content: ""; position: absolute; left: 7px; top: 9px; width: 13px; height: 4px;
-        background: currentColor; clip-path: polygon(0 28%, 68% 28%, 68% 0, 100% 50%, 68% 100%, 68% 72%, 0 72%);
-      }
-      .route-mark::after { top: 14px; transform: rotate(180deg) }
-      .route-pulse { position: absolute; inset: 0; opacity: 0; pointer-events: none }
-      .route-pulse::before {
-        content: ""; position: absolute; top: 50%; width: 12px; height: 4px; border-radius: 6px;
-        background: var(--signal); transform: translate(-50%, -50%);
-      }
-      .route-pulse--out::before { left: 0 }
-      .route-pulse--back::before { left: 100% }
-      .overview-meta { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) auto;
-        gap: 19px; padding: 12px 24px; border-top: 1px solid var(--line) }
-      .overview-meta button { justify-self: start }
       .details { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr) minmax(0, 1.2fr) }
-      .details div { padding: 8px 0; min-width: 0 }
-      .details div + div { border-inline-start: 1px solid var(--line); padding-inline: 12px 4px }
-      .details dt { font-size: 13px; color: var(--muted) }
-      .details dd { overflow-wrap: anywhere; font-size: 14px; font-weight: 650 }
+      .details div { padding: 4px 0; min-width: 0 }
+      .details div + div { border-inline-start: 1px solid var(--line); padding-inline: 14px 4px }
+      .details dt { font-size: 11.5px; color: var(--faint) }
+      .details dd { overflow-wrap: anywhere; font-size: 13.5px; font-weight: 500; margin-top: 2px }
       #last-sync { font-variant-numeric: tabular-nums }
-      .actions, .key-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px }
-      .fields { display: grid; gap: 14px }
-      label { display: grid; gap: 5px; min-width: 0; font-weight: 600 }
-      input, select { width: 100%; font-weight: 400; caret-color: var(--accent) }
-      input::placeholder { color: var(--muted); opacity: 1 }
-      input[aria-invalid="true"] { border-color: var(--error) }
-      .automatic { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-        padding: 12px 0; border-block: 1px solid var(--line); min-height: 54px }
-      .automatic small { display: block; font-weight: 400 }
-      #automatic { width: 20px; height: 20px; min-height: 20px; margin: 0; flex: none;
+      .actions, .key-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px }
+      .fields { display: grid; gap: 16px }
+      label { display: grid; gap: 6px; min-width: 0; font-size: 12.5px; color: var(--muted) }
+      input, select {
+        width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+        background: transparent; padding: 8px 0; font-size: 14px; color: var(--ink);
+        caret-color: var(--accent); outline: none; transition: border-color 150ms ease;
+      }
+      input:focus, select:focus { border-bottom-color: var(--line-strong) }
+      input::placeholder { color: var(--faint); opacity: 1 }
+      input[aria-invalid="true"] { border-bottom-color: var(--error) }
+      .automatic {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 14px 0; border-block: 1px solid var(--line); color: var(--ink); font-size: 13.5px;
+      }
+      .automatic small { display: block; font-size: 12px; color: var(--faint); margin-top: 2px }
+      #automatic { width: 18px; height: 18px; min-height: 18px; margin: 0; flex: none;
         accent-color: var(--accent); cursor: pointer }
-      .rule-editor { display: flex; gap: 8px; align-items: end; flex-wrap: wrap }
-      .rule-editor label { flex: 1 1 185px }
-      .rule-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px }
-      .rule-toolbar select { width: auto }
+      .rule-editor { display: flex; gap: 10px; align-items: end; flex-wrap: wrap }
+      .rule-editor label { flex: 1 1 200px }
+      .rule-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 110px; align-items: end; gap: 12px }
       .rules { list-style: none; padding: 0; margin: 0 }
-      .rules li { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-        padding: 12px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere }
-      .rule-state { flex: none; font-size: 13px; color: var(--good) }
+      .rules li {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 12px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; font-size: 13.5px;
+      }
+      .rule-state { flex: none; font-size: 12px; color: var(--good) }
       .rule-state[data-enabled="false"] { color: var(--warning) }
-      .primary { background: var(--accent); border-color: transparent; color: var(--on-accent) }
-      .primary:hover:enabled { background: var(--accent); filter: contrast(1.2) }
-      footer { border-top: 1px solid var(--line); background: var(--recess); min-height: 48px }
+      .primary { background: var(--accent); border-color: transparent; color: var(--on-accent); font-weight: 500 }
+      .primary:hover:enabled { background: var(--accent-hover); border-color: transparent }
+      footer { border-top: 1px solid var(--line); background: var(--surface); min-height: 52px }
       footer:has(#sync[hidden]):has(#status:is(:empty, [data-summary])) { display: none }
-      #status { color: var(--muted); min-width: 0; overflow-wrap: anywhere }
+      #status { color: var(--muted); min-width: 0; overflow-wrap: anywhere; font-size: 12.5px }
       #status[data-kind="error"], .field-error { color: var(--error) }
       #status[data-kind="success"] { color: var(--good) }
       #sync { flex: none }
       @media (prefers-reduced-motion: no-preference) {
-        dialog[open] { animation: open-panel .18s cubic-bezier(.2,.8,.2,1) }
-        button { transition: background-color .14s }
-        .nav-indicator { transition: transform .22s cubic-bezier(.2,.8,.2,1) }
-        .sync-route[data-pending="pointer"] .route-pulse--out { animation: route-pulse .68s ease-out both }
-        .sync-route[data-pending="pointer"] .route-pulse--back { animation: route-return .68s .12s ease-out both }
-        @keyframes route-pulse {
-          0% { transform: translateX(0); opacity: 0 }
-          14%, 76% { opacity: 1 }
-          100% { transform: translateX(100%); opacity: 0 }
+        dialog[open] { animation: open-panel .22s cubic-bezier(.2,.8,.2,1) }
+        .sync-route[data-state="ok"] .route-dot,
+        .sync-route[data-pending] .route-dot { animation: dot-wave 2s ease-in-out infinite }
+        .sync-route[data-pending] .route-dot { animation-duration: .75s }
+        .route-dot:nth-child(2) { animation-delay: .15s }
+        .route-dot:nth-child(3) { animation-delay: .3s }
+        .route-dot:nth-child(4) { animation-delay: .45s }
+        .route-dot:nth-child(5) { animation-delay: .6s }
+        .route-dot:nth-child(6) { animation-delay: .75s }
+        @keyframes dot-wave {
+          0%, 100% { opacity: .28; transform: scale(.85) }
+          50% { opacity: 1; transform: scale(1.25) }
         }
-        @keyframes route-return {
-          0% { transform: translateX(0); opacity: 0 }
-          14%, 76% { opacity: .72 }
-          100% { transform: translateX(-100%); opacity: 0 }
-        }
-        @keyframes open-panel { from { opacity: .5; transform: translateY(5px) } }
+        @keyframes open-panel { from { opacity: 0; transform: translateY(10px) } }
       }
       @media (prefers-color-scheme: dark) {
-        dialog { --surface: #211a2b; --recess: #271e33; --ink: #fcf4ff; --muted: #d2c2e0;
-          --line: #483b56; --field: #9584a8; --accent: #ddc0ff; --on-accent: #29163b;
-          --selected: #39274b; --good: #a2d4b5; --warning: #efc88f; --error: #ffb9b0;
-          --hero: #2a2036; --route: #3c2c4d; --device: #251c32; --track: #977fb0;
-          color-scheme: dark }
+        dialog {
+          --surface: #000000; --recess: #000000; --ink: #ffffff; --muted: #9a9a9a;
+          --faint: #666666; --line: #242424; --line-strong: #ffffff;
+          --accent: #7a96ff; --accent-hover: #8ea7ff; --on-accent: #ffffff;
+          --good: #30d158; --warning: #ff9f0a; --error: #ff453a;
+          box-shadow: 0 28px 80px -20px rgba(0, 0, 0, 0.85); color-scheme: dark;
+        }
+        select option { background: #111114; color: #ffffff }
       }
-      @media (max-width: 510px) {
-        dialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px) }
-        .sync-route { width: 100%; grid-template-columns: 60px minmax(28px, 1fr) 60px;
-          padding: 16px 13px 12px }
-        .overview-meta { grid-template-columns: minmax(0, 1fr); gap: 7px; padding: 10px 16px 14px }
-        .details div + div { padding-inline-start: 8px }
-        nav button { font-size: 13px }
-        .top, footer { padding: 8px 14px }
-        section { padding: 17px 14px; gap: 14px; min-height: 0 }
-        .status-panel { min-height: 0; padding: 22px 17px 16px; gap: 19px; grid-template-columns: minmax(0, 1fr) }
-        .result h4 { font-size: clamp(29px, 8vw, 38px) }
+      @media (max-width: 600px) {
+        dialog {
+          margin: auto 0 0 0; width: 100vw; max-height: 88dvh;
+          border-radius: 22px 22px 0 0; border-bottom: 0; border-inline: 0;
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+        .sheet-handle {
+          display: block; width: 38px; height: 4px; border-radius: 999px;
+          background: var(--line); margin: 10px auto 0;
+        }
+        .top { padding: 10px 18px 12px }
+        nav { padding: 10px 18px; overflow-x: auto }
+        nav button { flex: 1; padding: 7px 10px; font-size: 12.5px; white-space: nowrap }
+        .yield-banner { padding: 10px 18px }
+        section { padding: 18px; gap: 16px; min-height: 0 }
+        .status-panel { min-height: 0; padding: 22px 18px 18px; gap: 20px; grid-template-columns: minmax(0, 1fr) }
+        .sync-route { border-left: 0; border-top: 1px solid var(--line); padding: 16px 0 0 }
+        .overview-meta { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px 18px 16px }
+        .details div + div { padding-inline-start: 10px }
         .rule-editor label { flex-basis: 100% }
-      }
-      @media (forced-colors: active) {
-        dialog { border: 1px solid CanvasText }
-        .nav-indicator, .brand-mark, .route-line, .route-mark::before, .route-mark::after,
-        .device-local::after, .device-light { background: Highlight; forced-color-adjust: none }
+        footer { padding: 12px 18px }
       }
     `);
     root.adoptedStyleSheets = [stylesheet];
@@ -460,18 +454,34 @@
     overviewAction.className = 'primary';
     const lastSync = element('time', { id: 'last-sync', hidden: '' });
     const noSyncTime = element('span', { id: 'no-sync-time' }, '尚无记录');
-    const routeNode = (kind, title) => element('div', { class: 'route-node' },
-      element('span', { class: 'device device-' + kind }, element('span', { class: 'device-light' })),
-      element('span', {}, title),
+    const svgEl = (tag, attrs = {}, ...children) => {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+      node.append(...children);
+      return node;
+    };
+    const brandLogo = svgEl('svg', { viewBox: '0 0 512 512', class: 'brand-mark', 'aria-hidden': 'true' },
+      svgEl('rect', { x: 16, y: 16, width: 480, height: 480, rx: 116, fill: '#0E0E12' }),
+      svgEl('path', { d: 'M 334 156 A 126 126 0 1 0 198 368', stroke: '#FFFFFF', 'stroke-width': 46, 'stroke-linecap': 'round', fill: 'none' }),
+      svgEl('path', { d: 'M 178 356 A 126 126 0 0 0 378 242', stroke: '#6F8DFF', 'stroke-width': 46, 'stroke-linecap': 'round', fill: 'none' }),
+      svgEl('circle', { cx: 256, cy: 256, r: 16, fill: '#FFFFFF' }),
+      svgEl('circle', { cx: 364, cy: 186, r: 15, fill: '#6F8DFF' }),
     );
     const route = element('div', { class: 'sync-route', 'aria-hidden': 'true' },
-      routeNode('local', '本机'),
-      element('div', { class: 'route-line' },
-        element('span', { class: 'route-mark' }),
-        element('span', { class: 'route-pulse route-pulse--out' }),
-        element('span', { class: 'route-pulse route-pulse--back' }),
+      element('span', { class: 'route-kicker' }, 'SYNC PIPELINE'),
+      element('div', { class: 'route-track' },
+        element('span', {}, '本机'),
+        element('div', { class: 'route-dots' },
+          element('span', { class: 'route-dot' }),
+          element('span', { class: 'route-dot' }),
+          element('span', { class: 'route-dot' }),
+          element('span', { class: 'route-dot' }),
+          element('span', { class: 'route-dot' }),
+          element('span', { class: 'route-dot' }),
+        ),
+        element('span', {}, 'WebDAV'),
       ),
-      routeNode('remote', 'WebDAV'),
+      element('span', { class: 'route-sub' }, '与 Chrome 扩展共用同一份私人云端配置'),
     );
     const content = element('div', { class: 'content' },
       section('overview',
@@ -530,14 +540,20 @@
     );
     const syncButton = button('sync', '立即同步');
     syncButton.className = 'primary';
+    const extYieldBanner = element('div', { class: 'yield-banner', ...(isExtensionActive() ? {} : { hidden: '' }) },
+      element('span', { class: 'yield-dot', 'aria-hidden': 'true' }),
+      element('span', {}, '已检测到 CookieSync Chrome 扩展正在运行，油猴版自动同步已静默让位，避免重复同步。'),
+    );
     const dialog = element('dialog', { 'aria-labelledby': 'title', lang: 'zh-CN' },
+      element('div', { class: 'sheet-handle', 'aria-hidden': 'true' }),
       element('header', { class: 'top' },
         element('div', { class: 'wordmark' },
-          element('span', { class: 'brand-mark', 'aria-hidden': 'true' }),
-          element('h2', { id: 'title' }, 'CookieSync'),
+          brandLogo,
+          element('h2', { id: 'title' }, 'CookieSync', element('span', { class: 'top-sub' }, '油猴版')),
         ),
         button('close', '关闭'),
       ),
+      extYieldBanner,
       navigation,
       content,
       element('footer', {},
@@ -545,7 +561,7 @@
         syncButton,
       ),
     );
-    const views = [['overview', '概览'], ['webdav', 'WebDAV'], ['sites', '网站名单'], ['preferences', '扩展偏好']];
+    const views = [['overview', '概览'], ['webdav', '连接'], ['sites', '名单'], ['preferences', '偏好']];
     let current;
     let view = 'webdav';
     let rules = [];
@@ -566,7 +582,6 @@
       control.onclick = event => { if (event.isTrusted) showView(id); };
       navigation.append(control);
     }
-    navigation.append(element('span', { class: 'nav-indicator', 'aria-hidden': 'true' }));
     root.append(dialog);
     showView('webdav');
     get('automatic').checked = true;
@@ -789,13 +804,19 @@
 
   function start() {
     if (GM_info.isIncognito) return;
-    GM.registerMenuCommand('CookieSync · 配置同步', openPanel);
+    const extRunning = isExtensionActive();
+    GM.registerMenuCommand(extRunning ? 'CookieSync · 配置同步（已让位给扩展）' : 'CookieSync · 配置同步', openPanel);
     GM.registerMenuCommand('CookieSync · 查看同步状态', async () => {
+      if (isExtensionActive()) {
+        alert('已检测到 CookieSync Chrome 扩展正在运行，油猴版已自动静默让位。');
+        return;
+      }
       const connection = await GM.getValue(connectionKey, null);
       alert(connection ? statusText(await GM.getValue(statusKey(connection), null)) : '请先保存 WebDAV 连接');
     });
+    if (extRunning) return;
     const trigger = () => {
-      if (!document.hidden) void maybeSync().catch(() => {});
+      if (!document.hidden && !isExtensionActive()) void maybeSync().catch(() => {});
     };
     document.addEventListener('visibilitychange', trigger);
     trigger();
