@@ -1,5 +1,5 @@
 import { useGSAP } from '@gsap/react';
-import type { OverviewRow } from '@sync-your-cookie/shared';
+import { useLocale, type OverviewRow } from '@sync-your-cookie/shared';
 import { Button } from '@sync-your-cookie/ui';
 import gsap from 'gsap';
 import { ArrowDownToLine, ArrowUpFromLine, Loader2 } from 'lucide-react';
@@ -11,23 +11,24 @@ gsap.registerPlugin(useGSAP);
 export const siteNeedsAttention = (site: OverviewRow) =>
   site.attention.some(hint => hint !== 'paused' && hint !== 'truncated') || !!site.error || !!site.retryError;
 
-const rulesLabel = (site: OverviewRow) => {
-  if (!site.listed) return '名单外';
-  if (site.paused) return '已暂停';
-  if (site.autoPull && site.autoPush) return '双向同步';
-  return site.autoPush ? '仅自动推送' : '仅自动拉取';
+const rulesLabel = (site: OverviewRow, isEn: boolean) => {
+  if (!site.listed) return isEn ? 'Unlisted' : '名单外';
+  if (site.paused) return isEn ? 'Paused' : '已暂停';
+  if (site.autoPull && site.autoPush) return isEn ? 'Two-way sync' : '双向同步';
+  return site.autoPush ? (isEn ? 'Auto-push only' : '仅自动推送') : isEn ? 'Auto-pull only' : '仅自动拉取';
 };
 
 export function SiteState({ site, connected }: { site: OverviewRow; connected: boolean }) {
-  let badge = { label: rulesLabel(site), tone: 'muted' };
+  const { isEn } = useLocale();
+  let badge = { label: rulesLabel(site, isEn), tone: 'muted' };
   if (site.listed && !site.paused) {
-    if (site.uploadState === 'uploading') badge = { label: '上传中', tone: 'uploading' };
-    else if (site.uploadState === 'retry' && site.autoPush) badge = { label: '失败待重试', tone: 'warn' };
-    else if (site.error) badge = { label: '同步异常', tone: 'warn' };
-    else if (site.health?.state === 'invalid') badge = { label: '会话失效', tone: 'warn' };
-    else if (!connected) badge = { label: '等待连接', tone: 'muted' };
-    else if (site.pending && site.autoPush) badge = { label: '排队', tone: 'pending' };
-    else if (site.lastPushAt || site.lastPullAt) badge = { label: '已同步', tone: 'live' };
+    if (site.uploadState === 'uploading') badge = { label: isEn ? 'Uploading' : '上传中', tone: 'uploading' };
+    else if (site.uploadState === 'retry' && site.autoPush) badge = { label: isEn ? 'Retry pending' : '失败待重试', tone: 'warn' };
+    else if (site.error) badge = { label: isEn ? 'Sync error' : '同步异常', tone: 'warn' };
+    else if (site.health?.state === 'invalid') badge = { label: isEn ? 'Session expired' : '会话失效', tone: 'warn' };
+    else if (!connected) badge = { label: isEn ? 'Waiting' : '等待连接', tone: 'muted' };
+    else if (site.pending && site.autoPush) badge = { label: isEn ? 'Queued' : '排队', tone: 'pending' };
+    else if (site.lastPushAt || site.lastPullAt) badge = { label: isEn ? 'Synced' : '已同步', tone: 'live' };
   }
   return (
     <span className="overview-site-state" data-tone={badge.tone}>
@@ -37,20 +38,22 @@ export function SiteState({ site, connected }: { site: OverviewRow; connected: b
   );
 }
 
-const displayDate = (time?: number) =>
+const displayDate = (isEn: boolean, time?: number) =>
   time
-    ? new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(
+    ? new Intl.DateTimeFormat(isEn ? 'en-US' : 'zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(
         time,
       )
-    : '尚无记录';
+    : isEn
+      ? 'No record'
+      : '尚无记录';
 
 type DetailTab = 'state' | 'storage' | 'history' | 'issues';
 
-const detailTabs: [DetailTab, string][] = [
-  ['state', '状态'],
-  ['storage', '存储'],
-  ['history', '记录'],
-  ['issues', '异常'],
+const detailTabs: [DetailTab, string, string][] = [
+  ['state', '状态', 'Status'],
+  ['storage', '存储', 'Storage'],
+  ['history', '记录', 'History'],
+  ['issues', '异常', 'Issues'],
 ];
 
 interface Props {
@@ -63,6 +66,7 @@ interface Props {
 }
 
 export function OverviewSiteDetails({ site, connected, blocked, working, animate, onTransfer }: Props) {
+  const { isEn, t } = useLocale();
   const section = useRef<HTMLDivElement>(null);
   const confirmButton = useRef<HTMLButtonElement>(null);
   const lastAction = useRef<TransferDirection>();
@@ -117,27 +121,32 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
     setConfirm(undefined);
   };
 
-  const healthLabel = site.health?.state === 'ok' ? '有效' : site.health?.state === 'invalid' ? '失效' : '未验证';
+  const healthLabel =
+    site.health?.state === 'ok'
+      ? t('有效', 'Valid')
+      : site.health?.state === 'invalid'
+        ? t('失效', 'Expired')
+        : t('未验证', 'Unchecked');
   const rows =
     tab === 'storage'
       ? [
           ['Cookie', site.cached?.cookies ?? 0],
-          ['本地存储', site.cached?.localStorageItems ?? 0],
-          ['会话存储', site.cached?.sessionStorageItems ?? 0],
+          [t('本地存储', 'LocalStorage'), site.cached?.localStorageItems ?? 0],
+          [t('会话存储', 'SessionStorage'), site.cached?.sessionStorageItems ?? 0],
           ['IndexedDB', site.cached?.indexedDBRecords ?? 0],
-          ...(skippedCount > 0 ? [['已跳过超大缓存', `${skippedCount} 项（不影响登录）`]] : []),
-          ...(skippedIdb.length > 0 ? [['已跳过 IDB 仓库', skippedIdb.join('、')]] : []),
+          ...(skippedCount > 0 ? [[t('已跳过超大缓存', 'Skipped oversized items'), t(`${skippedCount} 项（不影响登录）`, `${skippedCount} items (login unaffected)`)]] : []),
+          ...(skippedIdb.length > 0 ? [[t('已跳过 IDB 仓库', 'Skipped IDB stores'), skippedIdb.join(', ')]] : []),
         ]
       : tab === 'history'
         ? [
-            ['最近推送', displayDate(site.lastPushAt)],
-            ['最近拉取', displayDate(site.lastPullAt)],
+            [t('最近推送', 'Last push'), displayDate(isEn, site.lastPushAt)],
+            [t('最近拉取', 'Last pull'), displayDate(isEn, site.lastPullAt)],
           ]
         : [
-            ['同步状态', <SiteState site={site} connected={connected} />],
-            ['同步方向', rulesLabel(site)],
-            ['最近同步', displayDate(Math.max(site.lastPushAt || 0, site.lastPullAt || 0))],
-            ...(site.health ? [['登录状态', healthLabel]] : []),
+            [t('同步状态', 'Sync status'), <SiteState site={site} connected={connected} />],
+            [t('同步方向', 'Sync mode'), rulesLabel(site, isEn)],
+            [t('最近同步', 'Last sync'), displayDate(isEn, Math.max(site.lastPushAt || 0, site.lastPullAt || 0))],
+            ...(site.health ? [[t('登录状态', 'Session health'), healthLabel]] : []),
           ];
 
   const visibleTabs = detailTabs.filter(([key]) => key !== 'issues' || hasIssues);
@@ -149,8 +158,8 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
         <strong title={site.domain}>{site.domain}</strong>
       </div>
 
-      <div className="overview-segment" role="group" aria-label="详情分组">
-        {visibleTabs.map(([key, label], index) => (
+      <div className="overview-segment" role="group" aria-label={t('详情分组', 'Detail tabs')}>
+        {visibleTabs.map(([key, label, enLabel], index) => (
           <button
             type="button"
             key={key}
@@ -161,7 +170,7 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
               setTab(key);
               setConfirm(undefined);
             }}>
-            {label}
+            {isEn ? enLabel : label}
           </button>
         ))}
       </div>
@@ -169,7 +178,9 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
       <div className="overview-inspector-body">
         {confirm ? (
           <p role="status" className="overview-confirm-text">
-            {confirm === 'push' ? '将当前站点的数据合并到云端。' : '将把云端数据应用到本机，并刷新该站点已打开的页面。'}
+            {confirm === 'push'
+              ? t('将当前站点的数据合并到云端。', 'Merge this site’s local session into the cloud snapshot.')
+              : t('将把云端数据应用到本机，并刷新该站点已打开的页面。', 'Restore the cloud session locally and reload open tabs for this site.')}
           </p>
         ) : tab === 'issues' && hasIssues ? (
           <ul className="overview-issues">
@@ -199,7 +210,7 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
               disabled={disabled}
               onClick={() => void complete()}>
               {working ? <Loader2 className="overview-spinner" size={14} aria-hidden="true" /> : null}
-              {working ? '处理中…' : confirm === 'push' ? '确认推送' : '确认拉取'}
+              {working ? t('处理中…', 'Working…') : confirm === 'push' ? t('确认推送', 'Confirm Push') : t('确认拉取', 'Confirm Pull')}
             </Button>
             <Button
               size="sm"
@@ -207,7 +218,7 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
               className="ov-btn-outline"
               disabled={!!working}
               onClick={() => setConfirm(undefined)}>
-              取消
+              {t('取消', 'Cancel')}
             </Button>
           </>
         ) : (
@@ -222,7 +233,7 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
                 setConfirm('push');
               }}>
               <ArrowUpFromLine size={14} aria-hidden="true" />
-              推送到云端
+              {t('推送到云端', 'Push to Cloud')}
             </Button>
             <Button
               size="sm"
@@ -235,7 +246,7 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
                 setConfirm('pull');
               }}>
               <ArrowDownToLine size={14} aria-hidden="true" />
-              拉取到本机
+              {t('拉取到本机', 'Pull to Device')}
             </Button>
           </>
         )}

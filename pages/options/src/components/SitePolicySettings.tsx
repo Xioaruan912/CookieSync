@@ -1,5 +1,5 @@
 import { useGSAP } from '@gsap/react';
-import { useStorageSuspense } from '@sync-your-cookie/shared';
+import { useLocale, useStorageSuspense } from '@sync-your-cookie/shared';
 import { commonSites, isSiteAllowed } from '@sync-your-cookie/storage/lib/commonSites';
 import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
@@ -15,6 +15,7 @@ type SitesSlide = 'builtin' | 'custom' | 'paused';
 const PAGE_SIZE = 15;
 
 export function SitePolicySettings() {
+  const { t } = useLocale();
   const rules = useSyncExternalStore(sitePolicyStorage.subscribe, sitePolicyStorage.getSnapshot) || {};
   const config = useStorageSuspense(domainConfigStorage);
   const settings = useStorageSuspense(settingsStorage);
@@ -102,10 +103,10 @@ export function SitePolicySettings() {
 
   const channel =
     settings.configChannel === 'webdav'
-      ? '名单随 Chrome 账号同步，并经私人网盘在双机间合并'
+      ? t('名单随 Chrome 账号同步，并经私人网盘在双机间合并', 'Allowlist syncs via Chrome Sync & WebDAV')
       : settings.configChannel === 'off'
-        ? '配置同步已关闭，名单仅保存在本机'
-        : '名单随 Chrome 账号自动同步';
+        ? t('配置同步已关闭，名单仅保存在本机', 'Config sync off — allowlist stays local')
+        : t('名单随 Chrome 账号自动同步', 'Allowlist syncs via Chrome Sync');
 
   const save = async (host: string, enabled: boolean, added = false) => {
     setPendingRule({ host, enabled });
@@ -142,7 +143,7 @@ export function SitePolicySettings() {
             className="sites-deck-tab"
             onClick={() => setSlide('builtin')}>
             <span className="sites-deck-tab-num">01</span>
-            <span>内置名单</span>
+            <span>{t('内置名单', 'Built-in')}</span>
             <span className="sites-deck-tab-count">{commonSites.length}</span>
           </button>
           <button
@@ -152,7 +153,7 @@ export function SitePolicySettings() {
             className="sites-deck-tab"
             onClick={() => setSlide('custom')}>
             <span className="sites-deck-tab-num">02</span>
-            <span>自定义规则</span>
+            <span>{t('自定义规则', 'Custom Rules')}</span>
             <span className="sites-deck-tab-count">{custom.length}</span>
           </button>
           <button
@@ -162,7 +163,7 @@ export function SitePolicySettings() {
             className="sites-deck-tab"
             onClick={() => setSlide('paused')}>
             <span className="sites-deck-tab-num">03</span>
-            <span>已暂停</span>
+            <span>{t('已暂停', 'Paused')}</span>
             <span className="sites-deck-tab-count">{paused.length}</span>
           </button>
         </div>
@@ -178,13 +179,13 @@ export function SitePolicySettings() {
                   <input
                     type="text"
                     className="sites-search-input"
-                    aria-label="搜索内置网站"
-                    placeholder="搜索名称、域名或分类…"
+                    aria-label={t('搜索内置网站', 'Search built-in sites')}
+                    placeholder={t('搜索名称、域名或分类…', 'Search name, domain, or category…')}
                     value={search}
                     onChange={event => setSearch(event.target.value)}
                   />
                 </div>
-                <div className="sites-cat-pills" role="group" aria-label="网站分类筛选">
+                <div className="sites-cat-pills" role="group" aria-label={t('网站分类筛选', 'Filter by category')}>
                   {categories.map(cat => (
                     <button
                       key={cat}
@@ -192,14 +193,14 @@ export function SitePolicySettings() {
                       className="sites-cat-pill"
                       aria-pressed={category === cat}
                       onClick={() => setCategory(cat)}>
-                      {cat}
+                      {cat === '全部' ? t('全部', 'All') : cat}
                     </button>
                   ))}
                 </div>
               </div>
 
               {pageItems.length > 0 ? (
-                <div className="sites-grid" aria-label="内置网站列表">
+                <div className="sites-grid" aria-label={t('内置网站列表', 'Built-in sites')}>
                   {pageItems.map(site => {
                     const enabled =
                       pendingRule?.host === site.domain ? pendingRule.enabled : isSiteAllowed(site.domain, rules);
@@ -218,7 +219,7 @@ export function SitePolicySettings() {
                           disabled={busy}
                           onClick={() => void save(site.domain, !enabled)}>
                           <span className="sites-dot" data-on={enabled} aria-hidden="true" />
-                          {enabled ? '已启用' : '已停用'}
+                          {enabled ? t('已启用', 'Enabled') : t('已停用', 'Disabled')}
                         </button>
                       </div>
                     );
@@ -226,7 +227,7 @@ export function SitePolicySettings() {
                 </div>
               ) : (
                 <div className="sites-empty">
-                  没有匹配网站，可切到「02 自定义规则」添加任意域名。
+                  {t('没有匹配网站，可切到「02 自定义规则」添加任意域名。', 'No matching sites. Switch to "02 Custom Rules" to add any domain.')}
                 </div>
               )}
             </>
@@ -235,9 +236,12 @@ export function SitePolicySettings() {
           {slide === 'custom' ? (
             <div className="sites-split">
               <div className="sites-col-left">
-                <h2 className="sites-lead">添加自定义同步域名</h2>
+                <h2 className="sites-lead">{t('添加自定义同步域名', 'Add Custom Domain')}</h2>
                 <p className="sites-desc">
-                  输入根域名后会自动覆盖其子域名，更具体的规则优先。取消勾选即可停用，记录会保留以便在双机间同步。
+                  {t(
+                    '输入根域名后会自动覆盖其子域名，更具体的规则优先。取消勾选即可停用，记录会保留以便在双机间同步。',
+                    'Adding a root domain covers its subdomains automatically. More specific rules take precedence.',
+                  )}
                 </p>
                 <form
                   className="sites-add-form"
@@ -248,19 +252,19 @@ export function SitePolicySettings() {
                   <input
                     type="text"
                     className="sites-add-input"
-                    aria-label="自定义自动同步域名"
-                    placeholder="例如 example.com 或粘贴完整网址"
+                    aria-label={t('自定义自动同步域名', 'Custom domain')}
+                    placeholder={t('例如 example.com 或粘贴完整网址', 'e.g. example.com or full URL')}
                     value={domain}
                     onChange={event => setDomain(event.target.value)}
                   />
                   <button type="submit" className="sites-pill-primary" disabled={busy || !domain.trim()}>
                     <Plus size={15} aria-hidden="true" />
-                    添加网站
+                    {t('添加网站', 'Add Site')}
                   </button>
                 </form>
               </div>
 
-              <div className="sites-col-right" aria-label="自定义网站">
+              <div className="sites-col-right" aria-label={t('自定义网站', 'Custom sites')}>
                 {custom.length > 0 ? (
                   custom.map(host => {
                     const enabled = pendingRule?.host === host ? pendingRule.enabled : isSiteAllowed(host, rules);
@@ -268,10 +272,12 @@ export function SitePolicySettings() {
                       <div key={host} className="sites-row">
                         <div className="sites-row-main">
                           <span className="sites-row-name">{host}</span>
-                          <span className="sites-row-meta">{enabled ? '自动同步中' : '已停用（保留跨机记录）'}</span>
+                          <span className="sites-row-meta">
+                            {enabled ? t('自动同步中', 'Auto-syncing') : t('已停用（保留跨机记录）', 'Disabled (synced rule kept)')}
+                          </span>
                         </div>
                         <Switch
-                          aria-label={`切换 ${host} 自动同步`}
+                          aria-label={`Toggle ${host}`}
                           checked={enabled}
                           disabled={busy}
                           onCheckedChange={checked => void save(host, checked)}
@@ -280,7 +286,9 @@ export function SitePolicySettings() {
                     );
                   })
                 ) : (
-                  <div className="sites-empty">暂无自定义域名，在左侧输入域名即可添加。</div>
+                  <div className="sites-empty">
+                    {t('暂无自定义域名，在左侧输入域名即可添加。', 'No custom domains yet. Add one on the left.')}
+                  </div>
                 )}
               </div>
             </div>
@@ -289,31 +297,36 @@ export function SitePolicySettings() {
           {slide === 'paused' ? (
             <div className="sites-split">
               <div className="sites-col-left">
-                <h2 className="sites-lead">名单外已暂停站点</h2>
+                <h2 className="sites-lead">{t('名单外已暂停站点', 'Paused Unlisted Sites')}</h2>
                 <p className="sites-desc">
-                  不在内置 300 站点与自定义规则内的旧站点会自动暂停后台收发，但本地与云端数据都会安全保留，你随时可以一键恢复。
+                  {t(
+                    '不在内置 300 站点与自定义规则内的旧站点会自动暂停后台收发，但本地与云端数据都会安全保留，你随时可以一键恢复。',
+                    'Older sites outside the built-in list and custom rules pause background sync while keeping local and cloud snapshots safe.',
+                  )}
                 </p>
               </div>
 
-              <div className="sites-col-right" aria-label="名单外已暂停网站">
+              <div className="sites-col-right" aria-label={t('名单外已暂停网站', 'Paused sites')}>
                 {paused.length > 0 ? (
                   paused.map(host => (
                     <div key={host} className="sites-row">
                       <div className="sites-row-main">
                         <span className="sites-row-name">{host}</span>
-                        <span className="sites-row-meta">仅暂停自动同步 · 手动推拉仍可用</span>
+                        <span className="sites-row-meta">
+                          {t('仅暂停自动同步 · 手动推拉仍可用', 'Auto-sync paused · Manual push/pull still available')}
+                        </span>
                       </div>
                       <button
                         type="button"
                         className="sites-toggle-btn"
                         disabled={busy}
                         onClick={() => void save(host, true)}>
-                        恢复自动同步
+                        {t('恢复自动同步', 'Resume Auto-Sync')}
                       </button>
                     </div>
                   ))
                 ) : (
-                  <div className="sites-empty">当前没有已暂停的名单外站点。</div>
+                  <div className="sites-empty">{t('当前没有已暂停的名单外站点。', 'No paused unlisted sites.')}</div>
                 )}
               </div>
             </div>
@@ -323,7 +336,9 @@ export function SitePolicySettings() {
 
       <div className="sites-rail">
         <p className="sites-rail-note" role="status">
-          {message ? `${message} · ${channel}` : `${channel} · 共 ${filtered.length} 个匹配站点`}
+          {message
+            ? `${message} · ${channel}`
+            : `${channel} · ${t(`共 ${filtered.length} 个匹配站点`, `${filtered.length} matching sites`)}`}
         </p>
 
         {slide === 'builtin' ? (

@@ -1,5 +1,5 @@
 import { useGSAP } from '@gsap/react';
-import { RuntimeMessageType, useStorageSuspense, type OverviewRow } from '@sync-your-cookie/shared';
+import { RuntimeMessageType, useLocale, useStorageSuspense, type OverviewRow } from '@sync-your-cookie/shared';
 import { accountStorage, isLegacyProvider } from '@sync-your-cookie/storage/lib/accountStorage';
 import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
@@ -30,9 +30,9 @@ interface OverviewPayload {
 }
 
 const filters = [
-  ['all', '全部'],
-  ['attention', '待处理'],
-  ['paused', '已暂停'],
+  ['all', '全部', 'All'],
+  ['attention', '待处理', 'Attention'],
+  ['paused', '已暂停', 'Paused'],
 ] as const;
 type Filter = (typeof filters)[number][0];
 type Operation = { direction: TransferDirection; domain?: string };
@@ -40,6 +40,7 @@ type Dialog = { kind: 'site'; domain: string } | { kind: 'bulk'; direction?: Tra
 const narrowLayout = '(max-width: 820px), (max-height: 560px)';
 
 export function OverviewPanel() {
+  const { isEn, t } = useLocale();
   const account = useStorageSuspense(accountStorage);
   const status = useStorageSuspense(autoSyncStatusStorage);
   const webdav = useStorageSuspense(webdavStorage);
@@ -233,10 +234,10 @@ export function OverviewPanel() {
       <DeviceStatus connected={connected} busy={!!operation} operation={operation?.direction} onSync={load} />
 
       <div className="overview-desk">
-        <section ref={listCard} className="overview-list-card" aria-label="网站列表">
+        <section ref={listCard} className="overview-list-card" aria-label={t('网站列表', 'Site list')}>
           <div className="overview-list-controls">
-            <div className="overview-segment" role="group" aria-label="筛选网站">
-              {filters.map(([key, name]) => {
+            <div className="overview-segment" role="group" aria-label={t('筛选网站', 'Filter sites')}>
+              {filters.map(([key, name, enName]) => {
                 const badgeCount =
                   !data
                     ? 0
@@ -255,7 +256,7 @@ export function OverviewPanel() {
                       setFilter(key);
                       setPage(0);
                     }}>
-                    {name}
+                    {isEn ? enName : name}
                     {badgeCount > 0 ? ` ${badgeCount}` : ''}
                   </button>
                 );
@@ -267,8 +268,8 @@ export function OverviewPanel() {
                 <Search size={14} aria-hidden="true" />
                 <input
                   type="search"
-                  aria-label="搜索网站"
-                  placeholder="搜索网站"
+                  aria-label={t('搜索网站', 'Search sites')}
+                  placeholder={t('搜索网站', 'Search sites')}
                   value={query}
                   onChange={event => {
                     selectMotion.current = false;
@@ -285,7 +286,7 @@ export function OverviewPanel() {
                   data-tone="warn"
                   onClick={() => setDialog({ kind: 'notice' })}>
                   <CircleAlert size={14} aria-hidden="true" />
-                  <span>提示</span>
+                  <span>{t('提示', 'Notices')}</span>
                 </button>
               ) : null}
 
@@ -302,7 +303,7 @@ export function OverviewPanel() {
                 ) : (
                   <RefreshCw size={14} aria-hidden="true" />
                 )}
-                <span>刷新</span>
+                <span>{t('刷新', 'Refresh')}</span>
               </button>
             </div>
           </div>
@@ -331,12 +332,12 @@ export function OverviewPanel() {
             ) : (
               <p className="overview-list-empty" role="status">
                 {loading
-                  ? '正在读取网站…'
+                  ? t('正在读取网站…', 'Loading sites…')
                   : readError
-                    ? '读取失败，请刷新。'
+                    ? t('读取失败，请刷新。', 'Failed to load. Please refresh.')
                     : sites.length
-                      ? '没有匹配的网站。'
-                      : '暂无已登记网站。'}
+                      ? t('没有匹配的网站。', 'No matching sites.')
+                      : t('暂无已登记网站。', 'No synced sites yet.')}
               </p>
             )}
           </div>
@@ -344,14 +345,14 @@ export function OverviewPanel() {
           <div className="overview-list-footer">
             <button type="button" className="ov-text-btn" onClick={() => setDialog({ kind: 'bulk' })}>
               <MoreHorizontal size={15} aria-hidden="true" />
-              <span>批量操作</span>
+              <span>{t('批量操作', 'Bulk actions')}</span>
             </button>
 
-            <div className="overview-pager" role="group" aria-label="网站分页">
+            <div className="overview-pager" role="group" aria-label={t('网站分页', 'Pagination')}>
               <button
                 type="button"
                 className="ov-arrow-btn"
-                aria-label="上一页"
+                aria-label={t('上一页', 'Previous page')}
                 disabled={activePage === 0}
                 onClick={event => changePage(-1, event.detail > 0)}>
                 <ChevronLeft size={15} aria-hidden="true" />
@@ -362,7 +363,7 @@ export function OverviewPanel() {
               <button
                 type="button"
                 className="ov-arrow-btn"
-                aria-label="下一页"
+                aria-label={t('下一页', 'Next page')}
                 disabled={activePage + 1 === pages}
                 onClick={event => changePage(1, event.detail > 0)}>
                 <ChevronRight size={15} aria-hidden="true" />
@@ -371,39 +372,39 @@ export function OverviewPanel() {
           </div>
         </section>
 
-        <aside className="overview-inspector" aria-label="站点详情">
+        <aside className="overview-inspector" aria-label={t('站点详情', 'Site details')}>
           {selected ? (
             renderDetails(selected, selectMotion.current)
           ) : (
-            <p className="overview-list-empty">{loading ? '正在读取…' : '当前没有可查看的站点。'}</p>
+            <p className="overview-list-empty">{loading ? t('正在读取…', 'Loading…') : t('当前没有可查看的站点。', 'Select a site to inspect.')}</p>
           )}
         </aside>
       </div>
 
       {dialog?.kind === 'site' ? (
-        <OverviewDialog title="站点详情" sheet onClose={() => setDialog(undefined)}>
-          {modalSite ? renderDetails(modalSite) : <p>该站点已从列表移除。</p>}
+        <OverviewDialog title={t('站点详情', 'Site Details')} sheet onClose={() => setDialog(undefined)}>
+          {modalSite ? renderDetails(modalSite) : <p>{t('该站点已从列表移除。', 'This site has been removed.')}</p>}
         </OverviewDialog>
       ) : null}
 
       {dialog?.kind === 'notice' ? (
-        <OverviewDialog title="同步提示" onClose={() => setDialog(undefined)}>
+        <OverviewDialog title={t('同步提示', 'Sync Notices')} onClose={() => setDialog(undefined)}>
           <ul className="overview-issues">
-            {notices.length ? notices.map(notice => <li key={notice}>{notice}</li>) : <li>当前没有提示。</li>}
+            {notices.length ? notices.map(notice => <li key={notice}>{notice}</li>) : <li>{t('当前没有提示。', 'No notices.')}</li>}
           </ul>
         </OverviewDialog>
       ) : null}
 
       {dialog?.kind === 'bulk' ? (
-        <OverviewDialog title="批量操作" onClose={() => setDialog(undefined)}>
+        <OverviewDialog title={t('批量操作', 'Bulk Actions')} onClose={() => setDialog(undefined)}>
           <p className="overview-dialog-copy" role="status">
             {bulkDirection === 'pull'
-              ? '云端数据将覆盖名单内开启自动拉取的网站，本机未上传的改动会被放弃。'
+              ? t('云端数据将覆盖名单内开启自动拉取的网站，本机未上传的改动会被放弃。', 'Cloud snapshots will overwrite local sessions for all sites with auto-pull enabled.')
               : bulkDirection === 'push'
-                ? '本机数据将覆盖名单内开启自动推送的网站，云端较新的改动会被覆盖。'
+                ? t('本机数据将覆盖名单内开启自动推送的网站，云端较新的改动会被覆盖。', 'Local sessions will overwrite cloud snapshots for all sites with auto-push enabled.')
                 : connected
-                  ? '批量操作适用于名单内已开启相应同步方向的网站。'
-                  : '连接 WebDAV 后即可批量操作。'}
+                  ? t('批量操作适用于名单内已开启相应同步方向的网站。', 'Bulk actions apply to all listed sites with the selected sync direction enabled.')
+                  : t('连接 WebDAV 后即可批量操作。', 'Connect WebDAV to use bulk actions.')}
           </p>
           <div className="overview-inspector-actions">
             {bulkDirection ? (
@@ -414,7 +415,7 @@ export function OverviewPanel() {
                   className="ov-btn-primary"
                   disabled={!connected || blocked}
                   onClick={() => void transfer({ direction: bulkDirection })}>
-                  {operation ? '处理中…' : bulkDirection === 'push' ? '确认全部上传' : '确认拉取全部'}
+                  {operation ? t('处理中…', 'Working…') : bulkDirection === 'push' ? t('确认全部上传', 'Confirm Push All') : t('确认拉取全部', 'Confirm Pull All')}
                 </Button>
                 <Button
                   size="sm"
@@ -422,7 +423,7 @@ export function OverviewPanel() {
                   className="ov-btn-outline"
                   disabled={!!operation}
                   onClick={() => setDialog({ kind: 'bulk' })}>
-                  返回
+                  {t('返回', 'Back')}
                 </Button>
               </>
             ) : (
@@ -434,7 +435,7 @@ export function OverviewPanel() {
                   disabled={!connected || blocked}
                   onClick={() => setDialog({ kind: 'bulk', direction: 'pull' })}>
                   <ArrowDownToLine size={14} aria-hidden="true" />
-                  拉取全部
+                  {t('拉取全部', 'Pull All')}
                 </Button>
                 <Button
                   size="sm"
@@ -442,7 +443,7 @@ export function OverviewPanel() {
                   disabled={!connected || blocked}
                   onClick={() => setDialog({ kind: 'bulk', direction: 'push' })}>
                   <ArrowUpFromLine size={14} aria-hidden="true" />
-                  全部上传
+                  {t('全部上传', 'Push All')}
                 </Button>
               </>
             )}
