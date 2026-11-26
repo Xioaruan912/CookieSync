@@ -3,6 +3,7 @@ export interface PairingPayload {
   username: string;
   password: string;
   path: string;
+  allowUnsafeWrites?: boolean;
   encryptionEnabled?: boolean;
   encryptionPassword?: string;
 }
@@ -35,6 +36,9 @@ export function encodePairingCode(payload: PairingPayload): string {
     p: payload.password,
     f: payload.path.trim() || 'CookieSync/cookies.txt',
   };
+  if (payload.allowUnsafeWrites) {
+    compact.w = 1;
+  }
   if (payload.encryptionEnabled && payload.encryptionPassword) {
     compact.e = 1;
     compact.k = payload.encryptionPassword;
@@ -64,6 +68,7 @@ export function decodePairingCode(raw: string): PairingPayload {
     username,
     password,
     path,
+    ...(parsed.w ? { allowUnsafeWrites: true } : {}),
     ...(parsed.e ? { encryptionEnabled: true } : {}),
     ...(typeof parsed.k === 'string' && parsed.k ? { encryptionPassword: parsed.k } : {}),
   };

@@ -3,7 +3,8 @@ import {
   buildWebdavUrl,
   decodePairingCode,
   encodePairingCode,
-  testWebdavConnection,
+  isLikelyGatewayWebdavUrl,
+  probeWebdavCompatibility,
   useLocale,
   useStorageSuspense,
 } from '@sync-your-cookie/shared';
@@ -45,6 +46,13 @@ const presets = [
     url: 'https://cloud.example.com/remote.php/dav/files/user/',
     path: 'CookieSync/cookies.txt',
     unsafe: false,
+  },
+  {
+    label: 'OpenList',
+    enLabel: 'OpenList',
+    url: 'https://openlist.example.com/dav/',
+    path: 'CookieSync/cookies.txt',
+    unsafe: true,
   },
   { label: 'AList', enLabel: 'AList', url: 'https://alist.example.com/dav/', path: 'CookieSync/cookies.txt', unsafe: true },
 ] as const;
@@ -160,7 +168,13 @@ export function WebdavSettings() {
 
   const update = (key: keyof typeof config, value: string) => {
     setDirty(true);
-    setConfig(current => ({ ...current, [key]: value }));
+    setConfig(current => ({
+      ...current,
+      [key]: value,
+      ...(key === 'url' && !current.allowUnsafeWrites && isLikelyGatewayWebdavUrl(value)
+        ? { allowUnsafeWrites: true }
+        : {}),
+    }));
   };
 
   const applyPreset = (preset: (typeof presets)[number]) => {
@@ -171,26 +185,33 @@ export function WebdavSettings() {
       path: current.path.trim() ? current.path : preset.path,
       allowUnsafeWrites: preset.unsafe,
     }));
-    toast.info(`已填入 ${preset.label} 模板地址`);
+    toast.info(t(`已填入 ${preset.label} 模板地址`, `Applied ${preset.enLabel} template`));
   };
 
   const run = async (save: boolean) => {
     setBusyMode(save ? 'save' : 'test');
     setProbeMessage('');
     let timer: ReturnType<typeof setInterval> | undefined;
-    if (!save) {
-      setProbePhase('running');
-      setProbeStep(0);
-      timer = setInterval(() => setProbeStep(step => (step < 3 ? step + 1 : step)), 240);
-    }
+    setProbePhase('running');
+    setProbeStep(0);
+    timer = setInterval(() => setProbeStep(step => (step < 3 ? step + 1 : step)), 240);
     try {
-      const normalized = {
+      let normalized = {
         ...config,
         url: config.url.trim(),
         username: config.username.trim(),
         path: config.path.trim(),
+        ...(isLikelyGatewayWebdavUrl(config.url) && !config.allowUnsafeWrites ? { allowUnsafeWrites: true } : {}),
       };
       buildWebdavUrl(normalized);
+      const probe = await probeWebdavCompatibility(normalized);
+      const autoSwitched = probe.compatibilityRequired && !config.allowUnsafeWrites;
+      if (probe.compatibilityRequired && !normalized.allowUnsafeWrites) {
+        normalized = { ...normalized, allowUnsafeWrites: true };
+      }
+      if (autoSwitched) {
+        setConfig(current => ({ ...current, allowUnsafeWrites: true }));
+      }
       if (save) {
         await webdavStorage.update(normalized, syncConfig);
         setDirty(false);
@@ -199,18 +220,29 @@ export function WebdavSettings() {
         await chrome.storage.local.set({ [probeKey]: Date.now() });
         setProbePhase('ok');
         setProbeStep(3);
-        setProbeMessage('配置已保存并启用');
-        toast.success('WebDAV 配置已保存');
+        const msg = autoSwitched
+          ? t('检测到 OpenList / AList 网关，已自动开启兼容模式并保存配置', 'Detected OpenList / AList gateway — auto-enabled compatibility mode & saved')
+          : t('配置已保存并验证通过', 'WebDAV configuration verified and saved');
+        setProbeMessage(msg);
+        toast.success(msg);
       } else {
-        await testWebdavConnection(normalized);
+        if (autoSwitched && connected && saved.url.trim() === normalized.url) {
+          await webdavStorage.update({ ...saved, allowUnsafeWrites: true }, syncConfig);
+          setDirty(false);
+        } else if (autoSwitched) {
+          setDirty(true);
+        }
         await chrome.storage.local.set({ [probeKey]: Date.now() });
         setProbePhase('ok');
         setProbeStep(3);
-        setProbeMessage('创建、覆盖、读取、删除四项权限均已通过');
-        toast.success('连接测试成功：已验证临时文件的创建、覆盖、读取和删除');
+        const msg = autoSwitched
+          ? t('检测到 OpenList / AList 不支持条件写入，已自动开启「网关兼容模式」并通过四项权限验证', 'Detected OpenList / AList — auto-enabled Gateway Compatibility Mode & passed all checks')
+          : t('创建、覆盖、读取、删除四项权限均已通过', 'Create, overwrite, read, and delete checks all passed');
+        setProbeMessage(msg);
+        toast.success(msg);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'WebDAV 操作失败';
+      const message = error instanceof Error ? error.message : t('WebDAV 操作失败', 'WebDAV operation failed');
       setProbePhase('error');
       setProbeMessage(message);
       toast.error(message);
@@ -343,6 +375,7 @@ export function WebdavSettings() {
                           username: config.username,
                           password: config.password,
                           path: config.path,
+                          allowUnsafeWrites: config.allowUnsafeWrites,
                           encryptionEnabled: settings.encryptionEnabled,
                           encryptionPassword: settings.encryptionPassword,
                         });
@@ -422,7 +455,9 @@ export function WebdavSettings() {
                     <div className="sbo-field-top">
                       <Label htmlFor="webdav-url">WebDAV URL</Label>
                       {isHttps ? (
-                        <span className="sbo-proto">HTTPS</span>
+                        <span className="sbo-proto">
+                          HTTPS{config.allowUnsafeWrites ? ` · ${t('OpenList/AList 兼容已开启', 'OpenList/AList Compat')}` : ''}
+                        </span>
                       ) : isHttp ? (
                         <span className="sbo-proto" data-tone="http">
                           {t('HTTP 明文', 'Plain HTTP')}
@@ -624,6 +659,7 @@ export function WebdavSettings() {
                       username: config.username,
                       password: config.password,
                       path: config.path,
+                      allowUnsafeWrites: config.allowUnsafeWrites,
                       encryptionEnabled: settings.encryptionEnabled,
                       encryptionPassword: settings.encryptionPassword,
                     });
@@ -663,6 +699,7 @@ export function WebdavSettings() {
                         username: imported.username,
                         password: imported.password,
                         path: imported.path,
+                        allowUnsafeWrites: Boolean(imported.allowUnsafeWrites || isLikelyGatewayWebdavUrl(imported.url)),
                       }));
                       if (imported.encryptionEnabled && imported.encryptionPassword) {
                         void settingsStorage.update({
