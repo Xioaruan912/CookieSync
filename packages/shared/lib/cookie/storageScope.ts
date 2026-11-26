@@ -1,4 +1,5 @@
 import type { ILocalStorageItem } from '@sync-your-cookie/protobuf';
+import type { StorageLimitIssue } from '@sync-your-cookie/storage/lib/syncRuntimeStorage';
 import type { IndexedDbRecordLike } from './indexedDbCodec';
 
 /**
@@ -43,7 +44,8 @@ export function pageOrigin(rawUrl?: string | null): string | undefined {
 }
 
 const byKey = (a: ILocalStorageItem, b: ILocalStorageItem) =>
-  (a.key || '').localeCompare(b.key || '') || (a.value || '').localeCompare(b.value || '');
+  String(a?.key ?? '').localeCompare(String(b?.key ?? '')) ||
+  String(a?.value ?? '').localeCompare(String(b?.value ?? ''));
 
 /**
  * Attach the origin and keep the snapshot inside its caps. Items are sorted
@@ -58,25 +60,36 @@ export function scopeStorageItems(
 ) {
   let bytes = 0;
   let truncated = 0;
+  const details: StorageLimitIssue[] = [];
   const kept: ILocalStorageItem[] = [];
   for (const item of [...(items || [])].sort(byKey)) {
+    let issue: StorageLimitIssue | undefined;
     if (!item || typeof item.key !== 'string' || typeof item.value !== 'string') {
-      truncated++;
-      continue;
+      issue = { reason: 'invalid' };
+    } else {
+      const size = textBytes(item.key) + textBytes(item.value);
+      if (size > storageLimits.maxItemBytes) {
+        issue = { reason: 'item-bytes', bytes: size, limit: storageLimits.maxItemBytes };
+      } else if (kept.length >= maxItems) {
+        issue = { reason: 'item-count', bytes: size, limit: maxItems };
+      } else if (bytes + size > Math.min(limitBytes, storageLimits.maxBytesPerOrigin)) {
+        const siteLimited = limitBytes < storageLimits.maxBytesPerOrigin;
+        issue = {
+          reason: siteLimited ? 'site-bytes' : 'origin-bytes',
+          bytes: size,
+          limit: siteLimited ? storageLimits.maxBytesPerDomain : storageLimits.maxBytesPerOrigin,
+          remaining: Math.max(0, Math.min(limitBytes, storageLimits.maxBytesPerOrigin) - bytes),
+        };
+      } else {
+        bytes += size;
+        kept.push({ key: item.key, value: item.value, origin });
+      }
     }
-    const size = textBytes(item.key) + textBytes(item.value);
-    if (
-      kept.length >= maxItems ||
-      size > storageLimits.maxItemBytes ||
-      bytes + size > Math.min(limitBytes, storageLimits.maxBytesPerOrigin)
-    ) {
-      truncated++;
-      continue;
-    }
-    bytes += size;
-    kept.push({ key: item.key, value: item.value, origin });
+    if (!issue) continue;
+    truncated++;
+    if (details.length < 16) details.push(issue);
   }
-  return { items: kept, truncated };
+  return { items: kept, truncated, details };
 }
 
 /** Total storage size of one domain entry, used for the per-domain cap. */

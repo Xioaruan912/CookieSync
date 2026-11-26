@@ -108,7 +108,6 @@ export function SafetyCard() {
 
   return (
     <div className="safety-card" aria-label="回滚与诊断">
-      <h3>回滚与诊断</h3>
       <p className="text-muted-foreground text-sm">
         批量拉取或上传前会自动保留一个回滚点；回滚点只保存在本机，最多 4 个，不会上传到 WebDAV。
       </p>

@@ -1,12 +1,7 @@
 import type { ICookie, ILocalStorageItem } from '@sync-your-cookie/protobuf';
-import {
-  mergeScopedItems,
-  scopeStorageItems,
-  storageBytes,
-  storageLimits,
-  type StorageSnapshot,
-} from './storageScope';
+import { mergeScopedItems, scopeStorageItems, storageBytes, storageLimits, type StorageSnapshot } from './storageScope';
 import { fitIndexedDbRecords, indexedDbLimits, type IndexedDbRecordLike } from './indexedDbCodec';
+import type { StorageTruncationCounts } from '@sync-your-cookie/storage/lib/syncRuntimeStorage';
 
 export interface PendingSyncJob {
   domain: string;
@@ -19,6 +14,9 @@ export interface PendingSyncJob {
   /** Wall clock (ms) when the local change was captured; drives newer-wins resolution. */
   capturedAt?: number;
   baseHash?: string;
+  /** Captured before the first cloud read for this site. */
+  initialCapture?: boolean;
+  retryError?: string;
 }
 
 export function acknowledgeJobs(
@@ -51,6 +49,7 @@ export interface PickedStorage {
   indexedDBRecords: IndexedDbRecordLike[];
   skippedIndexedDB: string[];
   truncated: number;
+  truncation?: StorageTruncationCounts;
 }
 
 /**
@@ -65,13 +64,15 @@ export function pickAutomaticStorage(
   cached: {
     localStorageItems?: ILocalStorageItem[] | null;
     sessionStorageItems?: ILocalStorageItem[] | null;
-    indexedDBRecords?: {
-      origin?: string | null;
-      database?: string | null;
-      store?: string | null;
-      key?: string | null;
-      value?: string | null;
-    }[] | null;
+    indexedDBRecords?:
+      | {
+          origin?: string | null;
+          database?: string | null;
+          store?: string | null;
+          key?: string | null;
+          value?: string | null;
+        }[]
+      | null;
   },
   sessionEnabled: boolean,
   includeLocalStorage = true,
@@ -99,17 +100,25 @@ export function pickAutomaticStorage(
     };
   }
 
-  const others = cachedLocal.filter(item => (item.origin || '') !== observed.origin);
-  const budget = Math.max(0, storageLimits.maxBytesPerDomain - storageBytes(others));
+  const sessionReported = sessionEnabled && observed.sessionStorageItems !== undefined;
+  const retainedLocal = includeLocalStorage ? mergeScopedItems(pendingLocal, [], observed.origin) : cachedLocal;
+  const retainedSession = sessionReported
+    ? mergeScopedItems(pendingSession, [], observed.origin)
+    : sessionEnabled
+      ? pendingSession
+      : cachedSession;
+  const budget = Math.max(
+    0,
+    storageLimits.maxBytesPerDomain - storageBytes(retainedLocal) - storageBytes(retainedSession),
+  );
   const scoped = includeLocalStorage
-    ? scopeStorageItems(observed.localStorageItems, observed.origin, budget / 2)
-    : { items: [], truncated: 0 };
+    ? scopeStorageItems(observed.localStorageItems, observed.origin, budget)
+    : { items: [], truncated: 0, details: [] };
   // An absent session list means the reporter said nothing about it; keep the
   // stored copy instead of treating that silence as an empty session.
-  const session = sessionEnabled && observed.sessionStorageItems
+  const session = sessionReported
     ? scopeStorageItems(observed.sessionStorageItems, observed.origin, budget - storageBytes(scoped.items))
-    : { items: [], truncated: 0 };
-  const sessionReported = sessionEnabled && !!observed.sessionStorageItems;
+    : { items: [], truncated: 0, details: [] };
   // IndexedDB is whole-store replacement, capped per origin and per store.
   const idbBudget = Math.max(
     0,
@@ -118,24 +127,32 @@ export function pickAutomaticStorage(
       storageLimits.maxBytesPerDomain - storageBytes(scoped.items) - storageBytes(session.items),
     ),
   );
-  const fitted = indexedDbEnabled && observed.indexedDBRecords
-    ? fitIndexedDbRecords(observed.indexedDBRecords, idbBudget)
-    : { records: [], skipped: [] as string[], bytes: 0 };
+  const fitted =
+    indexedDbEnabled && observed.indexedDBRecords
+      ? fitIndexedDbRecords(observed.indexedDBRecords, idbBudget)
+      : { records: [], skipped: [] as string[], bytes: 0 };
   const idbReported = indexedDbEnabled && !!observed.indexedDBRecords;
   const idbRecords = idbReported
-    ? [...cachedIdb.filter(record => (record.origin || '') !== observed.origin), ...fitted.records]
-    : cachedIdb;
+    ? [...pendingIdb.filter(record => (record.origin || '') !== observed.origin), ...fitted.records]
+    : indexedDbEnabled
+      ? pendingIdb
+      : cachedIdb;
 
   return {
-    localStorageItems: includeLocalStorage
-      ? mergeScopedItems(cachedLocal, scoped.items, observed.origin)
-      : cachedLocal,
-    sessionStorageItems: sessionReported
-      ? mergeScopedItems(cachedSession, session.items, observed.origin)
-      : cachedSession,
+    localStorageItems: [...retainedLocal, ...scoped.items],
+    sessionStorageItems: sessionReported ? [...retainedSession, ...session.items] : retainedSession,
     indexedDBRecords: idbRecords,
     skippedIndexedDB: fitted.skipped,
     truncated: scoped.truncated + session.truncated + (observed.truncated || 0),
+    truncation: {
+      local: scoped.truncated,
+      session: !sessionEnabled || sessionReported ? session.truncated : undefined,
+      source: observed.truncated,
+      details: {
+        local: scoped.details.length ? scoped.details : undefined,
+        session: session.details.length ? session.details : undefined,
+      },
+    },
   };
 }
 

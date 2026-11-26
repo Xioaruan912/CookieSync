@@ -35,6 +35,7 @@ import { captureAutomaticSync, clearDestinationJobs, getJobs, waitCapture } from
 import { discoverVisitedSite } from './sync/discovery';
 import { indexedDbFor, readObserved, readPageStorage, sessionStorageFor } from './sync/pageBridge';
 import { flushAutomaticSync, restoreAtStartup, syncErrorMessage, waitReconcile } from './sync/reconciler';
+import { recheckStorageLimits } from './sync/storageLimits';
 
 export {
   captureAutomaticSync,
@@ -148,13 +149,26 @@ export function initAutomaticSync() {
   chrome.runtime.onStartup.addListener(() => {
     void startAutomaticSession();
   });
-  chrome.cookies.onChanged.addListener(async ({ cookie }) => {
-    if (isDeviceStandby()) return;
+  chrome.cookies.onChanged.addListener(async ({ cookie, removed, cause }) => {
+    // Chrome follows an overwrite removal with the replacement. Capture the settled cookie.
+    if (removed && cause === 'overwrite') return;
     const config = await domainConfigStorage.get();
+    let matched = false;
     for (const [host, item] of Object.entries(config.domainMap)) {
-      if (item.autoPush !== false && matchesSyncDomain(host, cookie.domain)) {
-        void captureAutomaticSync(host).catch(() => {});
-      }
+      if (!matchesSyncDomain(host, cookie.domain)) continue;
+      matched = true;
+      const passiveRemoval = removed && (cause === 'expired' || cause === 'evicted');
+      if (item.autoPush !== false) void captureAutomaticSync(host, undefined, passiveRemoval, !removed).catch(() => {});
+    }
+    if (matched || removed) return;
+    const settings = await settingsStorage.get();
+    if (settings.backgroundSync === false || settings.autoDiscoverSites === false) return;
+    for (const tab of await chrome.tabs.query({})) {
+      if (tab.incognito || !tab.url?.startsWith('http')) continue;
+      const url = new URL(tab.url);
+      if (!matchesSyncDomain(url.hostname, cookie.domain)) continue;
+      const host = await discoverVisitedSite(tab.url);
+      if (host) await captureAutomaticSync(host, undefined, false, true);
     }
   });
 
@@ -162,6 +176,11 @@ export function initAutomaticSync() {
     await backgroundReady;
     await restoreAtStartup(true, true);
     return { isOk: true, msg: '同步检查完成' };
+  });
+
+  registerExtensionHandler(RuntimeMessageType.RecheckStorageLimits, async () => {
+    await backgroundReady;
+    return { isOk: true, msg: '已复查存储上限', result: await recheckStorageLimits() };
   });
 
   registerExtensionHandler(RuntimeMessageType.PullAll, async () => {
@@ -260,7 +279,8 @@ export function initAutomaticSync() {
           }
         }
       } else if (item.autoPush !== false) {
-        await captureAutomaticSync(host, observed);
+        const finalCapture = message.finalCapture === true;
+        await captureAutomaticSync(host, observed, finalCapture, finalCapture);
       }
     }
     return { isOk: true, msg: 'ok' };

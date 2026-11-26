@@ -3,7 +3,7 @@ import { createStorage, StorageType } from './base';
 export type DeviceSyncRole = 'active' | 'standby' | 'taking-over';
 
 export interface AutoSyncStatus {
-  phase?: 'idle' | 'checking' | 'uploading' | 'taking-over';
+  phase?: 'idle' | 'checking' | 'comparing' | 'uploading' | 'taking-over';
   lastCheck?: number;
   lastSuccess?: number;
   lastAttempt?: number;

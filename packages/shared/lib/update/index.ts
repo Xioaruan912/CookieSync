@@ -31,9 +31,8 @@ export function isNewerVersion(candidate: string, current: string): boolean {
 }
 
 /**
- * The build number embedded in the manifest at CI time. Local builds have no
- * build number, which counts as unknown: a same-version release then offers
- * one update so pre-build-number installs can still reach newer code.
+ * The build number embedded in the manifest at CI time. Local builds may not
+ * have one, so their build order within the same version is unknown.
  */
 export function installedBuildNumber(): number | undefined {
   const versionName = chrome.runtime.getManifest().version_name as string | undefined;
@@ -53,8 +52,11 @@ export function isNewerRelease(
 ): boolean {
   if (isNewerVersion(latest.version, currentVersion)) return true;
   if (isNewerVersion(currentVersion, latest.version)) return false;
-  if (latest.build === undefined) return false;
-  return currentBuild === undefined || latest.build > currentBuild;
+  return latest.build !== undefined && currentBuild !== undefined && latest.build > currentBuild;
+}
+
+export function isUpdateForInstalledRelease(version?: string, build?: number): boolean {
+  return !!version && isNewerRelease({ version, build }, chrome.runtime.getManifest().version, installedBuildNumber());
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -155,6 +157,9 @@ export async function checkLatestRelease(): Promise<void> {
         latestBuild: release.build,
         checkedAt: Date.now(),
         error: '',
+        zipUrl: undefined,
+        shaUrl: undefined,
+        sha256: undefined,
         downloadedAt: undefined,
         downloadName: undefined,
       });
@@ -174,6 +179,7 @@ export async function checkLatestRelease(): Promise<void> {
       checkedAt: Date.now(),
       error: '',
       // A newer release invalidates any previous guided download.
+      sha256: undefined,
       downloadedAt: undefined,
       downloadName: undefined,
     });
@@ -195,7 +201,12 @@ export async function checkLatestRelease(): Promise<void> {
  */
 export async function downloadRelease(): Promise<void> {
   const status = await updateStatusStorage.get();
-  if (status.state !== 'available' || !status.zipUrl) throw new Error('没有可下载的更新');
+  if (
+    status.state !== 'available' ||
+    !status.zipUrl ||
+    !isUpdateForInstalledRelease(status.latestVersion, status.latestBuild)
+  )
+    throw new Error('没有可下载的更新');
   await updateStatusStorage.update({ state: 'downloading', error: '' });
   try {
     let expected: string | undefined;

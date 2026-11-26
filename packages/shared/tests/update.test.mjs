@@ -36,7 +36,10 @@ const release = (tag, assets = true) => ({
   tag_name: tag,
   assets: assets
     ? [
-        { name: 'CookieSync-chrome-1.13.0.zip', browser_download_url: 'https://example.test/CookieSync-chrome-1.13.0.zip' },
+        {
+          name: 'CookieSync-chrome-1.13.0.zip',
+          browser_download_url: 'https://example.test/CookieSync-chrome-1.13.0.zip',
+        },
         { name: 'SHA256SUMS.txt', browser_download_url: 'https://example.test/SHA256SUMS.txt' },
       ]
     : [],
@@ -49,16 +52,44 @@ const mockRelease = tag => {
 test('release comparison: semver first, then the build of the same version', () => {
   assert.equal(update.isNewerRelease({ version: '1.14.0' }, '1.13.0', 29), true);
   assert.equal(update.isNewerRelease({ version: '1.13.1' }, '1.13.0', 29), true);
-  assert.equal(update.isNewerRelease({ version: '1.13.0', build: 30 }, '1.13.0', 29), true, 'a newer build is newer code');
+  assert.equal(
+    update.isNewerRelease({ version: '1.13.0', build: 30 }, '1.13.0', 29),
+    true,
+    'a newer build is newer code',
+  );
   assert.equal(update.isNewerRelease({ version: '1.13.0', build: 29 }, '1.13.0', 29), false);
   assert.equal(update.isNewerRelease({ version: '1.13.0', build: 28 }, '1.13.0', 29), false);
   assert.equal(
     update.isNewerRelease({ version: '1.13.0', build: 30 }, '1.13.0', undefined),
-    true,
-    'an unknown installed build offers one update',
+    false,
+    'an unknown installed build cannot prove a same-version update',
   );
   assert.equal(update.isNewerRelease({ version: '1.13.0' }, '1.13.0', 29), false, 'no build info cannot be newer');
   assert.equal(update.isNewerRelease({ version: '1.12.0', build: 99 }, '1.13.0', 29), false, 'older semver never wins');
+});
+
+test('an unnumbered local build clears a stale same-version download offer', async () => {
+  const original = manifest.version_name;
+  delete manifest.version_name;
+  try {
+    await updateStatusStorage.update({
+      state: 'ready',
+      latestVersion: '1.13.0',
+      latestBuild: 30,
+      downloadedAt: 123,
+      downloadName: 'CookieSync-chrome-1.13.0.zip',
+      zipUrl: 'https://example.test/stale.zip',
+    });
+    mockRelease('v1.13.0-build.30');
+    await update.checkLatestRelease();
+    const status = await readStatus();
+    assert.equal(status.state, 'idle');
+    assert.equal(status.latestBuild, 30);
+    assert.equal(status.downloadName, undefined);
+    assert.equal(status.zipUrl, undefined);
+  } finally {
+    manifest.version_name = original;
+  }
 });
 
 test('installed build number comes from the manifest version_name', () => {

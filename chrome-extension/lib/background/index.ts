@@ -63,4 +63,7 @@ initBadgeController();
 // MV3 restarts the worker; restore state cleanly without duplicate startup pulls.
 const backgroundReady = init();
 setAutomaticSyncReady(backgroundReady);
-void backgroundReady.then(() => startAutomaticSession()).then(() => flushAutomaticSync());
+void backgroundReady
+  .then(() => startAutomaticSession())
+  .then(() => flushAutomaticSync(false, true))
+  .catch(() => {});

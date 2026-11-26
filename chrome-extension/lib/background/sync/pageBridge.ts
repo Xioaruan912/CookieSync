@@ -24,8 +24,7 @@ export async function indexedDbFor(host: string): Promise<boolean> {
 }
 
 const validStorageItems = (value: unknown): ILocalStorageItem[] | undefined =>
-  Array.isArray(value) &&
-  value.every(item => item && typeof item.key === 'string' && typeof item.value === 'string')
+  Array.isArray(value) && value.every(item => item && typeof item.key === 'string' && typeof item.value === 'string')
     ? (value as ILocalStorageItem[])
     : undefined;
 
@@ -36,9 +35,11 @@ export function readObserved(
 ): StorageSnapshot | undefined {
   const local = validStorageItems(message?.localStorageItems);
   if (!local) return undefined;
+  const origin = pageOrigin(tabUrl);
+  if (message.origin && message.origin !== origin) return undefined;
   const session = validStorageItems(message?.sessionStorageItems);
   return {
-    origin: typeof message?.origin === 'string' && message.origin ? message.origin : pageOrigin(tabUrl) || '',
+    origin: origin || '',
     localStorageItems: local,
     ...(session ? { sessionStorageItems: session } : {}),
     truncated: 0,
@@ -50,14 +51,17 @@ export function readObserved(
  * Falls back to the legacy GetLocalStorage message for tabs running older scripts.
  * Never opens new tabs or forces page reloads.
  */
-export async function readPageStorage(host: string): Promise<StorageSnapshot | undefined> {
+export async function readPageStorage(
+  host: string,
+  options: { tabs?: chrome.tabs.Tab[]; origin?: string; includeIndexedDb?: boolean } = {},
+): Promise<StorageSnapshot | undefined> {
   const settings = await settingsStorage.get();
   const includeLocal = settings.includeLocalStorage !== false;
   const includeSession = await sessionStorageFor(host);
-  const includeIndexedDb = await indexedDbFor(host);
+  const includeIndexedDb = options.includeIndexedDb !== false && (await indexedDbFor(host));
   if (!includeLocal && !includeSession && !includeIndexedDb) return undefined;
 
-  const tabs = await chrome.tabs.query({});
+  const tabs = options.tabs || (await chrome.tabs.query({}));
   for (const tab of tabs) {
     if (!tab.id || !tab.url?.startsWith('http') || tab.incognito) continue;
     let hostname: string;
@@ -68,6 +72,7 @@ export async function readPageStorage(host: string): Promise<StorageSnapshot | u
     }
     if (!matchesSiteScope(host, hostname)) continue;
     const tabOrigin = pageOrigin(tab.url) || '';
+    if (options.origin && options.origin !== tabOrigin) continue;
     try {
       const newer = await chrome.tabs.sendMessage(tab.id, {
         type: 'GetPageStorage',
@@ -81,15 +86,19 @@ export async function readPageStorage(host: string): Promise<StorageSnapshot | u
           indexedDBRecords?: StorageSnapshot['indexedDBRecords'];
           skippedIndexedDB?: string[];
         };
-        return {
-          origin: result.origin || tabOrigin,
-          localStorageItems: includeLocal ? result.localStorageItems || [] : [],
-          sessionStorageItems: includeSession ? result.sessionStorageItems || [] : [],
-          ...(includeIndexedDb && Array.isArray(result.indexedDBRecords)
-            ? { indexedDBRecords: result.indexedDBRecords, skippedIndexedDB: result.skippedIndexedDB || [] }
-            : {}),
-          truncated: 0,
-        };
+        if (result.origin && result.origin !== tabOrigin) continue;
+        const local = validStorageItems(result.localStorageItems);
+        const session = validStorageItems(result.sessionStorageItems);
+        if (!includeLocal || local)
+          return {
+            origin: tabOrigin,
+            localStorageItems: includeLocal ? local || [] : [],
+            ...(includeSession && session ? { sessionStorageItems: session } : {}),
+            ...(includeIndexedDb && Array.isArray(result.indexedDBRecords)
+              ? { indexedDBRecords: result.indexedDBRecords, skippedIndexedDB: result.skippedIndexedDB || [] }
+              : {}),
+            truncated: 0,
+          };
       }
     } catch {
       /* Older content script: fall through to legacy message below. */
@@ -98,11 +107,11 @@ export async function readPageStorage(host: string): Promise<StorageSnapshot | u
     const legacy = await chrome.tabs
       .sendMessage(tab.id, { type: 'GetLocalStorage', payload: { domain: host } })
       .catch(() => undefined);
-    if (legacy?.isOk) {
+    const local = validStorageItems(legacy?.result);
+    if (includeLocal && legacy?.isOk && local) {
       return {
         origin: tabOrigin,
-        localStorageItems: includeLocal ? (legacy.result as ILocalStorageItem[]) || [] : [],
-        sessionStorageItems: [],
+        localStorageItems: local,
         truncated: 0,
       };
     }

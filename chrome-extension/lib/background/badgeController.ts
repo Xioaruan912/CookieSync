@@ -1,4 +1,4 @@
-import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
+import { autoSyncStatusStorage, type AutoSyncStatus } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
 import { domainStatusStorage } from '@sync-your-cookie/storage/lib/domainStatusStorage';
 
 export interface BadgeDisplay {
@@ -20,7 +20,7 @@ let initialized = false;
  */
 export function computeBadgeDisplay(input: {
   error?: string | null;
-  phase?: 'idle' | 'checking' | 'uploading' | 'taking-over';
+  phase?: AutoSyncStatus['phase'];
   pushing?: boolean;
   pulling?: boolean;
   pendingCount?: number;
@@ -39,7 +39,7 @@ export function computeBadgeDisplay(input: {
   if (input.pushing || input.phase === 'uploading') {
     return { text: '↑', color: '#0071E3', title: 'CookieSync：正在上传登录状态…' };
   }
-  if (input.pulling || input.phase === 'checking') {
+  if (input.pulling || input.phase === 'checking' || input.phase === 'comparing') {
     return { text: '↓', color: '#0071E3', title: 'CookieSync：正在拉取最新状态…' };
   }
   const count = input.pendingCount || 0;

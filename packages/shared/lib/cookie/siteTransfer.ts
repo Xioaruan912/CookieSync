@@ -67,8 +67,8 @@ export async function collectSitePayload(
     idbOn,
   );
 
-  if (picked.truncated) {
-    await syncRuntimeStorage.recordTruncated(host, picked.truncated).catch(() => {});
+  if (options.observed && picked.truncation) {
+    await syncRuntimeStorage.recordTruncated(host, options.observed.origin, picked.truncation).catch(() => {});
   }
   if (picked.skippedIndexedDB.length) {
     await syncRuntimeStorage.recordSkippedIndexedDb(host, picked.skippedIndexedDB).catch(() => {});

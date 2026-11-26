@@ -24,8 +24,7 @@ export function SettingsPopover({ trigger }: SettingsPopoverProps) {
       | 'encryptionEnabled'
       | 'startupPull'
       | 'backgroundSync'
-      | 'activeDeviceSync'
-      | 'discardIdleSingleSessionTabs',
+      | 'activeDeviceSync',
   ) => {
     if (checkedKey === 'contextMenu') {
       void editRemotePreference('contextMenu', checked);
@@ -61,7 +60,6 @@ export function SettingsPopover({ trigger }: SettingsPopoverProps) {
               {(
                 [
                   ['activeDeviceSync', '双机自动识别与单主交接（推荐）'],
-                  ['discardIdleSingleSessionTabs', '闲置/失租时休眠 115 后台页防互踢'],
                   ['startupPull', '浏览器启动时自动拉取'],
                   ['backgroundSync', '运行期间后台增量同步'],
                 ] as const
