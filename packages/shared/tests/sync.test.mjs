@@ -242,6 +242,23 @@ test('manual push and background push serialize and retain both domains', async 
     assert.deepEqual(localNewer.adopted, []);
     assert.equal(data.domainCookieMap['xiaohongshu.com'].cookies[0].value, 'LOCAL');
 
+    const priorOrigin = 'https://other.xiaohongshu.com';
+    data.domainCookieMap['xiaohongshu.com'].localStorageItems = [{ key: 'prior', value: 'keep', origin: priorOrigin }];
+    version++;
+    const initial = await pushMultipleDomainCookies([
+      {
+        domain: 'xiaohongshu.com',
+        cookies: [],
+        localStorageItems: [{ key: 'new', value: 'save', origin: 'https://www.xiaohongshu.com' }],
+        baseHash: await domainContentHash(),
+        capturedAt: Date.now() + 120000,
+        initialCapture: true,
+      },
+    ]);
+    assert.ok(initial.success);
+    assert.equal(data.domainCookieMap['xiaohongshu.com'].cookies[0].value, 'LOCAL');
+    assert.ok(data.domainCookieMap['xiaohongshu.com'].localStorageItems.some(item => item.origin === priorOrigin));
+
     let fresh = await sync.readCookiesMap({ selectedProvider: 'webdav' });
     const oldCookie = { ...fresh.domainCookieMap['xiaohongshu.com'].cookies[0] };
     await sync.editAndWriteCookies({ selectedProvider: 'webdav' }, 'xiaohongshu.com', fresh, oldCookie, {

@@ -25,16 +25,30 @@ import { syncRuntimeStorage } from '@sync-your-cookie/storage/lib/syncRuntimeSto
 import {
   checkIfLeaseLost,
   isDeviceStandby,
+  isDeviceTakingOver,
   publishDataWriteLease,
 } from '../activeDevice/leaseManager';
 import { checkSiteHealth } from '../healthCheck';
-import { bindCaptureFlush, captureAutomaticSync, clearDestinationJobs, getActiveJobs, getJobs, waitCapture } from './capture';
+import {
+  bindCaptureFlush,
+  captureAutomaticSync,
+  clearDestinationJobs,
+  getActiveJobs,
+  getJobs,
+  waitCapture,
+  type Jobs,
+} from './capture';
 import { discoverOpenSites } from './discovery';
 
 const cookieAllowed = isAutomaticCookieAllowed;
 
 let uploadInFlight: Promise<void> | undefined;
 let reconcileInFlight: Promise<void> | undefined;
+let uploadBatch: { key: string; jobs: Jobs } | undefined;
+
+export function getUploadingJobs(key: string): Jobs {
+  return uploadBatch?.key === key ? uploadBatch.jobs : {};
+}
 
 export const syncErrorMessage = (error: unknown) =>
   error instanceof Error
@@ -51,13 +65,15 @@ export async function waitReconcile() {
   if (reconcileInFlight) await reconcileInFlight;
 }
 
-export async function flushAutomaticSync(force = false): Promise<void> {
+export async function flushAutomaticSync(force = false, expedited = false): Promise<void> {
   if (uploadInFlight) return uploadInFlight;
   uploadInFlight = (async () => {
-    if (isDeviceStandby() && !force) return;
     const settings = await settingsStorage.get();
+    const activeMode = settings.activeDeviceSync !== false;
+    if (!force && activeMode && (isDeviceStandby() || isDeviceTakingOver())) return;
     if (settings.backgroundSync === false && !force) return;
     const key = await syncDestinationKey();
+    let sent: Jobs = {};
     try {
       try {
         await syncWebdavConfig();
@@ -65,15 +81,19 @@ export async function flushAutomaticSync(force = false): Promise<void> {
         await autoSyncStatusStorage.update({ error: syncErrorMessage(configError) });
       }
       await waitSyncJobEdits();
-      const sent = await getActiveJobs(key);
-      if (!Object.keys(sent).length) return;
+      if (!Object.keys(await getActiveJobs(key)).length) return;
 
       const rateKey = `${key}-last-attempt`;
       const lastAttempt = (await chrome.storage.local.get(rateKey))[rateKey] || 0;
-      if (!force && Date.now() - lastAttempt < automaticIntervalMs(settings.syncIntervalMinutes)) return;
+      if (!force && !expedited && Date.now() - lastAttempt < automaticIntervalMs(settings.syncIntervalMinutes)) return;
+      if (!force && expedited && activeMode && (await checkIfLeaseLost(() => clearDestinationJobs(key)))) return;
+      if (!force && activeMode && (isDeviceStandby() || isDeviceTakingOver())) return;
       await chrome.storage.local.set({ [rateKey]: Date.now() });
       if (key !== (await syncDestinationKey())) return;
+      sent = await getActiveJobs(key);
+      if (!Object.keys(sent).length) return;
 
+      uploadBatch = { key, jobs: sent };
       await autoSyncStatusStorage.update({ phase: 'uploading', lastAttempt: Date.now() });
       const rules = await readSiteRules();
       const result = await pushMultipleDomainCookies(Object.values(sent), (cookie, host) =>
@@ -84,9 +104,7 @@ export async function flushAutomaticSync(force = false): Promise<void> {
       }
 
       const adoptedDomains = new Set(result.adopted.map(item => item.domain));
-      const acknowledged = Object.fromEntries(
-        Object.entries(sent).filter(([host]) => !adoptedDomains.has(host)),
-      );
+      const acknowledged = Object.fromEntries(Object.entries(sent).filter(([host]) => !adoptedDomains.has(host)));
       const writtenHashes = Object.fromEntries(
         await Promise.all(
           Object.entries(acknowledged).map(async ([host, job]) => [
@@ -111,20 +129,37 @@ export async function flushAutomaticSync(force = false): Promise<void> {
         pendingCount: Object.keys(await getActiveJobs(key)).length,
       });
     } catch (error) {
+      const message = syncErrorMessage(error);
+      uploadBatch = undefined;
+      if (Object.keys(sent).length) {
+        await editSyncJobs(key, jobs =>
+          Object.fromEntries(
+            Object.entries(jobs).map(([host, job]) => [
+              host,
+              sent[host]?.revision === job.revision ? { ...job, retryError: message } : job,
+            ]),
+          ),
+        ).catch(() => {});
+      }
       await autoSyncStatusStorage.update({
         phase: 'idle',
         lastAttempt: Date.now(),
-        error: syncErrorMessage(error),
+        error: message,
         pendingCount: Object.keys(await getActiveJobs(key)).length,
       });
     }
   })().finally(() => {
+    uploadBatch = undefined;
     uploadInFlight = undefined;
   });
   return uploadInFlight;
 }
 
-bindCaptureFlush(flushAutomaticSync, isUploadInFlight);
+bindCaptureFlush(async expedited => {
+  // A timer expiring during another upload must still drain the newer revision.
+  while (uploadInFlight) await uploadInFlight.catch(() => {});
+  await flushAutomaticSync(false, expedited);
+}, isUploadInFlight);
 
 export async function restoreAtStartup(periodic = false, force = false): Promise<void> {
   if (reconcileInFlight) {
@@ -180,6 +215,7 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
       const remote = await pullCookies();
       const config = await domainConfigStorage.get();
       const allDomains = new Set([...Object.keys(remote.domainCookieMap || {}), ...Object.keys(config.domainMap)]);
+      await autoSyncStatusStorage.update({ phase: 'comparing' });
 
       for (const domain of allDomains) {
         if (!isSiteAllowed(domain, rules)) continue;
@@ -239,7 +275,9 @@ export async function restoreAtStartup(periodic = false, force = false): Promise
                 message: `云端快照缺少登录要素（${missing.join('、')}），请在已登录电脑重新推送`,
               });
             } else {
-              const uaHint = profile.uaSensitive ? uaMismatchHint(remoteEntry.userAgent, navigator.userAgent) : undefined;
+              const uaHint = profile.uaSensitive
+                ? uaMismatchHint(remoteEntry.userAgent, navigator.userAgent)
+                : undefined;
               await siteHealthStorage.updateDomain(profile.domain, { loginKeysMissing: false, message: uaHint });
               if (!isDeviceStandby()) {
                 void checkSiteHealth(domain);

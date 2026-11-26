@@ -61,7 +61,11 @@ function defaultDeviceLabel(deviceId: string): string {
       : ua.includes('Firefox/')
         ? 'Firefox'
         : '浏览器';
-  const suffix = deviceId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase() || 'PC01';
+  const suffix =
+    deviceId
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 4)
+      .toUpperCase() || 'PC01';
   return `${platform} ${browser} · ${suffix}`;
 }
 
@@ -141,16 +145,93 @@ export const localLeaseStateStorage = {
   update: (patch: Partial<LocalLeaseState>) => rawLeaseState.set(current => ({ ...current, ...patch })),
 };
 
+export type StorageLimitIssue =
+  | { reason: 'invalid' }
+  | {
+      reason: 'item-bytes' | 'origin-bytes' | 'site-bytes' | 'item-count';
+      bytes: number;
+      limit: number;
+      remaining?: number;
+    };
+
+export interface StorageTruncationCounts {
+  local?: number;
+  session?: number;
+  source?: number;
+  details?: {
+    local?: StorageLimitIssue[];
+    session?: StorageLimitIssue[];
+  };
+}
+
+type StorageTruncationBySite = Record<
+  string,
+  | number
+  | {
+      legacy?: number;
+      origins: Record<string, StorageTruncationCounts>;
+    }
+>;
+
+export const storageTruncationStorage = createStorage<StorageTruncationBySite>(
+  RUNTIME_STORAGE_KEYS.storageTruncated,
+  {},
+  { storageType: StorageType.Local, liveUpdate: true },
+);
+
+const truncationTotal = ({ local, session, source }: StorageTruncationCounts) =>
+  (local || 0) + (session || 0) + (source || 0);
+
+export function summarizeStorageTruncation(stored: StorageTruncationBySite): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(stored).flatMap(([site, item]) => {
+      const count =
+        typeof item === 'number'
+          ? item
+          : Math.max(
+              item.legacy || 0,
+              Object.values(item.origins).reduce((sum, next) => sum + truncationTotal(next), 0),
+            );
+      return count > 0 ? [[site, count]] : [];
+    }),
+  );
+}
+
+let truncationWrites = Promise.resolve();
+
 export const syncRuntimeStorage = {
   async getTruncatedMap(): Promise<Record<string, number>> {
-    const data = await chrome.storage.local.get(RUNTIME_STORAGE_KEYS.storageTruncated);
-    return (data[RUNTIME_STORAGE_KEYS.storageTruncated] as Record<string, number>) || {};
+    return summarizeStorageTruncation(await storageTruncationStorage.get());
   },
-  async recordTruncated(host: string, count: number): Promise<void> {
-    if (!count) return;
-    const stored = await this.getTruncatedMap();
-    if (stored[host] === count) return;
-    await chrome.storage.local.set({ [RUNTIME_STORAGE_KEYS.storageTruncated]: { ...stored, [host]: count } });
+  recordTruncated(host: string, origin: string, checked: StorageTruncationCounts): Promise<void> {
+    if (!origin) return Promise.resolve();
+    const update = async () => {
+      const stored = await storageTruncationStorage.get();
+      const previous = stored[host];
+      const known = typeof previous === 'object' ? previous.origins : {};
+      const before = known[origin] || {};
+      const counts = {
+        local: checked.local ?? before.local,
+        session: checked.session ?? before.session,
+        source: checked.source ?? before.source,
+        details: {
+          local: checked.local === undefined ? before.details?.local : checked.details?.local,
+          session: checked.session === undefined ? before.details?.session : checked.details?.session,
+        },
+      };
+      const previousLegacy = typeof previous === 'number' ? previous : previous?.legacy;
+      const legacy = checked.local !== undefined && checked.session !== undefined ? undefined : previousLegacy;
+      const next = { ...stored };
+      const origins = { ...known };
+      if (truncationTotal(counts)) origins[origin] = counts;
+      else delete origins[origin];
+      if (legacy || Object.keys(origins).length) next[host] = { ...(legacy ? { legacy } : {}), origins };
+      else delete next[host];
+      if (JSON.stringify(previous) !== JSON.stringify(next[host])) await storageTruncationStorage.set(next);
+    };
+    const result = truncationWrites.then(update, update);
+    truncationWrites = result.catch(() => {});
+    return result;
   },
   async getSkippedIndexedDbMap(): Promise<Record<string, string[]>> {
     const data = await chrome.storage.local.get(RUNTIME_STORAGE_KEYS.skippedIndexedDb);

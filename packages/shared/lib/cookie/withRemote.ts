@@ -1,4 +1,5 @@
 import { domainContentHash } from './fingerprint';
+import { storageBytes, storageLimits } from './storageScope';
 import {
   assertWebdavConfigured,
   CURRENT_COOKIE_SCHEMA,
@@ -31,7 +32,15 @@ export interface PendingDomainCookie {
   baseHash?: string;
   /** Wall clock (ms) when the local change was captured; drives newer-wins. */
   capturedAt?: number;
+  initialCapture?: boolean;
 }
+
+function preserveOtherOrigins<T extends { origin?: string | null }>(prior: T[], captured: T[]): T[] {
+  const capturedOrigins = new Set(captured.map(item => item.origin || ''));
+  return [...prior.filter(item => !capturedOrigins.has(item.origin || '')), ...captured];
+}
+
+const cookieIdentity = (cookie: ICookie) => JSON.stringify([cookie.domain, cookie.path || '/', cookie.name]);
 
 // Backwards-compatibility bridge for callers passing a raw ICookiesMap instead of RemoteCookieBundle.
 const legacyBundles = new WeakMap<ICookiesMap, RemoteCookieBundle>();
@@ -136,14 +145,30 @@ export const mergeAndWriteMultipleDomainCookies = async (
   const newDomainCookieMap = {
     ...(oldCookieMap.domainCookieMap || {}),
   };
-  for (const { domain, cookies, localStorageItems, sessionStorageItems, indexedDBRecords, userAgent } of writes) {
+  for (const item of writes) {
+    const { domain, cookies, userAgent } = item;
+    const prior = oldCookieMap.domainCookieMap?.[domain];
+    const capturedCookies = new Set(cookies.map(cookieIdentity));
+    const local = item.initialCapture
+      ? preserveOtherOrigins(prior?.localStorageItems || [], item.localStorageItems)
+      : item.localStorageItems;
+    const session = item.initialCapture
+      ? preserveOtherOrigins(prior?.sessionStorageItems || [], item.sessionStorageItems || [])
+      : item.sessionStorageItems || [];
+    if (item.initialCapture && storageBytes(local) + storageBytes(session) > storageLimits.maxBytesPerDomain) {
+      throw new Error(`${domain} 合并首次采集和云端网页存储后超出站点上限，已保留本机队列`);
+    }
     newDomainCookieMap[domain] = {
       updateTime: Date.now(),
       createTime: oldCookieMap.domainCookieMap?.[domain]?.createTime || Date.now(),
-      cookies,
-      localStorageItems: localStorageItems || [],
-      sessionStorageItems: sessionStorageItems || [],
-      indexedDBRecords: indexedDBRecords || [],
+      cookies: item.initialCapture
+        ? [...(prior?.cookies || []).filter(cookie => !capturedCookies.has(cookieIdentity(cookie))), ...cookies]
+        : cookies,
+      localStorageItems: local,
+      sessionStorageItems: session,
+      indexedDBRecords: item.initialCapture
+        ? preserveOtherOrigins(prior?.indexedDBRecords || [], item.indexedDBRecords || [])
+        : item.indexedDBRecords || [],
       schema: CURRENT_COOKIE_SCHEMA,
       userAgent: userAgent || oldCookieMap.domainCookieMap?.[domain]?.userAgent || '',
     };

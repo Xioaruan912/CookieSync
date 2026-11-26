@@ -16,7 +16,7 @@ async function runUpdateCheck(allowDownload: boolean) {
   const settings = await settingsStorage.get();
   if (settings.autoUpdateDownload === false) return;
   const status = await updateStatusStorage.get();
-  if (status.state === 'available') {
+  if (status.state === 'available' && !status.error) {
     // Auto-download is best effort: failures surface on the options page.
     await downloadRelease().catch(() => {});
   }

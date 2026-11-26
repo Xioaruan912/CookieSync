@@ -101,6 +101,15 @@ test('unlisted sites keep their row and report the pause', () => {
   assert.ok(!gone.attention.includes('paused'), 'unlisted already explains the pause');
 });
 
+test('overview distinguishes the actual sending revision from queued and failed revisions', () => {
+  const [host, pending] = Object.entries(base.pending)[0];
+  const state = (entry, inFlight) =>
+    buildOverviewRows({ ...base, pending: { [host]: entry }, uploading: { [host]: inFlight } }).find(row => row.domain === host);
+  assert.equal(state({ ...pending, revision: 'new' }, { revision: 'old' }).uploadState, 'queued');
+  assert.equal(state({ ...pending, revision: 'new' }, { revision: 'new' }).uploadState, 'uploading');
+  assert.equal(state({ ...pending, revision: 'new', retryError: '上传失败' }, undefined).uploadState, 'retry');
+});
+
 test('pending domains that are not registered are still shown', () => {
   const rows = buildOverviewRows({ ...base, pending: { 'legacy.example': { cookies: [{}] } } });
   const legacy = rows.find(row => row.domain === 'legacy.example');

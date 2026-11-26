@@ -20,6 +20,7 @@ import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { clearTransientBadgeError, setTransientBadgeError } from './badgeController';
 import { registerExtensionHandler } from './router';
 import { pullSingleSite, pushSingleSite } from './sync/batch';
+import { getUploadingJobs } from './sync/reconciler';
 
 async function overviewPayload() {
   const [config, rules, key, truncated, indexedDbSkipped, settings, dav, feedback, identity, status] =
@@ -41,6 +42,7 @@ async function overviewPayload() {
     rows: buildOverviewRows({
       domainMap: config.domainMap,
       pending: jobs,
+      uploading: getUploadingJobs(key),
       cached: (await cookieStorage.get()).domainCookieMap || {},
       health: await siteHealthStorage.get(),
       activity: await siteActivityStorage.get(),

@@ -1,5 +1,10 @@
 import { matchesSitePage } from '@sync-your-cookie/shared/lib/cookie/restore';
-import { isSiteAllowed, siteRulePrefix, siteRulesFromStorage, type SiteRules } from '@sync-your-cookie/storage/lib/commonSites';
+import {
+  isSiteAllowed,
+  siteRulePrefix,
+  siteRulesFromStorage,
+  type SiteRules,
+} from '@sync-your-cookie/storage/lib/commonSites';
 import { readPageSnapshot } from './snapshot';
 
 interface CachedWatcherConfig {
@@ -23,6 +28,7 @@ const state: CachedWatcherConfig = {
 
 let localSignature = '';
 let automaticEnabled = false;
+let registeredSite = false;
 let includeLocalStorage = true;
 let includeSessionStorage = false;
 
@@ -62,7 +68,9 @@ function subscribeConfigChanges() {
           .catch(() => {});
       }
     } else if (areaName === 'local' && changes['domainConfig-storage-key']) {
-      const next = changes['domainConfig-storage-key'].newValue as { domainMap?: CachedWatcherConfig['domainMap'] } | undefined;
+      const next = changes['domainConfig-storage-key'].newValue as
+        | { domainMap?: CachedWatcherConfig['domainMap'] }
+        | undefined;
       state.domainMap = next?.domainMap || {};
     }
   });
@@ -87,11 +95,9 @@ async function checkLocalChanges() {
       return;
     }
     const registered = Object.entries(state.domainMap).find(([domain]) => matchesSitePage(domain, host));
-    const enabled = registered
-      ? registered[1].autoPush !== false
-      : state.settings?.autoDiscoverSites !== false;
-    includeSessionStorage =
-      registered?.[1]?.includeSessionStorage ?? state.settings?.includeSessionStorage ?? false;
+    registeredSite = !!registered;
+    const enabled = registered ? registered[1].autoPush !== false : state.settings?.autoDiscoverSites !== false;
+    includeSessionStorage = registered?.[1]?.includeSessionStorage ?? state.settings?.includeSessionStorage ?? false;
     automaticEnabled = enabled;
     if (!enabled) return;
 
@@ -122,18 +128,31 @@ export function initPageWatcher() {
   subscribeConfigChanges();
   void checkLocalChanges();
   setInterval(() => void checkLocalChanges(), 30000);
-  window.addEventListener('pagehide', () => {
+  let lastFinalSignature: string | undefined;
+  const reportFinal = () => {
     if (!automaticEnabled) return;
     try {
+      const snapshot = currentSnapshot();
+      const signature = JSON.stringify(snapshot);
+      if (signature === lastFinalSignature || (registeredSite && signature === localSignature)) return;
+      lastFinalSignature = signature;
       void chrome.runtime
         .sendMessage({
           type: 'CookieSyncLocalStorageChanged',
-          ...currentSnapshot(),
+          finalCapture: true,
+          ...snapshot,
         })
-        .catch(() => {});
+        .catch(() => {
+          if (lastFinalSignature === signature) lastFinalSignature = undefined;
+        });
     } catch {
       /* Page teardown is best effort. */
     }
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') reportFinal();
+    else lastFinalSignature = undefined;
   });
+  window.addEventListener('pagehide', reportFinal);
   void chrome.runtime.sendMessage({ type: 'CookieSyncPageReady' }).catch(() => {});
 }

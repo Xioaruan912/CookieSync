@@ -1,6 +1,7 @@
 import { useGSAP } from '@gsap/react';
 import {
   extractDomainAndPort,
+  isUpdateForInstalledRelease,
   RuntimeMessageType,
   siteProfileFor,
   useStorageSuspense,
@@ -396,7 +397,9 @@ const Popup = () => {
       ) : null}
 
       {!connected ? (
-        <Button className="rounded-full" onClick={() => void chrome.runtime.openOptionsPage()}>
+        <Button
+          className="rounded-full"
+          onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#connection') })}>
           {legacy ? '旧后端已移除，前往配置 WebDAV' : '前往配置 WebDAV 连接'}
         </Button>
       ) : null}
@@ -406,11 +409,7 @@ const Popup = () => {
           type="button"
           className="cc-tile cc-health-row"
           data-state={healthBad ? 'warn' : healthEntry?.state}
-          onClick={() => {
-            if (healthBad && healthProfile.qrLogin)
-              void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#automation') });
-            else void chrome.runtime.openOptionsPage();
-          }}>
+          onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#adaptations') })}>
           <span className="flex items-center gap-2">
             {healthBad ? <ShieldAlert size={15} /> : <ShieldCheck size={15} />}
             <span>
@@ -421,11 +420,12 @@ const Popup = () => {
         </button>
       ) : null}
 
-      {update.state === 'available' || update.state === 'ready' ? (
+      {(update.state === 'available' || update.state === 'ready') &&
+      isUpdateForInstalledRelease(update.latestVersion, update.latestBuild) ? (
         <button
           type="button"
           className="cc-tile cc-update-row"
-          onClick={() => void chrome.runtime.openOptionsPage()}>
+          onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#about') })}>
           <Download size={14} aria-hidden="true" />
           <span>
             新版本 {update.latestVersion}
@@ -442,15 +442,17 @@ const Popup = () => {
               ? '正在自动接班同步…'
               : status.phase === 'uploading'
                 ? '正在上传改动…'
-                : status.phase === 'checking'
+                : status.phase === 'comparing'
                   ? '正在比对云端…'
-                  : status.error
-                    ? '后台同步待重试'
-                    : status.pendingCount
-                      ? `${status.pendingCount} 个网站待上传`
-                      : isStandby
-                        ? '待机护航中'
-                        : '全部同步就绪'}
+                  : status.phase === 'checking'
+                    ? '正在检查同步…'
+                    : status.error
+                      ? '后台同步待重试'
+                      : status.pendingCount
+                        ? `${status.pendingCount} 个网站待上传`
+                        : isStandby
+                          ? '待机护航中'
+                          : '全部同步就绪'}
           </div>
           <div className="truncate text-[11px] text-muted-foreground">
             {status.error ||

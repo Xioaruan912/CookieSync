@@ -7,7 +7,8 @@ import {
   type SiteProfile,
 } from '@sync-your-cookie/shared';
 import { siteHealthStorage, type SiteHealthEntry } from '@sync-your-cookie/storage/lib/siteHealthStorage';
-import { Button } from '@sync-your-cookie/ui';
+import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
+import { Button, Label, Switch } from '@sync-your-cookie/ui';
 import { BadgeCheck, Loader2, QrCode, RefreshCw, ShieldAlert, ShieldQuestion } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useEffect, useRef, useState } from 'react';
@@ -32,11 +33,14 @@ const stateText = (entry?: SiteHealthEntry) =>
 
 export function SiteHealthSettings() {
   const health = useStorageSuspense(siteHealthStorage);
+  const settings = useStorageSuspense(settingsStorage);
   const [busyDomain, setBusyDomain] = useState<string>();
   const [qrProfile, setQrProfile] = useState<SiteProfile>();
   const [qrStage, setQrStage] = useState<QrStage>({ stage: 'idle' });
   const pollTimer = useRef<ReturnType<typeof setTimeout> | undefined>();
-  const trackedProfiles = siteProfiles.filter(profile => profile.healthCheck);
+  const trackedProfiles = siteProfiles.filter(
+    profile => profile.healthCheck || profile.qrLogin || profile.singleSession,
+  );
 
   useEffect(
     () => () => {
@@ -102,7 +106,9 @@ export function SiteHealthSettings() {
             setQrStage({ stage: 'success' });
             toast.success(`${profile.domain} 会话已更新，正在推送`);
           } else if (status === 1) {
-            setQrStage(current => (current.stage === 'waiting' ? { stage: 'scanned', dataUrl: current.dataUrl } : current));
+            setQrStage(current =>
+              current.stage === 'waiting' ? { stage: 'scanned', dataUrl: current.dataUrl } : current,
+            );
             pollTimer.current = setTimeout(poll, 2000);
           } else if (status === -1) {
             setQrStage({ stage: 'failed', error: '二维码已过期，请重新生成' });
@@ -128,17 +134,13 @@ export function SiteHealthSettings() {
   };
 
   return (
-    <div className="site-health" aria-label="站点登录状态">
-      <h3 className="font-medium">站点登录状态</h3>
-      <p className="text-muted-foreground text-sm">
-        恢复后向站点验证会话是否真的有效；仅对配备档案的站点运行，不在每次同步轮询中打扰站点。
-      </p>
+    <div className="site-health" aria-label="已适配网站">
       {trackedProfiles.map(profile => {
         const entry = health[profile.domain];
         return (
-          <div key={profile.domain} className="site-health-card" data-state={entry?.state}>
+          <section key={profile.domain} className="titanium-panel-card site-health-card" data-state={entry?.state}>
             <div className="site-health-head">
-              <span className="site-health-badge">
+              <h2 className="site-health-badge">
                 {entry?.state === 'ok' ? (
                   <BadgeCheck size={16} aria-hidden="true" />
                 ) : entry?.state === 'invalid' ? (
@@ -146,21 +148,26 @@ export function SiteHealthSettings() {
                 ) : (
                   <ShieldQuestion size={16} aria-hidden="true" />
                 )}
-                {profile.domain} 登录状态
-              </span>
-              <Button size="sm" variant="outline" disabled={busyDomain === profile.domain} onClick={() => void verify(profile.domain)}>
-                {busyDomain === profile.domain ? (
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <RefreshCw size={15} className="mr-1" aria-hidden="true" />
-                )}
-                立即验证
-              </Button>
+                {profile.domain}
+              </h2>
+              {profile.healthCheck ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busyDomain === profile.domain}
+                  onClick={() => void verify(profile.domain)}>
+                  {busyDomain === profile.domain ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <RefreshCw size={15} className="mr-1" aria-hidden="true" />
+                  )}
+                  立即验证
+                </Button>
+              ) : null}
             </div>
             <p className="site-health-state">
               {stateText(entry)}
-              {entry?.state === 'ok' && entry.userName ? ` · ${entry.userName}` : ''}
-              {entry?.checkedAt ? ` · 检查于 ${new Date(entry.checkedAt).toLocaleString()}` : ''}
+              {entry?.checkedAt ? ` · ${new Date(entry.checkedAt).toLocaleString()}` : ''}
             </p>
             {entry?.loginKeysMissing ? (
               <p role="status">本机快照缺少该站登录要素（可能已退出登录）；推送后其他电脑也无法用它登录。</p>
@@ -170,13 +177,12 @@ export function SiteHealthSettings() {
                 {entry.message}
               </p>
             ) : null}
-            {entry?.state === 'invalid' ? (
-              <p className="text-muted-foreground">
-                站点拒绝恢复的会话（常见于登录地点/设备绑定）。在本机重新登录或扫码后推送，其他电脑稍后自动采用。
-              </p>
-            ) : null}
+            {entry?.state === 'invalid' ? <p className="text-muted-foreground">请在本机重新登录。</p> : null}
             {entry?.state === 'invalid' && profile.qrLogin ? (
-              <Button size="sm" disabled={qrProfile?.domain === profile.domain && qrStage.stage !== 'failed'} onClick={() => void startRepair(profile)}>
+              <Button
+                size="sm"
+                disabled={qrProfile?.domain === profile.domain && qrStage.stage !== 'failed'}
+                onClick={() => void startRepair(profile)}>
                 <QrCode size={15} className="mr-1" aria-hidden="true" />
                 扫码重新登录
               </Button>
@@ -185,20 +191,33 @@ export function SiteHealthSettings() {
               <details className="site-health-repair">
                 <summary>
                   <QrCode size={15} aria-hidden="true" />
-                  {profile.domain} 会话修复（扫码重登）
+                  扫码重新登录
                 </summary>
-                <p className="text-muted-foreground">
-                  在本机生成全新网页端会话，效果与在官网手动登录相同：会替换当前网页端会话，手机等其他端登录不受影响。成功后立即推送，其他电脑稍后自动采用。
-                </p>
-                <Button size="sm" variant="outline" disabled={qrProfile?.domain === profile.domain && qrStage.stage !== 'failed'} onClick={() => void startRepair(profile)}>
+                <p className="text-muted-foreground">扫码后会替换本机的网页登录会话。</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={qrProfile?.domain === profile.domain && qrStage.stage !== 'failed'}
+                  onClick={() => void startRepair(profile)}>
                   <QrCode size={15} className="mr-1" aria-hidden="true" />
                   生成二维码
                 </Button>
               </details>
             ) : null}
-          </div>
+          </section>
         );
       })}
+
+      {trackedProfiles.some(profile => profile.singleSession) ? (
+        <div className="titanium-panel-card settings-section-head">
+          <Label htmlFor="adaptations-idle-tabs">待机时休眠单会话网站</Label>
+          <Switch
+            id="adaptations-idle-tabs"
+            checked={settings.discardIdleSingleSessionTabs !== false}
+            onCheckedChange={checked => void settingsStorage.update({ discardIdleSingleSessionTabs: checked })}
+          />
+        </div>
+      ) : null}
 
       {qrProfile ? (
         <div className="qr-overlay" role="dialog" aria-modal="true" aria-label="扫码登录">
@@ -230,7 +249,10 @@ export function SiteHealthSettings() {
                 {qrStage.error}
               </p>
             ) : null}
-            <Button size="sm" variant="outline" onClick={qrStage.stage === 'failed' ? () => void startRepair(qrProfile) : closeQr}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={qrStage.stage === 'failed' ? () => void startRepair(qrProfile) : closeQr}>
               {qrStage.stage === 'failed' ? '重新生成二维码' : '关闭'}
             </Button>
           </div>

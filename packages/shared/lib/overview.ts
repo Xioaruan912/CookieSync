@@ -21,6 +21,8 @@ export interface OverviewStorageEntry {
 
 export interface OverviewPendingEntry extends OverviewStorageEntry {
   capturedAt?: number;
+  revision?: string;
+  retryError?: string;
 }
 
 export interface OverviewCachedEntry extends OverviewStorageEntry {
@@ -57,6 +59,8 @@ export interface OverviewRow {
     sessionStorageItems: number;
     indexedDBRecords: number;
   };
+  uploadState?: 'queued' | 'uploading' | 'retry';
+  retryError?: string;
   cached?: {
     updateTime?: number;
     cookies: number;
@@ -76,6 +80,7 @@ export interface OverviewRow {
 export interface OverviewInput {
   domainMap: Record<string, OverviewSiteConfig>;
   pending: Record<string, OverviewPendingEntry>;
+  uploading?: Record<string, OverviewPendingEntry>;
   cached: Record<string, OverviewCachedEntry>;
   health: Record<string, OverviewHealthEntry>;
   activity: Record<string, OverviewActivityEntry>;
@@ -89,6 +94,7 @@ const count = (value: unknown[] | null | undefined) => (Array.isArray(value) ? v
 export function buildOverviewRows({
   domainMap,
   pending,
+  uploading = {},
   cached,
   health,
   activity,
@@ -104,6 +110,7 @@ export function buildOverviewRows({
     const pendingEntry = pending[domain];
     const cachedEntry = cached[domain];
     const activityEntry = activity[domain] || {};
+    const sending = !!pendingEntry?.revision && pendingEntry.revision === uploading[domain]?.revision;
     // A registered site that fell off the allow list keeps its row (and data)
     // so the pause is visible instead of looking like a deletion.
     if (!listed && !config && !pendingEntry) continue;
@@ -135,6 +142,8 @@ export function buildOverviewRows({
             indexedDBRecords: count(pendingEntry.indexedDBRecords),
           }
         : undefined,
+      uploadState: pendingEntry ? (sending ? 'uploading' : pendingEntry.retryError ? 'retry' : 'queued') : undefined,
+      retryError: pendingEntry?.retryError,
       cached: cachedEntry
         ? {
             updateTime: cachedEntry.updateTime,

@@ -1,395 +1,445 @@
-import { useStorageSuspense } from '@sync-your-cookie/shared';
+import { useGSAP } from '@gsap/react';
+import { RuntimeMessageType, useStorageSuspense, type OverviewRow } from '@sync-your-cookie/shared';
+import { accountStorage, isLegacyProvider } from '@sync-your-cookie/storage/lib/accountStorage';
 import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
+import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { Button } from '@sync-your-cookie/ui';
+import gsap from 'gsap';
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
-  Cloud,
-  CloudOff,
   Loader2,
+  MoreHorizontal,
   RefreshCw,
   Search,
-  ShieldAlert,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
+import { DeviceStatus, type TransferDirection } from './DeviceStatus';
+import { OverviewDialog } from './OverviewDialog';
+import { OverviewSiteDetails, SiteMark, SiteState, siteNeedsAttention } from './OverviewSiteDetails';
 
-interface OverviewRow {
-  domain: string;
-  sourceUrl?: string;
-  listed: boolean;
-  autoPush: boolean;
-  autoPull: boolean;
-  paused: boolean;
-  pending?: {
-    capturedAt?: number;
-    cookies: number;
-    localStorageItems: number;
-    sessionStorageItems: number;
-    indexedDBRecords: number;
-  };
-  cached?: {
-    updateTime?: number;
-    cookies: number;
-    localStorageItems: number;
-    sessionStorageItems: number;
-    indexedDBRecords: number;
-  };
-  health?: { state?: 'ok' | 'invalid' | 'unknown'; message?: string; checkedAt?: number; userName?: string };
-  lastPushAt?: number;
-  lastPullAt?: number;
-  error?: string;
-  truncated?: number;
-  indexedDbSkipped?: string[];
-  attention: string[];
-}
+gsap.registerPlugin(useGSAP);
 
 interface OverviewPayload {
   rows: OverviewRow[];
-  connected: boolean;
-  sessionDefault: boolean;
-  status?: { pendingCount?: number; error?: string; lastCheck?: number; lastSuccess?: number; note?: string };
-  schemaWarning?: { at: number; message: string };
+  schemaWarning?: { message: string };
 }
 
-type Filter = 'all' | 'attention' | 'paused';
-type BulkSummary = { domains: number; cookies: number; localStorageItems: number; skipped: number };
-
-const time = (value?: number) =>
-  value
-    ? new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-    : '尚无记录';
-
-const stateLabel = (row: OverviewRow) => {
-  if (!row.listed) return '名单外（暂停）';
-  if (row.paused) return '已暂停';
-  if (row.autoPush && row.autoPull) return '自动收发';
-  return row.autoPush ? '仅自动推送' : '仅自动拉取';
-};
-
-const healthLabel = (row: OverviewRow) => {
-  const state = row.health?.state;
-  if (state === 'ok') return '会话有效';
-  if (state === 'invalid') return '会话失效';
-  if (state === 'unknown') return '未验证完成';
-  return '未验证';
-};
+const filters = [
+  ['all', '全部'],
+  ['attention', '待处理'],
+  ['paused', '已暂停'],
+] as const;
+type Filter = (typeof filters)[number][0];
+type Operation = { direction: TransferDirection; domain?: string };
+type Dialog = { kind: 'site'; domain: string } | { kind: 'bulk'; direction?: TransferDirection } | { kind: 'notice' };
+const narrowLayout = '(max-width: 820px), (max-height: 540px)';
 
 export function OverviewPanel() {
+  const account = useStorageSuspense(accountStorage);
   const status = useStorageSuspense(autoSyncStatusStorage);
+  const webdav = useStorageSuspense(webdavStorage);
+  const connected =
+    !isLegacyProvider(account) && !!webdav.url?.trim() && !!webdav.username?.trim() && !!webdav.password;
   const [data, setData] = useState<OverviewPayload>();
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const [readError, setReadError] = useState('');
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('all');
-  const [search, setSearch] = useState('');
-  const [busy, setBusy] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const [bulkConfirm, setBulkConfirm] = useState<'pull' | 'push'>();
-  const confirmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(5);
+  const [selectedDomain, setSelectedDomain] = useState<string>();
+  const [dialog, setDialog] = useState<Dialog>();
+  const [operation, setOperation] = useState<Operation>();
+  const operationRef = useRef<Operation>();
+  const viewport = useRef<HTMLDivElement>(null);
+  const listCard = useRef<HTMLElement>(null);
+  const requestNumber = useRef(0);
+  const pageMotion = useRef(0);
+  const selectMotion = useRef(false);
+  const bulkConfirmButton = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
+    const request = ++requestNumber.current;
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'CookieSyncOverview' });
+      const response = await chrome.runtime.sendMessage({ type: RuntimeMessageType.Overview });
+      if (request !== requestNumber.current) return;
       if (!response?.isOk) throw new Error(response?.msg || '读取总览失败');
       setData(response.result as OverviewPayload);
-      setError('');
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '读取总览失败，请重新加载扩展');
+      setReadError('');
+    } catch (error) {
+      if (request === requestNumber.current) setReadError(error instanceof Error ? error.message : '读取总览失败');
     } finally {
-      setLoading(false);
+      if (request === requestNumber.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), 30000);
-    return () => clearInterval(timer);
+    const timer = window.setInterval(() => void load(), 30000);
+    let debounce: number | undefined;
+    const onLocalChange: Parameters<typeof chrome.storage.local.onChanged.addListener>[0] = changes => {
+      if (
+        !Object.keys(changes).some(
+          key => key === 'cookiesync-storage-truncated' || /^cookiesync-pending-[a-f0-9]{64}$/.test(key),
+        )
+      )
+        return;
+      if (debounce !== undefined) return;
+      debounce = window.setTimeout(() => {
+        debounce = undefined;
+        void load();
+      }, 120);
+    };
+    chrome.storage.local.onChanged.addListener(onLocalChange);
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(debounce);
+      chrome.storage.local.onChanged.removeListener(onLocalChange);
+      requestNumber.current += 1;
+    };
   }, [load]);
 
   useEffect(() => {
     void load();
-  }, [status.pendingCount, status.lastCheck, status.lastSuccess, load]);
+  }, [load, connected, status.phase, status.pendingCount, status.lastCheck, status.lastSuccess]);
 
-  useEffect(() => () => confirmTimer.current && clearTimeout(confirmTimer.current), []);
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const measure = () => {
+      const rowHeight = Number.parseFloat(getComputedStyle(element).getPropertyValue('--overview-row-height')) || 48;
+      setPageSize(Math.max(1, Math.floor(element.clientHeight / rowHeight)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
-  const armConfirm = (key: string) => {
-    setConfirm(key);
-    if (confirmTimer.current) clearTimeout(confirmTimer.current);
-    confirmTimer.current = setTimeout(() => setConfirm(''), 5000);
-  };
+  const sites = data?.rows || [];
+  const search = query.trim().toLowerCase();
+  const filtered = sites.filter(
+    site =>
+      (!search || site.domain.toLowerCase().includes(search)) &&
+      (filter === 'all' || (filter === 'attention' ? siteNeedsAttention(site) : site.paused)),
+  );
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const activePage = Math.min(page, pages - 1);
+  const visible = filtered.slice(activePage * pageSize, (activePage + 1) * pageSize);
+  const selected = visible.find(site => site.domain === selectedDomain) || visible[0];
+  const modalSite = dialog?.kind === 'site' ? sites.find(site => site.domain === dialog.domain) : undefined;
+  const bulkDirection = dialog?.kind === 'bulk' ? dialog.direction : undefined;
+  const notices = Array.from(
+    new Set([readError, data?.schemaWarning?.message, connected ? status.error : ''].filter(Boolean)),
+  );
+  const blocked = !!operation || status.phase === 'taking-over' || status.deviceRole === 'taking-over';
 
-  const act = async (row: OverviewRow, kind: 'push' | 'pull') => {
-    const key = `${row.domain}:${kind}`;
-    if (confirm !== key) {
-      armConfirm(key);
+  useLayoutEffect(() => {
+    if (bulkDirection) bulkConfirmButton.current?.focus({ preventScroll: true });
+  }, [bulkDirection]);
+
+  useGSAP(
+    () => {
+      const direction = pageMotion.current;
+      pageMotion.current = 0;
+      if (!direction || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      gsap.fromTo(
+        '.overview-site-list',
+        { x: direction * 14, opacity: 0.65 },
+        {
+          x: 0,
+          opacity: 1,
+          duration: 0.21,
+          ease: 'power3.out',
+          clearProps: 'transform,opacity',
+          overwrite: 'auto',
+        },
+      );
+    },
+    { scope: listCard, dependencies: [activePage], revertOnUpdate: true },
+  );
+
+  const transfer = async ({ direction, domain }: Operation) => {
+    if (
+      !connected ||
+      operationRef.current ||
+      status.phase === 'taking-over' ||
+      status.deviceRole === 'taking-over' ||
+      (domain && !sites.some(site => site.domain === domain && site.listed))
+    )
       return;
-    }
-    setConfirm('');
-    setBusy(key);
-    setMessage('');
+
+    const current = { direction, domain };
+    operationRef.current = current;
+    setOperation(current);
+    const fallback = direction === 'push' ? '推送失败' : '拉取失败';
     try {
-      const response = await chrome.runtime.sendMessage({
-        type: kind === 'push' ? 'CookieSyncPushSite' : 'CookieSyncPullSite',
-        domain: row.domain,
-      });
-      if (!response?.isOk) throw new Error(response?.msg || (kind === 'push' ? '推送失败' : '拉取失败'));
-      setMessage(
-        kind === 'push'
-          ? `已上传 ${row.domain}（${response.result?.cookies ?? 0} 个 Cookie）`
-          : `已从云端应用 ${row.domain}，已打开的页面已刷新`,
-      );
+      const type = domain
+        ? direction === 'push'
+          ? RuntimeMessageType.PushSite
+          : RuntimeMessageType.PullSite
+        : direction === 'push'
+          ? RuntimeMessageType.PushAll
+          : RuntimeMessageType.PullAll;
+      const result = await chrome.runtime.sendMessage(domain ? { type, domain } : { type });
+      if (!result?.isOk) throw new Error(result?.msg || fallback);
+      if (domain) {
+        toast.success(direction === 'push' ? `已推送 ${domain}` : `已拉取 ${domain}`);
+      } else {
+        const summary = result.result as { domains: number; skipped: number };
+        toast.success(
+          `${direction === 'push' ? '已上传' : '已拉取'} ${summary.domains} 个网站，跳过 ${summary.skipped} 个`,
+        );
+        setDialog(value => (value?.kind === 'bulk' ? undefined : value));
+      }
       await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : kind === 'push' ? '推送失败' : '拉取失败');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : fallback);
     } finally {
-      setBusy('');
+      operationRef.current = undefined;
+      setOperation(undefined);
     }
   };
 
-  const runBulk = async (mode: 'pull' | 'push') => {
-    setBulkBusy(true);
-    setMessage('');
-    setError('');
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: mode === 'pull' ? 'CookieSyncPullAll' : 'CookieSyncPushAll',
-      });
-      if (!response?.isOk) throw new Error(response?.msg || (mode === 'pull' ? '拉取全部失败' : '全部上传失败'));
-      const result = response.result as BulkSummary;
-      setMessage(
-        `${mode === 'pull' ? '已从云端拉取' : '已向云端上传'} ${result.domains} 个网站（${result.cookies} 个 Cookie），跳过 ${result.skipped} 个`,
-      );
-      setBulkConfirm(undefined);
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : mode === 'pull' ? '拉取全部失败' : '全部上传失败');
-    } finally {
-      setBulkBusy(false);
-    }
-  };
+  const renderDetails = (site: OverviewRow, animate = false) => (
+    <OverviewSiteDetails
+      key={site.domain}
+      site={site}
+      connected={connected}
+      blocked={blocked}
+      working={operation?.domain === site.domain ? operation.direction : undefined}
+      animate={animate}
+      onTransfer={direction => transfer({ direction, domain: site.domain })}
+    />
+  );
 
-  const rows = data?.rows || [];
-  const pendingCount = rows.filter(row => row.pending).length;
-  const healthIssues = rows.filter(row => row.health?.state === 'invalid').length;
-  const pausedCount = rows.filter(row => row.paused).length;
-  const connected = data?.connected ?? false;
-  const visible = rows.filter(row => {
-    if (search && !row.domain.toLowerCase().includes(search.trim().toLowerCase())) return false;
-    if (filter === 'attention')
-      return row.pending || row.health?.state === 'invalid' || row.error || row.truncated || !row.listed;
-    if (filter === 'paused') return row.paused;
-    return true;
-  });
+  const changePage = (direction: number, animated: boolean) => {
+    const next = Math.min(pages - 1, Math.max(0, activePage + direction));
+    if (next === activePage) return;
+    pageMotion.current = animated ? direction : 0;
+    selectMotion.current = false;
+    setPage(next);
+  };
 
   return (
-    <div className="overview-panel" aria-label="同步总览">
-      <div className="overview-summary">
-        {[
-          [String(rows.length), '已登记站点'],
-          [String(pendingCount), '待上传'],
-          [String(healthIssues), '会话失效'],
-          [String(pausedCount), '已暂停'],
-        ].map(([value, label]) => (
-          <div className="overview-stat" key={label}>
-            <strong>{value}</strong>
-            <span>{label}</span>
-          </div>
-        ))}
-      </div>
-
-      <p className="overview-statusline">
-        最近检查 {time(data?.status?.lastCheck)} · 最近上传成功 {time(data?.status?.lastSuccess)}
-        {data?.status?.note ? ` · ${data.status.note}` : ''}
-      </p>
-
-      {!connected ? (
-        <p className="overview-banner" role="status">
-          <CloudOff size={16} aria-hidden />
-          尚未连接 WebDAV，站点操作不可用。请先在「同步连接」完成配置。
-        </p>
-      ) : null}
-      {data?.schemaWarning ? (
-        <p className="overview-banner" role="alert">
-          <ShieldAlert size={16} aria-hidden />
-          {data.schemaWarning.message}
-        </p>
-      ) : null}
-      {error || data?.status?.error ? (
-        <p className="overview-banner is-error" role="alert">
-          <CircleAlert size={16} aria-hidden />
-          {error || data?.status?.error}
-        </p>
-      ) : null}
-      {message ? <p className="overview-message" role="status">{message}</p> : null}
-
-      <div className="overview-toolbar">
-        <label className="overview-search">
-          <Search size={15} aria-hidden />
-          <input
-            type="search"
-            value={search}
-            placeholder="搜索网站"
-            aria-label="搜索网站"
-            onChange={event => setSearch(event.target.value)}
-          />
-        </label>
-        <div className="overview-filters" role="group" aria-label="筛选网站">
-          {(
-            [
-              ['all', '全部'],
-              ['attention', '待处理'],
-              ['paused', '已暂停'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={filter === value}
-              onClick={() => setFilter(value)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="overview-toolbar-actions">
-          <Button size="sm" variant="ghost" onClick={() => void load()} disabled={loading}>
-            {loading ? <Loader2 size={14} className="mr-1 animate-spin" /> : <RefreshCw size={14} className="mr-1" />}
-            刷新
-          </Button>
-          {bulkConfirm ? (
-            <>
-              <Button size="sm" disabled={bulkBusy} onClick={() => void runBulk(bulkConfirm)}>
-                {bulkBusy ? '处理中…' : bulkConfirm === 'pull' ? '确认用云端覆盖全部' : '确认用本机覆盖全部'}
-              </Button>
-              <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => setBulkConfirm(undefined)}>
-                取消
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!connected || bulkBusy}
-                onClick={() => setBulkConfirm('pull')}>
-                <ArrowDownToLine size={14} className="mr-1" />
-                拉取全部
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!connected || bulkBusy}
-                onClick={() => setBulkConfirm('push')}>
-                <ArrowUpFromLine size={14} className="mr-1" />
-                全部上传
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {bulkConfirm ? (
-        <p className="overview-note">
-          {bulkConfirm === 'pull'
-            ? '将用云端覆盖名单内所有开启自动拉取的网站，并刷新已打开的对应页面；本机尚未上传的改动会被放弃。'
-            : '将用本机数据覆盖云端名单内所有开启自动推送的网站；云端较新的改动会被覆盖。'}
-        </p>
-      ) : null}
-
-      <div className="overview-table" role="table" aria-label="网站同步状态">
-        <div className="overview-row overview-head" role="row">
-          <span role="columnheader">站点</span>
-          <span role="columnheader">状态</span>
-          <span role="columnheader">数据</span>
-          <span role="columnheader">最近同步</span>
-          <span role="columnheader" className="overview-actions-head">
-            操作
-          </span>
-        </div>
-        {visible.map(row => {
-          const pendingKey = `${row.domain}:push`;
-          const pullingKey = `${row.domain}:pull`;
-          return (
-            <div className="overview-row" role="row" key={row.domain} data-paused={row.paused}>
-              <div className="overview-site" role="cell">
-                <span className="overview-domain">{row.domain}</span>
-                <span className="overview-sub">
-                  {row.health ? (
-                    <span className="overview-chip" data-state={row.health.state}>
-                      {healthLabel(row)}
-                    </span>
-                  ) : null}
-                  {row.truncated ? (
-                    <span className="overview-chip is-warn" title={`有 ${row.truncated} 项超出同步上限，未上传`}>
-                      截断 {row.truncated} 项
-                    </span>
-                  ) : null}
-                  {row.indexedDbSkipped?.length ? (
-                    <span
-                      className="overview-chip is-warn"
-                      title={`IndexedDB 未同步：${row.indexedDbSkipped.slice(0, 6).join('、')}`}>
-                      IDB 跳过 {row.indexedDbSkipped.length} 个仓库
-                    </span>
-                  ) : null}
-                  {row.error ? (
-                    <span className="overview-chip is-warn" title={row.error}>
-                      {row.error}
-                    </span>
-                  ) : null}
-                </span>
-              </div>
-              <div role="cell" className="overview-state">
-                <span>{stateLabel(row)}</span>
-                {row.pending ? <span className="overview-pending">待上传</span> : null}
-              </div>
-              <div role="cell" className="overview-data">
-                <span>{row.cached?.cookies ?? 0} Cookie</span>
-                <span>
-                  {row.cached?.localStorageItems ?? 0} 本地 · {row.cached?.sessionStorageItems ?? 0} 会话
-                  {row.cached?.indexedDBRecords ? ` · ${row.cached.indexedDBRecords} IDB` : ''}
-                </span>
-              </div>
-              <div role="cell" className="overview-times">
-                <span>拉取 {time(row.lastPullAt)}</span>
-                <span>推送 {time(row.lastPushAt)}</span>
-              </div>
-              <div role="cell" className="overview-row-actions">
+    <div className="overview-console">
+      <DeviceStatus connected={connected} busy={!!operation} operation={operation?.direction} onSync={load} />
+      <div className="overview-desk">
+        <section ref={listCard} className="overview-card overview-list-card" aria-label="网站列表">
+          <div className="overview-card-head">
+            <h2>
+              网站 <span className="overview-count">{data ? filtered.length : '—'}</span>
+            </h2>
+            <div className="overview-list-actions">
+              {notices.length > 0 ? (
                 <Button
                   size="sm"
-                  variant="outline"
-                  aria-label={`推送 ${row.domain}`}
-                  disabled={!connected || !row.listed || !!busy || bulkBusy}
-                  onClick={() => void act(row, 'push')}>
-                  {busy === pendingKey ? <Loader2 size={13} className="mr-1 animate-spin" /> : null}
-                  {confirm === pendingKey ? '确认推送' : '推送'}
+                  variant="ghost"
+                  className="overview-control overview-notice"
+                  onClick={() => setDialog({ kind: 'notice' })}>
+                  <CircleAlert size={16} aria-hidden="true" /> <span>查看提示</span>
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label={`拉取 ${row.domain}`}
-                  disabled={!connected || !row.listed || !!busy || bulkBusy}
-                  onClick={() => void act(row, 'pull')}>
-                  {busy === pullingKey ? <Loader2 size={13} className="mr-1 animate-spin" /> : null}
-                  {confirm === pullingKey ? '确认拉取' : '拉取'}
-                </Button>
-              </div>
+              ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="overview-control"
+                disabled={loading}
+                onClick={() => {
+                  setLoading(true);
+                  void load();
+                }}>
+                {loading ? (
+                  <Loader2 size={15} className="overview-spinner" aria-hidden="true" />
+                ) : (
+                  <RefreshCw size={15} aria-hidden="true" />
+                )}
+                刷新
+              </Button>
             </div>
-          );
-        })}
-        {!visible.length && !loading ? (
-          <p className="overview-empty">
-            {rows.length
-              ? '当前筛选下没有网站。'
-              : '还没有登记任何网站。打开名单内的网站并保持登录，扩展会自动登记；也可以在「网站名单」手动加入。'}
-          </p>
-        ) : null}
+          </div>
+          <div className="overview-list-controls">
+            <div className="overview-segment" role="group" aria-label="筛选网站">
+              {filters.map(([key, name]) => (
+                <button
+                  type="button"
+                  key={key}
+                  aria-pressed={filter === key}
+                  onClick={() => {
+                    selectMotion.current = false;
+                    setFilter(key);
+                    setPage(0);
+                  }}>
+                  {name}
+                </button>
+              ))}
+            </div>
+            <label className="overview-query">
+              <Search size={15} aria-hidden="true" />
+              <input
+                type="search"
+                aria-label="搜索网站"
+                placeholder="搜索网站"
+                value={query}
+                onChange={event => {
+                  selectMotion.current = false;
+                  setQuery(event.target.value);
+                  setPage(0);
+                }}
+              />
+            </label>
+          </div>
+
+          <div ref={viewport} className="overview-list-viewport" aria-busy={loading}>
+            {visible.length ? (
+              <ul className="overview-site-list">
+                {visible.map(site => (
+                  <li key={site.domain}>
+                    <button
+                      type="button"
+                      className="overview-site-button"
+                      aria-pressed={selected?.domain === site.domain}
+                      onClick={event => {
+                        selectMotion.current = event.detail > 0;
+                        setSelectedDomain(site.domain);
+                        if (window.matchMedia(narrowLayout).matches) setDialog({ kind: 'site', domain: site.domain });
+                      }}>
+                      <SiteMark domain={site.domain} />
+                      <strong title={site.domain}>{site.domain}</strong>
+                      <SiteState site={site} connected={connected} />
+                      <ChevronRight size={15} className="overview-chevron" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="overview-list-empty" role="status">
+                {loading
+                  ? '正在读取网站…'
+                  : readError
+                    ? '读取失败，请刷新。'
+                    : sites.length
+                      ? '没有匹配的网站。'
+                      : '暂无已登记网站。'}
+              </p>
+            )}
+          </div>
+
+          <div className="overview-list-footer">
+            <Button size="sm" variant="ghost" className="overview-control" onClick={() => setDialog({ kind: 'bulk' })}>
+              <MoreHorizontal size={16} aria-hidden="true" />
+              批量操作
+            </Button>
+            <div className="overview-pager" role="group" aria-label="网站分页">
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                aria-label="上一页"
+                disabled={activePage === 0}
+                onClick={event => changePage(-1, event.detail > 0)}>
+                <ChevronLeft size={16} aria-hidden="true" />
+              </Button>
+              <output aria-live="polite">
+                {activePage + 1} / {pages}
+              </output>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                aria-label="下一页"
+                disabled={activePage + 1 === pages}
+                onClick={event => changePage(1, event.detail > 0)}>
+                <ChevronRight size={16} aria-hidden="true" />
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        <aside className="overview-card overview-inspector" aria-label="站点详情">
+          <h2>站点详情</h2>
+          {selected ? (
+            renderDetails(selected, selectMotion.current)
+          ) : (
+            <p className="overview-list-empty">{loading ? '正在读取…' : '当前没有可查看的站点。'}</p>
+          )}
+        </aside>
       </div>
 
-      <p className="overview-footnote">
-        <Cloud size={14} aria-hidden />
-        总览只读取本机记录，不会为了刷新表格而访问 WebDAV；点「推送 / 拉取」才发起一次真实请求。行内按钮需点击两次确认。
-      </p>
+      {dialog?.kind === 'site' ? (
+        <OverviewDialog title="站点详情" sheet onClose={() => setDialog(undefined)}>
+          {modalSite ? renderDetails(modalSite) : <p>该站点已从列表移除。</p>}
+        </OverviewDialog>
+      ) : null}
+
+      {dialog?.kind === 'notice' ? (
+        <OverviewDialog title="同步提示" onClose={() => setDialog(undefined)}>
+          <ul className="overview-dialog-copy overview-issues">
+            {notices.length ? notices.map(notice => <li key={notice}>{notice}</li>) : <li>当前没有提示。</li>}
+          </ul>
+        </OverviewDialog>
+      ) : null}
+
+      {dialog?.kind === 'bulk' ? (
+        <OverviewDialog title="批量操作" onClose={() => setDialog(undefined)}>
+          <p className="overview-dialog-copy" role="status">
+            {bulkDirection === 'pull'
+              ? '云端数据将覆盖名单内开启自动拉取的网站，本机未上传的改动会被放弃。'
+              : bulkDirection === 'push'
+                ? '本机数据将覆盖名单内开启自动推送的网站，云端较新的改动会被覆盖。'
+                : connected
+                  ? '批量操作适用于名单内已开启相应同步方向的网站。'
+                  : '连接 WebDAV 后即可批量操作。'}
+          </p>
+          <div className="overview-inspector-actions">
+            {bulkDirection ? (
+              <>
+                <Button
+                  ref={bulkConfirmButton}
+                  size="sm"
+                  className="overview-control rounded-full"
+                  disabled={!connected || blocked}
+                  onClick={() => void transfer({ direction: bulkDirection })}>
+                  {operation ? '处理中…' : bulkDirection === 'push' ? '确认全部上传' : '确认拉取全部'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="overview-control rounded-full"
+                  disabled={!!operation}
+                  onClick={() => setDialog({ kind: 'bulk' })}>
+                  返回
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="overview-control rounded-full"
+                  disabled={!connected || blocked}
+                  onClick={() => setDialog({ kind: 'bulk', direction: 'pull' })}>
+                  <ArrowDownToLine size={15} aria-hidden="true" />
+                  拉取全部
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="overview-control rounded-full"
+                  disabled={!connected || blocked}
+                  onClick={() => setDialog({ kind: 'bulk', direction: 'push' })}>
+                  <ArrowUpFromLine size={15} aria-hidden="true" />
+                  全部上传
+                </Button>
+              </>
+            )}
+          </div>
+        </OverviewDialog>
+      ) : null}
     </div>
   );
 }

@@ -10,9 +10,7 @@ function storageArea() {
   return {
     data,
     get: async keys =>
-      Object.fromEntries(
-        (Array.isArray(keys) ? keys : [keys]).filter(key => key in data).map(key => [key, data[key]]),
-      ),
+      Object.fromEntries((Array.isArray(keys) ? keys : [keys]).filter(key => key in data).map(key => [key, data[key]])),
     set: async values => {
       const changes = Object.fromEntries(
         Object.entries(values).map(([key, value]) => [key, { oldValue: data[key], newValue: value }]),
@@ -47,9 +45,66 @@ const {
   indexedDbLimits,
 } = require('../dist/index.js');
 const { encodeCookiesMap, decodeCookiesMap } = require('@sync-your-cookie/protobuf');
+const { syncRuntimeStorage } = require('@sync-your-cookie/storage/lib/syncRuntimeStorage');
 
 const WWW = 'https://www.example.com';
 const APP = 'https://app.example.com';
+
+test('local storage may use all remaining site capacity when session storage is off', () => {
+  const items = (prefix, count, origin) =>
+    Array.from({ length: count }, (_, index) => ({
+      key: prefix + index,
+      value: 'x'.repeat(50 * 1024),
+      origin,
+    }));
+  const retainedLocal = [...items('ap', 8, APP), ...items('pa', 4, 'https://panel.example.com')];
+  const incoming = items('ww', 7, WWW);
+  const picked = pickAutomaticStorage(
+    { origin: WWW, localStorageItems: incoming },
+    undefined,
+    { localStorageItems: retainedLocal },
+    false,
+  );
+  assert.equal(picked.truncated, 0);
+  assert.equal(picked.localStorageItems.length, retainedLocal.length + incoming.length);
+  assert.ok(storageBytes(picked.localStorageItems) <= storageLimits.maxBytesPerDomain);
+});
+
+test('storage budget includes retained session data from earlier captures', () => {
+  const retained = Array.from({ length: 20 }, (_, index) => ({
+    key: String(index),
+    value: 'x'.repeat(50 * 1024),
+    origin: index < 10 ? APP : WWW,
+  }));
+  const picked = pickAutomaticStorage(
+    { origin: WWW, localStorageItems: [{ key: 'item', value: 'x'.repeat(40 * 1024) }] },
+    undefined,
+    { sessionStorageItems: retained },
+    true,
+  );
+  assert.deepEqual(picked.sessionStorageItems, retained);
+  assert.equal(picked.localStorageItems.length, 0);
+  assert.equal(picked.truncated, 1);
+});
+
+test('clean rechecks retire legacy and per-origin limits without deleting another origin or unreported area', async () => {
+  const host = 'fixture.example.com';
+  await chrome.storage.local.set({ 'cookiesync-storage-truncated': { [host]: 3 } });
+  assert.equal((await syncRuntimeStorage.getTruncatedMap())[host], 3);
+  await syncRuntimeStorage.recordTruncated(host, WWW, { local: 0, session: 0 });
+  assert.equal((await syncRuntimeStorage.getTruncatedMap())[host], undefined);
+  await Promise.all([
+    syncRuntimeStorage.recordTruncated(host, WWW, { local: 2, session: 1 }),
+    syncRuntimeStorage.recordTruncated(host, APP, { local: 4, session: 0 }),
+  ]);
+  assert.equal((await syncRuntimeStorage.getTruncatedMap())[host], 7);
+  await syncRuntimeStorage.recordTruncated(host, WWW, { local: 0 });
+  assert.equal((await syncRuntimeStorage.getTruncatedMap())[host], 5);
+  await syncRuntimeStorage.recordTruncated(host, WWW, { local: 0, session: 0 });
+  assert.equal((await syncRuntimeStorage.getTruncatedMap())[host], 4);
+  await syncRuntimeStorage.recordTruncated(host, APP, { local: 0, session: 0 });
+  assert.equal((await syncRuntimeStorage.getTruncatedMap())[host], undefined);
+});
 
 test('pageOrigin keeps only real http(s) origins', () => {
   assert.equal(pageOrigin('https://www.example.com/path?q=1'), WWW);
@@ -93,10 +148,19 @@ test('scopeStorageItems tags the origin, sorts keys and enforces the caps', () =
   );
   assert.equal(overItems.items.length, 3);
   assert.equal(overItems.truncated, 2);
+  assert.deepEqual(overItems.details, [
+    { reason: 'item-count', bytes: 6, limit: 3 },
+    { reason: 'item-count', bytes: 6, limit: 3 },
+  ]);
 
-  const overSize = scopeStorageItems([{ key: 'big', value: 'x'.repeat(storageLimits.maxItemBytes) }], WWW, 10 * 1024 * 1024);
+  const overSize = scopeStorageItems(
+    [{ key: 'big', value: 'x'.repeat(storageLimits.maxItemBytes) }],
+    WWW,
+    10 * 1024 * 1024,
+  );
   assert.equal(overSize.items.length, 0);
   assert.equal(overSize.truncated, 1);
+  assert.deepEqual(overSize.details, [{ reason: 'item-bytes', bytes: 262150, limit: 131072 }]);
 
   const overBytes = scopeStorageItems(
     [
@@ -108,6 +172,15 @@ test('scopeStorageItems tags the origin, sorts keys and enforces the caps', () =
   );
   assert.equal(overBytes.items.length, 1);
   assert.equal(overBytes.truncated, 1);
+  assert.deepEqual(overBytes.details, [{ reason: 'site-bytes', bytes: 602, limit: 2097152, remaining: 398 }]);
+
+  const overOrigin = scopeStorageItems(
+    Array.from({ length: 11 }, (_, index) => ({ key: String(index), value: 'x'.repeat(50 * 1024) })),
+    APP,
+    storageLimits.maxBytesPerDomain,
+  );
+  assert.equal(overOrigin.details[0].reason, 'origin-bytes');
+  assert.equal(overOrigin.details[0].limit, storageLimits.maxBytesPerOrigin);
 });
 
 test('mergeScopedItems replaces one origin and keeps every other origin', () => {
@@ -244,9 +317,7 @@ test('protobuf round trip carries origin, session storage and the schema marker'
         cookies: [{ domain: '.example.com', name: 'sid', value: 'x', session: true, path: '/' }],
         localStorageItems: [{ key: 'token', value: 'v', origin: WWW }],
         sessionStorageItems: [{ key: 'ss', value: 's', origin: APP }],
-        indexedDBRecords: [
-          { database: 'db', store: 'auth', key: '["s","k"]', value: '["s","v"]', origin: WWW },
-        ],
+        indexedDBRecords: [{ database: 'db', store: 'auth', key: '["s","k"]', value: '["s","v"]', origin: WWW }],
         schema: 3,
         userAgent: 'ua',
       },
@@ -293,13 +364,22 @@ test('indexeddb codec round trips structured-clone values without loss', async (
   const decodedBlob = decodeIndexedDbValue(JSON.parse(JSON.stringify(await encodeIndexedDbValue(blob))));
   assert.equal(decodedBlob.type, 'text/plain');
   assert.equal(await decodedBlob.text(), 'hello');
-  await assert.rejects(encodeIndexedDbValue(() => {}), /不受支持/);
+  await assert.rejects(
+    encodeIndexedDbValue(() => {}),
+    /不受支持/,
+  );
 });
 
 test('indexeddb capture keeps or drops whole stores and never half-captures', () => {
   const records = [
     { database: 'db', store: 'auth', key: '["s","k"]', value: '"v"', origin: WWW },
-    { database: 'db', store: 'cache', key: '["s","k2"]', value: 'x'.repeat(indexedDbLimits.maxBytesPerStore), origin: WWW },
+    {
+      database: 'db',
+      store: 'cache',
+      key: '["s","k2"]',
+      value: 'x'.repeat(indexedDbLimits.maxBytesPerStore),
+      origin: WWW,
+    },
   ];
   const fitted = fitIndexedDbRecords(records, indexedDbLimits.maxBytesPerOrigin);
   assert.equal(fitted.records.length, 1);
@@ -330,11 +410,24 @@ test('indexeddb records merge per origin and stay put when not reported', () => 
     ],
   );
 
-  const silent = pickAutomaticStorage({ origin: WWW, localStorageItems: [], truncated: 0 }, undefined, cached, false, true, true);
-  assert.deepEqual(silent.indexedDBRecords.map(record => record.origin), [APP, WWW]);
+  const silent = pickAutomaticStorage(
+    { origin: WWW, localStorageItems: [], truncated: 0 },
+    undefined,
+    cached,
+    false,
+    true,
+    true,
+  );
+  assert.deepEqual(
+    silent.indexedDBRecords.map(record => record.origin),
+    [APP, WWW],
+  );
 
   const disabled = pickAutomaticStorage(observed, undefined, cached, false, true, false);
-  assert.deepEqual(disabled.indexedDBRecords.map(record => record.value), ['"app"', '"old"']);
+  assert.deepEqual(
+    disabled.indexedDBRecords.map(record => record.value),
+    ['"app"', '"old"'],
+  );
 });
 
 // End-to-end restoration through the browser mock: each tab receives only its

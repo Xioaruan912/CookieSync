@@ -22,6 +22,7 @@ export enum MessageType {
 /** Unified background command & content event identifiers. */
 export const RuntimeMessageType = {
   RunAutomaticSync: 'CookieSyncRunAutomaticSync',
+  RecheckStorageLimits: 'CookieSyncRecheckStorageLimits',
   PullAll: 'CookieSyncPullAll',
   PushAll: 'CookieSyncPushAll',
   Overview: 'CookieSyncOverview',
