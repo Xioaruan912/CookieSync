@@ -369,11 +369,20 @@ export const pullAndSetCookies = async (
     const pendingRevision = await getPendingRevision(host);
     const cookieMap = providedMap || (await pullCookies());
     enterSuppression();
-    const result = await restoreCookieMap(activeTabUrl, host, isReload, cookieMap, targetTabId, cookieFilter);
+    const { cookieMap: result, changed } = await restoreCookieMap(
+      activeTabUrl,
+      host,
+      isReload,
+      cookieMap,
+      targetTabId,
+      cookieFilter,
+    );
     const digest = await domainContentHash(cookieMap.domainCookieMap?.[host]);
     await setSyncBaseline(host, digest);
     await settleManualSync(host, pendingRevision, digest);
-    void recordSiteActivity(host, 'pull');
+    if (changed || !!isReload) {
+      void recordSiteActivity(host, 'pull');
+    }
     return result;
   } finally {
     if (suppressed) {
@@ -391,7 +400,7 @@ const restoreCookieMap = async (
   providedMap?: Cookie,
   targetTabId?: number,
   cookieFilter?: (cookie: ICookie) => boolean,
-): Promise<Cookie> => {
+): Promise<{ cookieMap: Cookie; changed: boolean }> => {
   const cookieMap = providedMap || (await pullCookies());
   const cookieDetails = (cookieMap?.domainCookieMap?.[host]?.cookies || []).filter(
     cookie => !cookieFilter || cookieFilter(cookie),
@@ -414,7 +423,7 @@ const restoreCookieMap = async (
     !sessionItems.length &&
     !idbItems.length
   ) {
-    return cookieMap;
+    return { cookieMap, changed: false };
   }
   if (
     cookieDetails.length === 0 &&
@@ -483,14 +492,12 @@ const restoreCookieMap = async (
     throw new Error('没有匹配且未过期的 Cookie，请在已登录电脑重新推送');
   }
 
-  if (
-    isReload &&
-    (cookiesChanged || pageStorage.localChanged || pageStorage.sessionChanged || pageStorage.indexedDbChanged)
-  ) {
+  const anyChanged = cookiesChanged || pageStorage.localChanged || pageStorage.sessionChanged || pageStorage.indexedDbChanged;
+  if (isReload && anyChanged) {
     await refreshAffectedTabs(host, isReload, cookiesChanged, pageStorage.changedTabIds);
   }
 
-  return cookieMap;
+  return { cookieMap, changed: anyChanged };
 };
 
 export type PushCookiesResponse = WriteResponse;
@@ -562,8 +569,11 @@ const pushMultipleDomainCookiesImpl = async (
   if (res.success) {
     for (const item of domainCookies) {
       if (adoptedDomains.has(item.domain)) continue;
-      void recordSiteActivity(item.domain, 'push');
-      await setSyncBaseline(item.domain, await domainContentHash(cookieMap.domainCookieMap?.[item.domain]));
+      const nextHash = await domainContentHash(cookieMap.domainCookieMap?.[item.domain]);
+      if (!res.unchanged) {
+        void recordSiteActivity(item.domain, 'push');
+      }
+      await setSyncBaseline(item.domain, nextHash);
     }
   }
   return { ...res, adopted };

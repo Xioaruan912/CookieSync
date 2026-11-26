@@ -211,6 +211,37 @@ test('mixed persistent cookies and cached LocalStorage do not turn lost session 
   }
 });
 
+test('expired non-session cookies at browser startup do not trigger unnecessary re-uploads', async () => {
+  const login = {
+    name: 'auth',
+    value: 'valid-token',
+    domain: '.115.com',
+    path: '/',
+    session: false,
+    expirationDate: Math.floor(Date.now() / 1000) + 86400,
+  };
+  const ephemeral = {
+    name: '_track',
+    value: 'short-lived',
+    domain: '.115.com',
+    path: '/',
+    session: false,
+    expirationDate: Math.floor(Date.now() / 1000) + 60,
+  };
+  const entry = { cookies: [login, ephemeral], localStorageItems: [] };
+  const map = { domainCookieMap: { '115.com': entry } };
+  payload = JSON.stringify(map);
+  etag++;
+  await cookieStorage.update(map, true);
+  await setSyncBaseline('115.com', await domainContentHash(entry));
+  const previousWrites = writes;
+  // Simulate browser restart where only the short-lived non-session cookie expired.
+  cookies.splice(0);
+  cookies.push(login);
+  await automatic.restoreAtStartup(false);
+  assert.equal(writes, previousWrites, 'passive cookie expiration on restart must not trigger a WebDAV write');
+});
+
 test('an explicitly captured empty logout remains a durable job and can still sync', async () => {
   cookies.splice(0);
   await automatic.captureAutomaticSync('115.com', []);
