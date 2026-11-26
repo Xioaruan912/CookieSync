@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-const { buildWebdavUrl, readWebdav, writeWebdav, testWebdavConnection } = await import('../lib/webdav/api.ts');
+const { buildWebdavUrl, readWebdav, writeWebdav, testWebdavConnection, resetWebdavBackoff, webdavBackoffRemainingMs } =
+  await import('../lib/webdav/api.ts');
+const { encodePairingCode, decodePairingCode } = await import('../lib/webdav/pairing.ts');
 
 test('rejects unsafe URLs and paths; preserves base folder and encodes Unicode', () => {
   const config = {
@@ -144,4 +146,53 @@ test('explicit compatibility mode omits rejected conditions and still detects ch
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test('HTTP 429 triggers adaptive origin backoff honoring Retry-After and clears on recovery', async () => {
+  resetWebdavBackoff();
+  let hits = 0;
+  const server = createServer((req, res) => {
+    hits++;
+    res.writeHead(429, { 'Retry-After': '12' }).end('Too Many Requests');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const config = {
+    url: `http://127.0.0.1:${server.address().port}/dav/`,
+    username: 'test',
+    password: 'test',
+    path: 'cookies.txt',
+  };
+  try {
+    await assert.rejects(readWebdav(config), /限流冷却中/);
+    assert.equal(hits, 1);
+    assert.ok(webdavBackoffRemainingMs(config.url) > 5000);
+    // Second call during cooldown must fail fast without hitting server
+    await assert.rejects(readWebdav(config), /自动冷却/);
+    assert.equal(hits, 1);
+    resetWebdavBackoff();
+    assert.equal(webdavBackoffRemainingMs(config.url), 0);
+  } finally {
+    resetWebdavBackoff();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('cross-device pairing code round trips WebDAV and encryption settings cleanly', () => {
+  const code = encodePairingCode({
+    url: 'https://dav.jianguoyun.com/dav/',
+    username: 'user@example.com',
+    password: 'app-secret-password',
+    path: 'CookieSync/cookies.txt',
+    encryptionEnabled: true,
+    encryptionPassword: 'e2e-password',
+  });
+  assert.ok(code.startsWith('cookiesync://pair#v1.'));
+  const decoded = decodePairingCode(code);
+  assert.equal(decoded.url, 'https://dav.jianguoyun.com/dav/');
+  assert.equal(decoded.username, 'user@example.com');
+  assert.equal(decoded.password, 'app-secret-password');
+  assert.equal(decoded.path, 'CookieSync/cookies.txt');
+  assert.equal(decoded.encryptionEnabled, true);
+  assert.equal(decoded.encryptionPassword, 'e2e-password');
+  assert.throws(() => decodePairingCode('invalid-garbage'), /配对口令格式无效/);
 });

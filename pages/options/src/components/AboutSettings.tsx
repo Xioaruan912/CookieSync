@@ -12,7 +12,7 @@ import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { updateStatusStorage } from '@sync-your-cookie/storage/lib/updateStatusStorage';
 import { Switch } from '@sync-your-cookie/ui';
 import gsap from 'gsap';
-import { ArrowUpRight, ChevronLeft, ChevronRight, Download, FolderOpen, Loader2, RefreshCw } from 'lucide-react';
+import { ArrowUpRight, ChevronLeft, ChevronRight, Copy, Download, FolderOpen, Loader2, RefreshCw } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -95,6 +95,17 @@ export function AboutSettings() {
     }
   };
 
+  const copyOverwriteCommand = async () => {
+    const zipName = status.downloadName || `CookieSync-chrome-${latestVersion}.zip`;
+    const cmd = `$d = (Read-Host '拖入原扩展解压目录并回车').Trim('"'); Expand-Archive -Force "$env:USERPROFILE\\Downloads\\${zipName}" -DestinationPath $d`;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      toast.success('已复制 PowerShell 一键覆盖命令');
+    } catch {
+      toast.error('复制失败，请手动解压覆盖');
+    }
+  };
+
   const statusTone = status.error ? 'err' : hasUpdate ? 'accent' : 'ok';
   const statusText =
     busy === 'check'
@@ -172,6 +183,13 @@ export function AboutSettings() {
                         onClick={() => showDownloadedRelease(status.downloadId)}>
                         <FolderOpen size={15} aria-hidden="true" />
                         定位安装包
+                      </button>
+                      <button
+                        type="button"
+                        className="about-pill-ghost"
+                        onClick={() => void copyOverwriteCommand()}>
+                        <Copy size={14} aria-hidden="true" />
+                        复制覆盖命令
                       </button>
                       <button
                         type="button"

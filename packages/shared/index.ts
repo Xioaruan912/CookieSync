@@ -17,3 +17,4 @@ export * from './lib/webdav/api';
 export * from './lib/webdav/backup';
 export * from './lib/webdav/configSync';
 export * from './lib/webdav/lease';
+export * from './lib/webdav/pairing';

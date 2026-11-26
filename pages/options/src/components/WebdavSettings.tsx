@@ -1,16 +1,24 @@
 import { useGSAP } from '@gsap/react';
-import { buildWebdavUrl, testWebdavConnection, useStorageSuspense } from '@sync-your-cookie/shared';
+import {
+  buildWebdavUrl,
+  decodePairingCode,
+  encodePairingCode,
+  testWebdavConnection,
+  useStorageSuspense,
+} from '@sync-your-cookie/shared';
 import { accountStorage, isLegacyProvider } from '@sync-your-cookie/storage/lib/accountStorage';
 import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { webdavCloudStorage, webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { Button, Input, Label, Switch } from '@sync-your-cookie/ui';
 import gsap from 'gsap';
-import { Check, ChevronLeft, ChevronRight, Eye, EyeOff, Loader2, TriangleAlert } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Copy, Eye, EyeOff, Loader2, QrCode, TriangleAlert } from 'lucide-react';
+import QRCode from 'qrcode';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ConfigChannelSettings } from './ConfigChannelSettings';
 import { ConnectionGuide } from './ConnectionGuide';
+import { OverviewDialog } from './OverviewDialog';
 
 gsap.registerPlugin(useGSAP);
 
@@ -61,6 +69,9 @@ export function WebdavSettings() {
   const [probePhase, setProbePhase] = useState<ProbePhase>('idle');
   const [probeStep, setProbeStep] = useState(-1);
   const [probeMessage, setProbeMessage] = useState('');
+  const [pairOpen, setPairOpen] = useState(false);
+  const [pairQrUrl, setPairQrUrl] = useState('');
+  const [pairInput, setPairInput] = useState('');
 
   useEffect(() => {
     if (!dirty) {
@@ -305,6 +316,31 @@ export function WebdavSettings() {
                     {busyMode === 'test' ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
                     {busyMode === 'test' ? '测试中…' : '测试连接'}
                   </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="sbo-btn-outline"
+                    disabled={busy}
+                    onClick={() => {
+                      setPairInput('');
+                      setPairOpen(true);
+                      if (config.url && config.username && config.password) {
+                        const code = encodePairingCode({
+                          url: config.url,
+                          username: config.username,
+                          password: config.password,
+                          path: config.path,
+                          encryptionEnabled: settings.encryptionEnabled,
+                          encryptionPassword: settings.encryptionPassword,
+                        });
+                        void QRCode.toDataURL(code, { width: 184, margin: 1 }).then(setPairQrUrl).catch(() => setPairQrUrl(''));
+                      } else {
+                        setPairQrUrl('');
+                      }
+                    }}>
+                    <QrCode size={14} aria-hidden="true" />
+                    跨机配对
+                  </Button>
                 </div>
 
                 {probePhase !== 'idle' ? (
@@ -525,6 +561,95 @@ export function WebdavSettings() {
           </button>
         </div>
       </footer>
+
+      {pairOpen ? (
+        <OverviewDialog title="跨机 / 手机一键配对" onClose={() => setPairOpen(false)}>
+          <div className="grid gap-4 text-sm">
+            {config.url && config.username && config.password ? (
+              <div className="grid gap-3 border-b pb-4">
+                <p className="text-xs text-muted-foreground">
+                  纯本地生成，不经过任何服务器。可扫码或复制配对口令到另一台电脑 / 手机油猴版一键导入。
+                </p>
+                {pairQrUrl ? (
+                  <div className="flex justify-center">
+                    <img
+                      src={pairQrUrl}
+                      alt="CookieSync 跨机配对二维码"
+                      className="h-44 w-44 rounded-xl border bg-white p-2"
+                    />
+                  </div>
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  className="sbo-btn-primary w-full"
+                  onClick={() => {
+                    const code = encodePairingCode({
+                      url: config.url,
+                      username: config.username,
+                      password: config.password,
+                      path: config.path,
+                      encryptionEnabled: settings.encryptionEnabled,
+                      encryptionPassword: settings.encryptionPassword,
+                    });
+                    void navigator.clipboard
+                      .writeText(code)
+                      .then(() => toast.success('已复制跨机配对口令（含应用密码，请仅在自己设备间使用）'))
+                      .catch(() => toast.error('复制失败'));
+                  }}>
+                  <Copy size={14} className="mr-1.5" aria-hidden="true" />
+                  复制本机配对口令
+                </Button>
+              </div>
+            ) : null}
+
+            <div className="grid gap-2">
+              <Label htmlFor="pair-import-input" className="text-xs text-muted-foreground">
+                导入其他设备的配对口令
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="pair-import-input"
+                  placeholder="粘贴 cookiesync://pair#v1.…"
+                  value={pairInput}
+                  onChange={e => setPairInput(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!pairInput.trim()}
+                  onClick={() => {
+                    try {
+                      const imported = decodePairingCode(pairInput);
+                      setConfig(prev => ({
+                        ...prev,
+                        url: imported.url,
+                        username: imported.username,
+                        password: imported.password,
+                        path: imported.path,
+                      }));
+                      if (imported.encryptionEnabled && imported.encryptionPassword) {
+                        void settingsStorage.update({
+                          protobufEncoding: true,
+                          encryptionEnabled: true,
+                          encryptionPassword: imported.encryptionPassword,
+                        });
+                      }
+                      setDirty(true);
+                      setPairOpen(false);
+                      toast.success('已导入配对配置，请点击「保存并使用 WebDAV」完成连接');
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : '配对口令无效');
+                    }
+                  }}>
+                  一键填入
+                </Button>
+              </div>
+            </div>
+          </div>
+        </OverviewDialog>
+      ) : null}
     </div>
   );
 }

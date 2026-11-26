@@ -17,7 +17,9 @@
  *   future change is a one-file edit.
  */
 import { profile115 } from './115';
+import { profileAlipan } from './alipan';
 import { profileDouyin } from './douyin';
+import { profileQuark } from './quark';
 import { profileXiaohongshu } from './xiaohongshu';
 
 export interface SiteHealthCheckConfig {
@@ -300,4 +302,4 @@ export async function completeQrLogin(profile: SiteProfile, token: QrToken): Pro
   return { cookies };
 }
 
-export const siteProfiles: SiteProfile[] = [profile115, profileXiaohongshu, profileDouyin];
+export const siteProfiles: SiteProfile[] = [profile115, profileQuark, profileAlipan, profileXiaohongshu, profileDouyin];

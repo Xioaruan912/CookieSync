@@ -12,6 +12,44 @@ export interface WebdavSnapshot {
   etag?: string;
 }
 
+const backoffStepsMs = [30_000, 120_000, 300_000];
+const originBackoff = new Map<string, { until: number; step: number }>();
+
+function parseRetryAfterMs(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const trimmed = header.trim();
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.min(600_000, Math.max(5_000, Math.round(seconds * 1000)));
+  }
+  const dateMs = Date.parse(trimmed);
+  if (Number.isFinite(dateMs)) {
+    const delta = dateMs - Date.now();
+    if (delta > 0) return Math.min(600_000, Math.max(5_000, delta));
+  }
+  return undefined;
+}
+
+export function webdavBackoffRemainingMs(rawUrl: string): number {
+  try {
+    const origin = new URL(rawUrl).origin;
+    const entry = originBackoff.get(origin);
+    if (!entry) return 0;
+    const remaining = entry.until - Date.now();
+    if (remaining <= 0) {
+      originBackoff.delete(origin);
+      return 0;
+    }
+    return remaining;
+  } catch {
+    return 0;
+  }
+}
+
+export function resetWebdavBackoff(): void {
+  originBackoff.clear();
+}
+
 export function buildWebdavUrl(config: WebdavConfig): string {
   let base: URL;
   try {
@@ -43,6 +81,13 @@ export function buildWebdavUrl(config: WebdavConfig): string {
 
 async function request(config: WebdavConfig, method: string, body?: string, headers: Record<string, string> = {}) {
   const url = buildWebdavUrl(config);
+  const origin = new URL(url).origin;
+  const remaining = webdavBackoffRemainingMs(url);
+  if (remaining > 0) {
+    const sec = Math.max(1, Math.ceil(remaining / 1000));
+    throw new Error(`网盘请求频繁，正在自动冷却（约 ${sec} 秒后恢复）`);
+  }
+
   const bytes = new TextEncoder().encode(`${config.username}:${config.password}`);
   const auth = btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''));
   const controller = new AbortController();
@@ -59,6 +104,14 @@ async function request(config: WebdavConfig, method: string, body?: string, head
     });
     // Consume under the same deadline, including a stalled response body.
     const content = await response.text();
+    if (response.status === 429 || (response.status === 503 && response.headers.get('Retry-After'))) {
+      const prev = originBackoff.get(origin);
+      const nextStep = prev ? Math.min(prev.step + 1, backoffStepsMs.length - 1) : 0;
+      const delayMs = parseRetryAfterMs(response.headers.get('Retry-After')) ?? backoffStepsMs[nextStep];
+      originBackoff.set(origin, { until: Date.now() + delayMs, step: nextStep });
+    } else if (response.ok || response.status === 404) {
+      originBackoff.delete(origin);
+    }
     return { response, content };
   } catch (error) {
     if (controller.signal.aborted) throw new Error('WebDAV 请求超时，请检查网络后重试');
@@ -70,6 +123,11 @@ async function request(config: WebdavConfig, method: string, body?: string, head
 
 function checkStatus(response: Response, allowMissing = false, method = 'PUT') {
   if (response.ok || (allowMissing && response.status === 404)) return;
+  if (response.status === 429 || (response.status === 503 && response.headers.get('Retry-After'))) {
+    const remaining = webdavBackoffRemainingMs(response.url || '');
+    const sec = Math.max(5, Math.ceil((remaining || backoffStepsMs[0]) / 1000));
+    throw new Error(`网盘限流冷却中（HTTP ${response.status}），约 ${sec} 秒后自动恢复`);
+  }
   const hints: Record<number, string> = {
     401: '用户名或密码错误',
     403: '没有读写权限',
