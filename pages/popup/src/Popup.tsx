@@ -18,15 +18,13 @@ import { siteHealthStorage } from '@sync-your-cookie/storage/lib/siteHealthStora
 import { sitePolicyStorage } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
 import { updateStatusStorage } from '@sync-your-cookie/storage/lib/updateStatusStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
-import { Button, Switch, Toaster } from '@sync-your-cookie/ui';
+import { Switch, Toaster } from '@sync-your-cookie/ui';
 import gsap from 'gsap';
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
-  Cloud,
   Download,
   Globe2,
-  Laptop,
   PanelRightOpen,
   RefreshCw,
   Settings,
@@ -71,16 +69,10 @@ const Popup = () => {
       .finally(() => setLoading(false));
   }, [setDomain]);
 
-  // Crisp Control Center entrance (< 260ms total, zero delay to clickability)
   useGSAP(
     () => {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      const tl = gsap.timeline({ defaults: { ease: 'power3.out', clearProps: 'transform,opacity' } });
-      tl.from('.cc-hero', { y: 8, scale: 0.985, opacity: 0, duration: 0.22 }).from(
-        '.cc-tile',
-        { y: 6, opacity: 0, duration: 0.18, stagger: 0.03 },
-        0.04,
-      );
+      gsap.from('.cc-hero h1', { y: 10, opacity: 0, duration: 0.28, ease: 'power3.out', clearProps: 'transform,opacity' });
     },
     { scope: rootRef },
   );
@@ -119,7 +111,7 @@ const Popup = () => {
   const siteState = !listed
     ? '未加入名单'
     : !connected
-      ? '等待配置 WebDAV'
+      ? '等待配置网盘'
       : !background
         ? '后台同步已关闭'
         : !registered && settings.autoDiscoverSites === false
@@ -195,12 +187,12 @@ const Popup = () => {
             className="size-6 shrink-0 rounded-md object-contain"
             alt=""
           />
-          <div className="min-w-0">
+          <div>
             <strong>CookieSync</strong>
             <small>{status.localDeviceName || '双机无感同步'}</small>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="cc-header-right">
           {connected ? (
             <button
               type="button"
@@ -209,31 +201,26 @@ const Popup = () => {
               disabled={takingOver}
               title="点击立即检查并接班同步"
               onClick={() => void takeoverNow()}>
-              <span className="live-orb" data-state={isStandby ? 'standby' : 'live'} aria-hidden="true" />
+              <span className="cc-dot" data-state={isStandby ? 'standby' : 'live'} aria-hidden="true" />
               <span>{takingOver ? '接班中…' : isStandby ? '待机中' : '本机当家'}</span>
             </button>
           ) : null}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-full"
+          <button
+            type="button"
+            className="cc-icon-btn"
             aria-label="打开设置"
             onClick={() => void chrome.runtime.openOptionsPage()}>
-            <Settings size={16} aria-hidden />
-          </Button>
+            <Settings size={14} aria-hidden />
+          </button>
         </div>
       </header>
 
-      {/* Obsidian Control Center Signal Card */}
-      <section
-        className="cc-hero"
-        data-state={listed && connected ? (healthBad ? 'warn' : 'live') : 'idle'}
-        aria-labelledby="current-site">
+      <section className="cc-hero" aria-labelledby="current-site">
         <div className="cc-hero-top">
           <span className="cc-live-tag">
             <span
-              className="live-orb"
-              data-state={!connected ? 'warn' : healthBad ? 'warn' : isStandby ? 'standby' : 'live'}
+              className="cc-dot"
+              data-state={!connected ? 'warn' : healthBad ? 'warn' : isStandby ? 'standby' : listed ? 'live' : 'idle'}
               aria-hidden="true"
             />
             {domain ? (policy ? siteState : '正在读取名单…') : '当前页无需同步'}
@@ -243,42 +230,61 @@ const Popup = () => {
 
         <h1 id="current-site">{loading ? '正在识别网站…' : domain || '非普通网页'}</h1>
 
-        <div className="cc-bridge" aria-hidden="true">
-          <Laptop size={15} />
-          <div className="cc-beam-track" data-moving={action} data-active={routeActive}>
-            <svg viewBox="0 0 180 24" preserveAspectRatio="none">
-              <path d="M 4 12 C 55 3, 125 21, 176 12" stroke="rgba(255,255,255,0.16)" strokeWidth="1.8" fill="none" />
-              <path
-                className="cc-beam-line"
-                d="M 4 12 C 55 3, 125 21, 176 12"
-                stroke={healthBad ? '#FF453A' : action === 'pull' ? '#30D158' : '#38BDF8'}
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                fill="none"
-              />
-            </svg>
+        <div className="cc-bridge" data-active={routeActive} data-moving={action} aria-hidden="true">
+          <span>本机</span>
+          <div className="cc-bridge-dots">
+            <span className="cc-bridge-dot" />
+            <span className="cc-bridge-dot" />
+            <span className="cc-bridge-dot" />
+            <span className="cc-bridge-dot" />
+            <span className="cc-bridge-dot" />
+            <span className="cc-bridge-dot" />
+            <span className="cc-bridge-dot" />
           </div>
-          <Cloud size={16} />
+          <span>云端</span>
         </div>
       </section>
 
       {domain && policy ? (
         <section className="cc-controls" aria-label="当前网站操作">
+          <div className="cc-actions">
+            <button
+              type="button"
+              className="cc-pill-primary"
+              aria-label="推送并合并 Cookie"
+              disabled={busy || !connected}
+              onClick={() => void transfer('push')}>
+              {action === 'push' ? <RefreshCw className="animate-spin" size={14} /> : <ArrowUpFromLine size={14} />}
+              {action === 'push' ? '推送中…' : '推送到云端'}
+            </button>
+            <button
+              type="button"
+              className="cc-pill-ghost"
+              aria-label="拉取并应用 Cookie"
+              disabled={busy || !connected}
+              onClick={() => void transfer('pull')}>
+              {action === 'pull' ? <RefreshCw className="animate-spin" size={14} /> : <ArrowDownToLine size={14} />}
+              {action === 'pull' ? '拉取中…' : '拉取到本机'}
+            </button>
+          </div>
+
           {!listed ? (
-            <div className="cc-tile cc-note">
-              <Globe2 size={16} aria-hidden />
-              <span>加入名单后即可自动同步此站</span>
-              <Button
-                size="sm"
-                className="rounded-full"
+            <div className="cc-note">
+              <span className="flex items-center gap-1.5">
+                <Globe2 size={14} aria-hidden />
+                加入名单后即可自动同步此站
+              </span>
+              <button
+                type="button"
+                className="cc-note-btn"
                 disabled={saving}
                 onClick={() => void changeSite(() => sitePolicyStorage.setRule(domain, true))}>
                 加入名单
-              </Button>
+              </button>
             </div>
           ) : (
             <div className="cc-switches">
-              <label className="cc-tile cc-switch-item">
+              <label className="cc-switch-item">
                 <span>自动推送</span>
                 <Switch
                   aria-label="自动推送"
@@ -289,7 +295,7 @@ const Popup = () => {
                   }
                 />
               </label>
-              <label className="cc-tile cc-switch-item">
+              <label className="cc-switch-item">
                 <span>自动拉取</span>
                 <Switch
                   aria-label="自动拉取"
@@ -303,69 +309,37 @@ const Popup = () => {
             </div>
           )}
 
-          <div className="cc-actions">
-            <Button
-              className="cc-tile cc-action-btn"
-              variant="outline"
-              aria-label="推送并合并 Cookie"
-              disabled={busy || !connected}
-              onClick={() => void transfer('push')}>
-              {action === 'push' ? (
-                <RefreshCw className="mr-1.5 animate-spin" size={14} />
-              ) : (
-                <ArrowUpFromLine className="mr-1.5" size={14} />
-              )}
-              {action === 'push' ? '正在推送…' : '推送到云端'}
-            </Button>
-            <Button
-              className="cc-tile cc-action-btn"
-              variant="outline"
-              aria-label="拉取并应用 Cookie"
-              disabled={busy || !connected}
-              onClick={() => void transfer('pull')}>
-              {action === 'pull' ? (
-                <RefreshCw className="mr-1.5 animate-spin" size={14} />
-              ) : (
-                <ArrowDownToLine className="mr-1.5" size={14} />
-              )}
-              {action === 'pull' ? '正在拉取…' : '拉取到本机'}
-            </Button>
-          </div>
-
           {listed ? (
-            <details className="cc-tile cc-details">
+            <details className="cc-details">
               <summary>方向与高级存储选项</summary>
-              <div className="mt-2.5 flex gap-1.5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1 rounded-full text-xs"
+              <div className="cc-dir-pills">
+                <button
+                  type="button"
+                  className="cc-dir-pill"
                   disabled={saving || busy}
                   onClick={() =>
                     void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: true, autoPull: false }))
                   }>
                   仅推送
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1 rounded-full text-xs"
+                </button>
+                <button
+                  type="button"
+                  className="cc-dir-pill"
                   disabled={saving || busy}
                   onClick={() =>
                     void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: false, autoPull: true }))
                   }>
                   仅拉取
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1 rounded-full text-xs"
+                </button>
+                <button
+                  type="button"
+                  className="cc-dir-pill"
                   disabled={saving || busy}
                   onClick={() =>
                     void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: true, autoPull: true }))
                   }>
                   双向同步
-                </Button>
+                </button>
               </div>
               <div className="cc-sub-switches">
                 <label>
@@ -397,21 +371,24 @@ const Popup = () => {
       ) : null}
 
       {!connected ? (
-        <Button
-          className="rounded-full"
-          onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#connection') })}>
-          {legacy ? '旧后端已移除，前往配置 WebDAV' : '前往配置 WebDAV 连接'}
-        </Button>
+        <div className="py-3 border-b border-[var(--sbo-line)]">
+          <button
+            type="button"
+            className="cc-pill-primary w-full"
+            onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#connection') })}>
+            {legacy ? '旧后端已移除，前往配置 WebDAV' : '前往配置私人网盘连接'}
+          </button>
+        </div>
       ) : null}
 
       {healthProfile ? (
         <button
           type="button"
-          className="cc-tile cc-health-row"
+          className="cc-link-row"
           data-state={healthBad ? 'warn' : healthEntry?.state}
           onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#adaptations') })}>
           <span className="flex items-center gap-2">
-            {healthBad ? <ShieldAlert size={15} /> : <ShieldCheck size={15} />}
+            {healthBad ? <ShieldAlert size={14} /> : <ShieldCheck size={14} />}
             <span>
               {healthProfile.domain} · {healthText}
             </span>
@@ -424,18 +401,22 @@ const Popup = () => {
       isUpdateForInstalledRelease(update.latestVersion) ? (
         <button
           type="button"
-          className="cc-tile cc-update-row"
+          className="cc-link-row"
+          data-tone="accent"
           onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#about') })}>
-          <Download size={14} aria-hidden="true" />
-          <span>
-            新版本 v{update.latestVersion} {update.state === 'ready' ? '已下载，待重载' : '可更新'}
+          <span className="flex items-center gap-2">
+            <Download size={14} aria-hidden="true" />
+            <span>
+              新版本 v{update.latestVersion} {update.state === 'ready' ? '已下载，待重载' : '可更新'}
+            </span>
           </span>
+          <span>查看 →</span>
         </button>
       ) : null}
 
       <footer className="cc-footer">
         <div className="min-w-0 flex-1 overflow-hidden" role="status">
-          <div className="font-semibold text-xs">
+          <div className="cc-footer-title">
             {status.phase === 'taking-over'
               ? '正在自动接班同步…'
               : status.phase === 'uploading'
@@ -452,7 +433,7 @@ const Popup = () => {
                           ? '待机护航中'
                           : '全部同步就绪'}
           </div>
-          <div className="truncate text-[11px] text-muted-foreground">
+          <div className="cc-footer-sub">
             {status.error ||
               status.note ||
               (status.lastSuccess
@@ -462,10 +443,10 @@ const Popup = () => {
                   : '尚无同步记录')}
           </div>
         </div>
-        <Button variant="ghost" size="sm" className="rounded-full shrink-0" aria-label="打开同步管理" onClick={() => void openManager()}>
-          <PanelRightOpen size={14} className="mr-1" aria-hidden />
+        <button type="button" className="cc-manage-btn" aria-label="打开同步管理" onClick={() => void openManager()}>
+          <PanelRightOpen size={13} aria-hidden />
           管理
-        </Button>
+        </button>
       </footer>
 
       <Toaster theme={theme} closeButton visibleToasts={1} richColors position="top-center" />
