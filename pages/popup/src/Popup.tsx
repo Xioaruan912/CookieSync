@@ -1,7 +1,6 @@
 import { useGSAP } from '@gsap/react';
 import {
   extractDomainAndPort,
-  isUpdateForInstalledRelease,
   RuntimeMessageType,
   siteProfileFor,
   useLocale,
@@ -17,14 +16,12 @@ import { domainConfigStorage } from '@sync-your-cookie/storage/lib/domainConfigS
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { siteHealthStorage } from '@sync-your-cookie/storage/lib/siteHealthStorage';
 import { sitePolicyStorage } from '@sync-your-cookie/storage/lib/sitePolicyStorage';
-import { updateStatusStorage } from '@sync-your-cookie/storage/lib/updateStatusStorage';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
 import { Switch, Toaster } from '@sync-your-cookie/ui';
 import gsap from 'gsap';
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
-  Download,
   Globe2,
   PanelRightOpen,
   RefreshCw,
@@ -45,7 +42,6 @@ const Popup = () => {
   const status = useStorageSuspense(autoSyncStatusStorage);
   const settings = useStorageSuspense(settingsStorage);
   const account = useStorageSuspense(accountStorage);
-  const update = useStorageSuspense(updateStatusStorage);
   const webdav = useStorageSuspense(webdavStorage);
   const policy = useSyncExternalStore(sitePolicyStorage.subscribe, sitePolicyStorage.getSnapshot);
   const health = useStorageSuspense(siteHealthStorage);
@@ -425,24 +421,6 @@ const Popup = () => {
             </span>
           </span>
           {healthBad && healthProfile.qrLogin ? <strong>{t('去修复 →', 'Fix →')}</strong> : null}
-        </button>
-      ) : null}
-
-      {(update.state === 'available' || update.state === 'ready') &&
-      isUpdateForInstalledRelease(update.latestVersion) ? (
-        <button
-          type="button"
-          className="cc-link-row"
-          data-tone="accent"
-          onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#about') })}>
-          <span className="flex items-center gap-2">
-            <Download size={14} aria-hidden="true" />
-            <span>
-              {t(`新版本 v${update.latestVersion}`, `Update v${update.latestVersion}`)}{' '}
-              {update.state === 'ready' ? t('已下载，待重载', 'ready') : t('可更新', 'available')}
-            </span>
-          </span>
-          <span>{t('查看 →', 'View →')}</span>
         </button>
       ) : null}
 

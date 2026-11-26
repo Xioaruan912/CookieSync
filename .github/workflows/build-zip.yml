@@ -71,6 +71,12 @@ jobs:
               assert not non_ascii, f'Non-ASCII entries are not allowed in CWS ZIP: {non_ascii}'
               manifest = json.loads(bundle.read('manifest.json'))
               assert 'key' not in manifest, 'Chrome Web Store forbids manifest "key" field'
+              assert 'downloads' not in manifest.get('permissions', []), 'CWS build must not request downloads permission'
+              assert 'web_accessible_resources' not in manifest, 'CWS build should not expose unused web_accessible_resources'
+              for entry_name in names:
+                  if entry_name.endswith('.js'):
+                      code = bundle.read(entry_name).decode('utf-8', errors='ignore')
+                      assert not re.search(r'\beval\s*\(|new\s+Function\s*\(', code), f'Disallowed eval/Function in {entry_name}'
               version = manifest['version']
               assert re.fullmatch(r'\d+(?:\.\d+){1,3}', version), 'Invalid extension version'
               assert archive.name == f'CookieSync-webstore-{version}.zip', 'Version mismatch'

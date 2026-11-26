@@ -13,7 +13,6 @@ import { initSiteHealthChecks } from './healthCheck';
 import { initOverview } from './overview';
 import { ensureRouterMounted } from './router';
 import { initSafety } from './safety';
-import { initUpdateChecks } from './update';
 
 function bindSettingsSubscriptions() {
   let previousContextMenu: boolean | undefined;
@@ -54,7 +53,6 @@ chrome.runtime.onInstalled.addListener(async () => {
 ensureRouterMounted();
 initCookieCrudHandlers();
 initAutomaticSync();
-initUpdateChecks();
 initSiteHealthChecks();
 initOverview();
 initSafety();

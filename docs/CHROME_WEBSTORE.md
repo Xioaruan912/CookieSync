@@ -40,7 +40,8 @@ Syncs user-selected website login sessions (Cookies, LocalStorage, and IndexedDB
 | `tabs` / `activeTab` / `scripting` | Capture and restore page-level LocalStorage/IndexedDB on user-selected sites, and discard idle single-session tabs on standby devices to prevent session kicks. |
 | `alarms` / `idle` | Schedule periodic background sync checks and detect 90-second user inactivity for single-active-device handover. |
 | `sidePanel` / `contextMenus` | Provide the Cookie inspection side panel and right-click menu to add the current site to sync. |
-| `downloads` | Allow users to export local backups or download verified release packages when requested. |
+
+> Note: Off-store GitHub update checks, `downloads` permission, `web_accessible_resources`, and `manifest.key` are completely removed on the `chrome` branch. All extension bundles are also verified to contain zero `eval()` or `new Function()` calls.
 
 ### 4. 远程代码（Remote code）
 

@@ -32,7 +32,7 @@ const manifest = Object.assign(
     name: '__MSG_extensionName__',
     version: packageJson.version,
     description: '__MSG_extensionDescription__',
-    permissions: ['cookies', 'activeTab', 'tabs', 'storage', 'alarms', 'downloads', 'idle', 'scripting'].concat(
+    permissions: ['cookies', 'activeTab', 'tabs', 'storage', 'alarms', 'idle', 'scripting'].concat(
       sidePanelConfig.permissions,
     ),
     host_permissions: ['<all_urls>'],
@@ -48,11 +48,11 @@ const manifest = Object.assign(
     commands: {
       'push-current-site': {
         suggested_key: { default: 'Alt+Shift+U' },
-        description: '推送当前网站到云端',
+        description: 'Push current site to cloud',
       },
       'pull-current-site': {
         suggested_key: { default: 'Alt+Shift+D' },
-        description: '从云端拉取当前网站',
+        description: 'Pull current site from cloud',
       },
     },
     icons: {
@@ -63,12 +63,6 @@ const manifest = Object.assign(
         matches: ['*://*/*'],
         js: ['content/index.iife.js'],
         run_at: 'document_start',
-      },
-    ],
-    web_accessible_resources: [
-      {
-        resources: ['*.js', '*.css', '*.svg', 'icon-128.png', 'icon-34.png'],
-        matches: ['*://*/*'],
       },
     ],
   },

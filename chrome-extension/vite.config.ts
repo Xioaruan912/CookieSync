@@ -16,6 +16,7 @@ export default defineConfig({
       '@root': rootDir,
       '@lib': libDir,
       '@assets': resolve(libDir, 'assets'),
+      '@protobufjs/inquire': resolve(rootDir, '../packages/protobuf/inquire-stub.js'),
     },
   },
   define: {

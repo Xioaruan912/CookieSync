@@ -12,6 +12,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@src': srcDir,
+      '@protobufjs/inquire': resolve(rootDir, '../../packages/protobuf/inquire-stub.js'),
     },
   },
   base: '',
