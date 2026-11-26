@@ -18,6 +18,7 @@
  */
 import { profile115 } from './115';
 import { profileAlipan } from './alipan';
+import { profileBaiduPan } from './baiduPan';
 import { profileDouyin } from './douyin';
 import { profileQuark } from './quark';
 import { profileXiaohongshu } from './xiaohongshu';
@@ -302,4 +303,11 @@ export async function completeQrLogin(profile: SiteProfile, token: QrToken): Pro
   return { cookies };
 }
 
-export const siteProfiles: SiteProfile[] = [profile115, profileQuark, profileAlipan, profileXiaohongshu, profileDouyin];
+export const siteProfiles: SiteProfile[] = [
+  profile115,
+  profileQuark,
+  profileAlipan,
+  profileBaiduPan,
+  profileXiaohongshu,
+  profileDouyin,
+];

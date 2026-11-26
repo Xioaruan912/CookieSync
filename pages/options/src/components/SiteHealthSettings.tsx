@@ -26,14 +26,20 @@ type QrStage =
   | { stage: 'success' }
   | { stage: 'failed'; error: string };
 
-const stateText = (entry?: SiteHealthEntry) =>
-  entry?.state === 'ok'
+const stateText = (profile: SiteProfile, entry?: SiteHealthEntry) => {
+  if (!profile.healthCheck) {
+    if (entry?.loginKeysMissing) return '缺少核心凭证';
+    if (entry?.checkedAt) return '本机凭证齐全';
+    return '防踢护盾已就绪';
+  }
+  return entry?.state === 'ok'
     ? '登录有效'
     : entry?.state === 'invalid'
       ? '登录已失效'
       : entry?.state === 'unknown'
         ? '验证未完成'
         : '尚未验证';
+};
 
 export function SiteHealthSettings() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -201,9 +207,19 @@ export function SiteHealthSettings() {
             <div className="adapt-split">
               <div className="adapt-col-left">
                 <div className="adapt-status-line" role="status">
-                  <span className="adapt-dot" data-state={entry?.state} aria-hidden="true" />
+                  <span
+                    className="adapt-dot"
+                    data-state={
+                      activeProfile.healthCheck
+                        ? entry?.state
+                        : entry?.loginKeysMissing
+                          ? 'invalid'
+                          : 'ok'
+                    }
+                    aria-hidden="true"
+                  />
                   <span>
-                    {stateText(entry)}
+                    {stateText(activeProfile, entry)}
                     {entry?.checkedAt ? ` · ${new Date(entry.checkedAt).toLocaleString('zh-CN')}` : ''}
                   </span>
                 </div>
@@ -211,7 +227,9 @@ export function SiteHealthSettings() {
                 <h2 className="adapt-domain-title">{activeProfile.domain}</h2>
 
                 <p className="adapt-desc">
-                  恢复后使用只读接口校验登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，并支持内置扫码一键修复。
+                  {activeProfile.healthCheck && activeProfile.qrLogin
+                    ? '恢复后使用只读接口校验登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，并支持内置扫码一键修复。'
+                    : '核心登录凭证不完整时自动拦截不覆盖云端，待机时自动休眠后台标签页防止双机互踢。'}
                 </p>
 
                 {activeProfile.loginKeys?.length ? (
@@ -241,7 +259,20 @@ export function SiteHealthSettings() {
                       )}
                       立即验证
                     </Button>
-                  ) : null}
+                  ) : (
+                    <Button
+                      type="button"
+                      className="adapt-btn-primary"
+                      disabled={busyDomain === activeProfile.domain}
+                      onClick={() => void verify(activeProfile.domain)}>
+                      {busyDomain === activeProfile.domain ? (
+                        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                      ) : (
+                        <RefreshCw size={14} aria-hidden="true" />
+                      )}
+                      检查本机凭证
+                    </Button>
+                  )}
 
                   {activeProfile.qrLogin ? (
                     <Button
