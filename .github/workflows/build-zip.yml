@@ -87,24 +87,30 @@ jobs:
           fi
           TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
           cat > release-notes.md <<EOF
-          下载下方 CookieSync-chrome-${VERSION}.zip，解压后在 chrome://extensions 开启开发者模式，加载包含 manifest.json 的目录。
+          ### 3 步安装 / 更新
 
-          更新时覆盖原安装目录并重新加载，保留本机配置。Source code 是源码，请下载安装 ZIP。
+          1. 下载下方 **\`CookieSync-chrome-${VERSION}.zip\`** 并解压（\`Source code\` 是源码，无需下载）。
+          2. 打开 \`chrome://extensions/\` → 开启「开发者模式」→ 加载包含 \`manifest.json\` 的解压目录。
+          3. **旧版更新**：直接覆盖原解压目录并点「刷新」即可保留全部配置，**不要先卸载**。
 
-          本包已通过构建、类型检查与测试。默认自动推送、自动拉取，每 2 分钟检查变化；两端同时变化时保留较新一侧。
+          ### 版本亮点
 
-          Cookie 与 LocalStorage 仅通过 WebDAV 同步；GitHub Gist、Cloudflare KV 与 Google Drive 的 Cookie 后端已移除。配置可随 Chrome 账号同步，或改用 WebDAV 配置文件通道（不含凭据与加密密码）。从旧后端迁移：配置 WebDAV 后手动推送／拉取各一次。
+          - **双机自动交接**：自动识别正在使用的电脑单主上传，离开 90 秒后闲置机自动静默，避免互相覆盖。
+          - **115 防掉线护盾**：待机自动休眠后台标签页防互踢（绝不关闭网页），内置一键状态检测与扫码修复。
+          - **私人网盘加密同步**：所有登录状态仅保存在你自己的私人 WebDAV 网盘，支持端到端加密与一键回滚。
 
-          默认仅自动发现内置 300 个网站和自定义允许名单内的普通页面。设置中可搜索、增删域名。名单外旧站点与队列暂停自动收发，保留本地和云端数据；手动操作仍可用。不能准确识别登录状态，名单内未登录数据也可能同步。更新后重新加载扩展，并刷新已打开网页。
+          > 安全提示：请使用私人 HTTPS 网盘并开启加密密码；网站自身风控或登录过期仍可能需要重新登录。
 
-          每天及启动时自动检查更新：发现语义版本升级或同版本新构建（包含构建号提示）后，自动下载并校验安装 ZIP；按设置页“关于与更新”的三步指引完成覆盖与重新加载。
+          <details>
+          <summary>校验、迁移与构建信息</summary>
 
-          115 网站专属适配：恢复后自动验证会话是否有效（登录要素完整性、失效原因、浏览器特征提示），设置页提供官网同款扫码修复入口。115 的设备风控属服务器端行为，无法绕过，扩展只承诺把状态讲清楚。
+          - 完整性校验：可配合附件 \`SHA256SUMS.txt\` 核对 ZIP 哈希。
+          - 更新提醒：覆盖刷新扩展后，建议顺手刷新已打开的常用网页。
+          - 旧后端迁移（1.11.x 及更早）：已统一使用私人 WebDAV，配置好网盘后手动推拉各一次即可迁移。
+          - 源码提交：\`${GITHUB_SHA}\`
+          - 构建记录：https://github.com/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}
 
-          Cookie / LocalStorage 可能等同登录凭据，请使用私人 HTTPS WebDAV 和数据加密；网站设备风控或会话过期仍可能要求重新登录。
-
-          源码提交：${GITHUB_SHA}
-          构建记录：https://github.com/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}
+          </details>
           EOF
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --target "$GITHUB_SHA" --draft \

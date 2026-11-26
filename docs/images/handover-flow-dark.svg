@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 220" width="1200" height="220" role="img" aria-label="双机自动交接原理示意图">
+  <defs>
+    <style>
+      .bg { fill: #08080A; }
+      .frame { fill: none; stroke: #242428; stroke-width: 1; }
+      .step-num { font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; fill: #7A96FF; letter-spacing: 0.08em; }
+      .step-title { font: 500 16px/1.2 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #F4F4F5; }
+      .step-desc { font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #9898A4; }
+      .box { fill: #0E0E12; stroke: #25252C; stroke-width: 1; }
+      .box-accent { fill: #101528; stroke: #2A3A6E; stroke-width: 1; }
+      .track { stroke: #2E344A; stroke-width: 1.5; stroke-dasharray: 4 5; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="220" rx="14"/>
+  <rect class="frame" x="0.5" y="0.5" width="1199" height="219" rx="14"/>
+
+  <line class="track" x1="348" y1="110" x2="432" y2="110"/>
+  <line class="track" x1="768" y1="110" x2="852" y2="110"/>
+
+  <circle r="4" fill="#7A96FF">
+    <animate attributeName="cx" values="352;428" dur="1.8s" repeatCount="indefinite"/>
+    <animate attributeName="cy" values="110;110" dur="1.8s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;0" dur="1.8s" repeatCount="indefinite"/>
+  </circle>
+  <circle r="4" fill="#7A96FF">
+    <animate attributeName="cx" values="772;848" dur="1.8s" begin="0.9s" repeatCount="indefinite"/>
+    <animate attributeName="cy" values="110;110" dur="1.8s" begin="0.9s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0;1;0" dur="1.8s" begin="0.9s" repeatCount="indefinite"/>
+  </circle>
+
+  <g transform="translate(44, 42)">
+    <rect class="box" x="0" y="0" width="304" height="136" rx="12"/>
+    <text x="24" y="34" class="step-num">01 · 电脑 A 正在使用</text>
+    <text x="24" y="68" class="step-title">登录变化自动上传</text>
+    <text x="24" y="96" class="step-desc">刚登录的网站秒级加密备份到你的网盘，</text>
+    <text x="24" y="116" class="step-desc">没有变化时自动跳过，不占带宽。</text>
+  </g>
+
+  <g transform="translate(432, 42)">
+    <rect class="box-accent" x="0" y="0" width="336" height="136" rx="12"/>
+    <text x="24" y="34" class="step-num">02 · 私人云端自动交接</text>
+    <text x="24" y="68" class="step-title">同一时间只让一台电脑写入</text>
+    <text x="24" y="96" class="step-desc">数据全程保存在你自己选的私人网盘，</text>
+    <text x="24" y="116" class="step-desc">切到另一台电脑时自动接班，绝不互相覆盖。</text>
+  </g>
+
+  <g transform="translate(852, 42)">
+    <rect class="box" x="0" y="0" width="304" height="136" rx="12"/>
+    <text x="24" y="34" class="step-num">03 · 闲置电脑自动防互踢</text>
+    <text x="24" y="68" class="step-title">静默待机 + 115 休眠保护</text>
+    <text x="24" y="96" class="step-desc">离开超过 90 秒自动退居待机，休眠 115</text>
+    <text x="24" y="116" class="step-desc">后台标签页防挤下线，且绝不关闭你的网页。</text>
+  </g>
+</svg>
