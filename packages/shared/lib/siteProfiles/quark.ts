@@ -11,4 +11,5 @@ export const profileQuark: SiteProfile = {
   uaSensitive: true,
   singleSession: true,
   fastSync: true,
+  loginPageUrl: 'https://pan.quark.cn/',
 };

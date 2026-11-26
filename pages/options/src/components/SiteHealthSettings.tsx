@@ -246,33 +246,18 @@ export function SiteHealthSettings() {
                 ) : null}
 
                 <div className="adapt-actions">
-                  {activeProfile.healthCheck ? (
-                    <Button
-                      type="button"
-                      className="adapt-btn-primary"
-                      disabled={busyDomain === activeProfile.domain}
-                      onClick={() => void verify(activeProfile.domain)}>
-                      {busyDomain === activeProfile.domain ? (
-                        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-                      ) : (
-                        <RefreshCw size={14} aria-hidden="true" />
-                      )}
-                      立即验证
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      className="adapt-btn-primary"
-                      disabled={busyDomain === activeProfile.domain}
-                      onClick={() => void verify(activeProfile.domain)}>
-                      {busyDomain === activeProfile.domain ? (
-                        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-                      ) : (
-                        <RefreshCw size={14} aria-hidden="true" />
-                      )}
-                      检查本机凭证
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    className="adapt-btn-primary"
+                    disabled={busyDomain === activeProfile.domain}
+                    onClick={() => void verify(activeProfile.domain)}>
+                    {busyDomain === activeProfile.domain ? (
+                      <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <RefreshCw size={14} aria-hidden="true" />
+                    )}
+                    立即验证
+                  </Button>
 
                   {activeProfile.qrLogin ? (
                     <Button
@@ -281,6 +266,15 @@ export function SiteHealthSettings() {
                       className="adapt-btn-outline"
                       disabled={qrProfile?.domain === activeProfile.domain && qrStage.stage !== 'failed'}
                       onClick={() => void startRepair(activeProfile)}>
+                      <QrCode size={14} aria-hidden="true" />
+                      扫码重新登录
+                    </Button>
+                  ) : activeProfile.loginPageUrl ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="adapt-btn-outline"
+                      onClick={() => void chrome.tabs.create({ url: activeProfile.loginPageUrl })}>
                       <QrCode size={14} aria-hidden="true" />
                       扫码重新登录
                     </Button>

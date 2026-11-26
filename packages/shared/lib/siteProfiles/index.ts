@@ -47,6 +47,8 @@ export interface SiteProfile {
   /** True for key login sites that should flush within ~5s after login cookie changes. */
   fastSync?: boolean;
   qrLogin?: SiteQrLoginConfig;
+  /** Official web login page opened for QR sign-in when no embedded QR API is configured. */
+  loginPageUrl?: string;
 }
 
 export type SiteHealthState = 'ok' | 'invalid' | 'unknown';

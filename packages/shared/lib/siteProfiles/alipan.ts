@@ -10,4 +10,5 @@ export const profileAlipan: SiteProfile = {
   uaSensitive: false,
   singleSession: true,
   fastSync: true,
+  loginPageUrl: 'https://www.alipan.com/sign/in',
 };

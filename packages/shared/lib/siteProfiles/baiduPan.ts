@@ -11,4 +11,5 @@ export const profileBaiduPan: SiteProfile = {
   uaSensitive: false,
   singleSession: true,
   fastSync: true,
+  loginPageUrl: 'https://pan.baidu.com/',
 };
