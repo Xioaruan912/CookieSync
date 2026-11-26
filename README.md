@@ -1,76 +1,75 @@
-# CookieSync
+<div align="center">
 
-通过 WebDAV，在自己的电脑之间同步 Cookie 与 LocalStorage。
+<h1>CookieSync · 油猴版</h1>
 
-基于 [jackluson/sync-your-cookie](https://github.com/jackluson/sync-your-cookie) 二次开发，采用 MIT 许可证，保留原作者 Jack Lu 的版权声明。
+<p><strong>手机与 PC 跨端配置同步伴侣（v2.2.1）</strong><br />面向 iPhone（Stay / Userscripts）、Android 与轻量桌面浏览器，与 Chrome 扩展共用同一份私人网盘名单与偏好。</p>
 
-## 功能
+<p>
+  <a href="https://raw.githubusercontent.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config.user.js"><strong>一键安装油猴脚本</strong></a> &nbsp;·&nbsp;
+  <a href="https://github.com/Xioaruan912/CookieSync">Chrome 扩展主分支（登录态同步）</a> &nbsp;·&nbsp;
+  <a href="#3-步上手">3 步上手</a> &nbsp;·&nbsp;
+  <a href="#能力边界说明必读">能力边界说明</a>
+</p>
 
-- WebDAV 地址、用户名、密码／应用密码及远程文件路径配置，支持独立临时文件连接测试；条件写入（If-Match / ETag）默认开启。
-- Cookie 与 LocalStorage 只走 WebDAV；GitHub Gist、Cloudflare KV 与 Google Drive 的 Cookie 存储后端已在 1.12.0 移除，云端旧数据保留不动。
-- 配置同步三选一：**Chrome 账号同步**（默认，不含 WebDAV 凭据）、**WebDAV 配置文件**（`CookieSync-config-v1.json`，名单与偏好合并传递，不含凭据与加密密码）、或**关闭**。
-- 手动推送、拉取并应用、按网站合并；启动自动拉取，后台默认每 2 分钟合并改动，可调整为 1～60 分钟；离线队列保留并重试。
-- 自动比较云端与本地：单端变化自动按方向收发；两端同时变化时**新者胜**（以各端本机时钟为准），并在状态中注明采用了哪一侧。
-- 连接后主动检查；云端没有对应网站数据时，自动为已开启推送且本机有数据的网站建立备份。设置页可查看检查／上传时间、待同步数量、冲突说明及错误，也可立即检查。
-- 默认仅自动发现[内置 300 个网站及自定义名单](docs/SITES.md)中的普通 HTTP(S) 页面，有 Cookie / LocalStorage 即可自动登记，无需手动推送。可搜索、增补、停用域名。名单外旧站点及队列暂停自动收发，保留本地和云端数据；手动操作仍可用。不能可靠识别登录状态，名单内未登录网站也可能产生同步数据。
-- 简体中文界面，支持 Protobuf 编码及可选 AES-256-GCM 加密。
-- 115 专属适配：恢复后用只读接口验证会话是否真的有效（要素完整性、UA 特征提示、失效原因），并提供隐藏的官网同款扫码修复入口。
-- 每天及启动时检查更新：发现语义版本升级或同版本的新构建（CI 写入构建号）后自动下载安装 ZIP 并校验 SHA-256，按三步指引完成覆盖与重新加载（Chrome 沙箱内无法全自动替换）。
-- 全新「钴蓝 × 砂纸」界面：设置页按连接 / 自动同步 / 网站名单 / 关于与更新四屏组织，明暗双主题，安静的微交互。
+</div>
 
-Cookie 失效、服务器撤销会话或设备风控仍可能要求重新登录；不保证免扫码。三个目标网站的测试使用虚拟数据，未使用真实账号。
+---
 
-## 下载安装包
+## 能力边界说明（必读）
 
-打开 [最新 Releases](https://github.com/Xioaruan912/CookieSync/releases/latest)，在 Assets 下载 **CookieSync-chrome-版本号.zip**。解压后在 `chrome://extensions` 开启开发者模式并加载包含 `manifest.json` 的目录。`SHA256SUMS.txt` 可用于校验安装包。
+> 在安装前，请先了解油猴版与 Chrome 扩展的明确分工：
 
-GitHub 的“Code → Download ZIP”是源码，不是可安装扩展。更新时覆盖原安装目录并重新加载，不要先卸载，以保留本机配置。正式包没有开发重载服务。
+| 同步内容 | Chrome 扩展（PC / 支持扩展的 Android 浏览器） | 油猴版（本分支，iPhone Stay / 手机 / PC） |
+| :--- | :---: | :---: |
+| **网站同步名单（添加 / 暂停 / 预设）** | 支持（与油猴共用） | **支持（与扩展共用）** |
+| **基础偏好设置（主题 / 间隔 / 菜单）** | 支持（与油猴共用） | **支持（与扩展共用）** |
+| **在线设备状态（总览页显示在线手机）** | 支持（`desktop` 独立槽位） | **支持（`mobile` 独立槽位）** |
+| **网站登录态（Cookie / LocalStorage）** | **支持（完整读写 `HttpOnly`）** | **不支持** |
 
-**从 1.6.x 首次升级请先记录配置和加密密码**（固定扩展 ID 的一次性迁移）；**从 1.11.x 及之前升级**：Gist/KV/Drive 的 Cookie 后端已移除，配置 WebDAV 后手动推送／拉取各一次完成迁移。详见[使用说明](docs/WEBDAV.md)。
+**为什么油猴版不同步登录 Cookie？**
+- 绝大多数网站（GitHub、115、知乎、B站、抖音等）的核心登录凭据都带有浏览器安全保护标记 **`HttpOnly`**。
+- **iPhone 的 Stay、Safari Userscripts、Violentmonkey、Via 等主流油猴管理器受浏览器网页沙箱限制，无法读写 `HttpOnly` Cookie**（桌面端仅 Tampermonkey BETA 有非标准私有接口，但 PC 上直接使用我们的 Chrome 扩展功能更完整、更稳定）。
+- 如果你需要在 **Android 手机** 上同步完整登录态，可在支持 Chrome 扩展的浏览器（如 Kiwi / Lemur / Edge Canary）直接安装 `main` 分支的扩展 ZIP；如果在 **iPhone Safari** 上同步完整登录态，需通过 macOS Xcode 将主分支扩展打包为原生 **iOS Safari Web Extension**。
 
-## 构建与加载
+---
 
-需要 Node.js 20.12+ 和 pnpm 9.1.1；项目声明的 Node 版本见 `.nvmrc`。
+## 核心特性
 
-```sh
-node scripts/workspace.mjs verify
-```
+- **手机优先 + PC 双端适配**：手机端自动以贴合单手操作的原生底部抽屉呈现（支持安全区避让），PC 端以纯白 / 纯黑极简居中弹窗展示，自动跟随系统浅色 / 深色外观。
+- **当前网站一键加入 + 18 个高频预设名单**：在「名单」页或油猴菜单直接一键将当前网页加入同步名单，也内置了 115、GitHub、B站、知乎、抖音、小红书等高频预设站点，点一下即可切换。
+- **检测到 Chrome 扩展自动让位**：如果同一台 PC 同时装了 CookieSync Chrome 扩展与油猴脚本，油猴会自动检测到扩展运行并**静默停用后台自动同步**，彻底避免两端同时写入冲突。
+- **多端双槽位互不干扰**：手机端使用独立的 `mobile` 在线槽位，与 PC 端的 `desktop` 槽位完全隔离；你可以一边用电脑、一边用手机管理名单，并在 PC 扩展总览页看到当前在线的手机名称（如 `iPhone Safari 在线`）。
+- **广泛兼容主流手机油猴管理器**：内置兼容层，完整支持 **iPhone Stay**、**Safari Userscripts**、**Android Tampermonkey / Via** 与桌面端 **Tampermonkey / Violentmonkey**。
+- **内置一键检查更新**：在面板「概览」页或油猴菜单点击「检查更新」，即可自动比对最新版本并一键跳转安装更新。
 
-该命令自动在系统临时缓存中安装依赖、构建并运行检查；源码目录始终没有依赖或构建缓存。安装 ZIP 和解压目录位于源码旁边的 `CookieSync-release/`。对已验证源码仅打包可运行 `node scripts/workspace.mjs build`。也可用 `--cache`、`--output` 指定源码外的路径。
+---
 
-两台电脑配置相同的 WebDAV 目的地。名单内的小红书、抖音、115、NodeSeek 等已登记网站默认自动推送和自动拉取，保留用户明确关闭的设置。建议首次手动推送／拉取确认。详细步骤和限制见 [WebDAV 使用说明](docs/WEBDAV.md)。
+## 3 步上手
 
-**回到另一台电脑时**，可在设置 → 自动同步点击「拉取全部」：一次从云端覆盖名单内所有开启自动拉取的网站（Cookie 立即应用；LocalStorage 应用到已打开的对应页面），本机这些网站尚未上传的改动会被放弃，名单外或已暂停的网站不受影响。适合“白天用 A 机、晚上回 B 机”的场景；反方向的「全部上传」会把本机数据整体覆盖到云端。两台电脑同时操作同一网站时请仍按顺序手动确认。
+1. **安装脚本**：在手机（如 iPhone 安装 **Stay**）或 PC 浏览器安装油猴管理器后，点击顶部 **[一键安装油猴脚本](https://raw.githubusercontent.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config.user.js)**。
+2. **填写私人网盘目录**：打开任意普通 HTTPS 网页，在油猴菜单选择 **「CookieSync · 配置同步」**，填入与 Chrome 扩展一致的私人 HTTPS WebDAV 目录、用户名与应用密码，保存连接。
+   > 示例：如果 Chrome 扩展的 WebDAV 地址是 `https://dav.jianguoyun.com/dav/`、远程路径是 `CookieSync/cookies.txt`，那么油猴版的目录直接填 `https://dav.jianguoyun.com/dav/CookieSync/`，并在 Chrome 扩展里将配置同步通道选为「WebDAV 配置文件」。
+3. **开始使用**：点击「立即同步」完成首次授权与合并；之后在手机浏览任意网页时，点油猴菜单的 **「一键加入 xxx.com」** 即可同步到你的 PC 扩展。
 
-## 内容比对
+---
 
-使用浏览器原生 **SHA-256** 摘要实现类似 MD5 的内容比对，无新增摘要依赖。比较解密后的 Cookie / LocalStorage，统一顺序并排除更新时间、设备存储编号等无关信息。同内容跳过远程上传和浏览器重复写入；编码或加密策略改变时仍会重写。
+<details>
+<summary><strong>进阶说明与本地测试（面向开发者）</strong></summary>
 
-后台默认每 2 分钟处理变化并检查远端。本机变化上传，远端变化恢复；两端相对上次基线均变化时按写入时间**新者胜**，采用较新一侧并在状态中注明。摘要用于变化检测，不代替加密和 WebDAV 冲突保护。
+<br />
 
-## 验证
+- **同步机制**：仅读写你私人 WebDAV 目录下的 `CookieSync-config-v1.json`（逐字段 `updatedAt + revision` 合并 + `If-Match / ETag` 条件写入，不含 WebDAV 密码与加密密码）以及 `CookieSync-lease-v1.json` 的 `slots.mobile` 槽位。
+- **自动限频**：后台自动同步默认每 30 分钟最多触发一次；遇到多端并发 `HTTP 412` 自动重新拉取并合并。
+- **脚本路径**：[userscript/CookieSync-config.user.js](userscript/CookieSync-config.user.js)
+- **运行单元测试**（需要 Node.js 20+）：
+  ```sh
+  node --test userscript/config.test.mjs
+  ```
 
-`verify` 会执行完整构建、类型检查及单元测试。可选的浏览器测试使用独立临时资料和虚拟页面，运行方法见 [使用说明](docs/WEBDAV.md)。每次推送到 `main`，GitHub Actions 验证成功后自动发布安装 ZIP 和 SHA-256 校验文件到 Releases，标签为 `v版本号-build.构建号`，保留历史安装包；PR 仅构建验证，不发布。也可在 `main` 手动运行工作流。
+</details>
 
-## 项目结构
+---
 
-| 目录 | 内容 |
-| --- | --- |
-| `chrome-extension/` | 扩展清单、后台同步、更新检查与浏览器事件处理 |
-| `pages/` | 设置页、弹窗、侧栏及页面脚本 |
-| `packages/` | 共享逻辑、存储、编码、界面及构建工具 |
-| `tests/` | 可选浏览器冒烟测试 |
-| `docs/` | 配置方法、行为边界与验证说明 |
-| `.github/` | CI、依赖更新及问题模板 |
+## 许可证与致谢
 
-依赖、构建产物、缓存、浏览器资料和本机配置均不提交。后续统一在本仓库修改源码，再运行源码外构建命令；不在复制的安装目录中修改实现。
-
-## 安全与隐私
-
-Cookie 和 LocalStorage 可能等同于登录凭据。请使用私人 HTTPS WebDAV、专用应用密码，并在两端启用相同的数据加密设置；Protobuf 或 Base64 本身不是加密。
-
-WebDAV 凭据默认仅存本机；主动开启配置同步后会包含应用密码并进入 Chrome 同步存储。通用设置仍使用 Chrome 同步存储；不使用 Chrome 账号同步时可改用 WebDAV 配置文件通道（不含凭据与加密密码）。详见 [隐私说明](PRIVACY.md) 与 [配置及安全说明](docs/WEBDAV.md)。不要向仓库提交真实 Cookie、密码、令牌、同步文件或浏览器资料。
-
-## 许可证
-
-[MIT](LICENSE)。上游来源见开头的链接，原始版权声明保留在许可证中。
+基于 [jackluson/sync-your-cookie](https://github.com/jackluson/sync-your-cookie) 二次开发，采用 **[MIT 许可证](LICENSE)**，完整保留原作者 **Jack Lu** 的版权声明。
