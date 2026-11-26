@@ -8,7 +8,8 @@ import type { TransferDirection } from './DeviceStatus';
 
 gsap.registerPlugin(useGSAP);
 
-export const siteNeedsAttention = (site: OverviewRow) => site.attention.some(hint => hint !== 'paused') || !!site.error;
+export const siteNeedsAttention = (site: OverviewRow) =>
+  site.attention.some(hint => hint !== 'paused' && hint !== 'truncated') || !!site.error || !!site.retryError;
 
 const rulesLabel = (site: OverviewRow) => {
   if (!site.listed) return '名单外';
@@ -26,7 +27,6 @@ export function SiteState({ site, connected }: { site: OverviewRow; connected: b
     else if (site.health?.state === 'invalid') badge = { label: '会话失效', tone: 'warn' };
     else if (!connected) badge = { label: '等待连接', tone: 'muted' };
     else if (site.pending && site.autoPush) badge = { label: '排队', tone: 'pending' };
-    else if (site.truncated || site.indexedDbSkipped?.length) badge = { label: '待处理', tone: 'pending' };
     else if (site.lastPushAt || site.lastPullAt) badge = { label: '已同步', tone: 'live' };
   }
   return (
@@ -69,13 +69,14 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
   const slideDir = useRef(animate ? 1 : 0);
   const [tab, setTab] = useState<DetailTab>('state');
   const [confirm, setConfirm] = useState<TransferDirection>();
-  const issues = [
-    site.retryError || site.error,
-    site.health?.message,
-    site.truncated && `${site.truncated} 项存储超出同步上限`,
-    site.indexedDbSkipped?.length && `未同步的 IndexedDB 仓库：${site.indexedDbSkipped.join('、')}`,
-  ].filter(Boolean);
+  const healthProblem =
+    site.health?.state === 'invalid' || site.health?.state === 'unknown' || site.health?.loginKeysMissing
+      ? site.health.message
+      : undefined;
+  const issues = [site.retryError || site.error, healthProblem].filter(Boolean);
   const hasIssues = issues.length > 0;
+  const skippedCount = site.truncated || 0;
+  const skippedIdb = site.indexedDbSkipped || [];
   const disabled = !connected || !site.listed || blocked;
 
   useLayoutEffect(() => {
@@ -124,6 +125,8 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
           ['本地存储', site.cached?.localStorageItems ?? 0],
           ['会话存储', site.cached?.sessionStorageItems ?? 0],
           ['IndexedDB', site.cached?.indexedDBRecords ?? 0],
+          ...(skippedCount > 0 ? [['已跳过超大缓存', `${skippedCount} 项（不影响登录）`]] : []),
+          ...(skippedIdb.length > 0 ? [['已跳过 IDB 仓库', skippedIdb.join('、')]] : []),
         ]
       : tab === 'history'
         ? [

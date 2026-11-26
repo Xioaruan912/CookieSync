@@ -121,6 +121,8 @@ export function OverviewPanel() {
   }, []);
 
   const sites = data?.rows || [];
+  const attentionCount = sites.filter(siteNeedsAttention).length;
+  const pausedCount = sites.filter(site => site.paused).length;
   const search = query.trim().toLowerCase();
   const filtered = sites.filter(
     site =>
@@ -234,20 +236,30 @@ export function OverviewPanel() {
         <section ref={listCard} className="overview-list-card" aria-label="网站列表">
           <div className="overview-list-controls">
             <div className="overview-segment" role="group" aria-label="筛选网站">
-              {filters.map(([key, name]) => (
-                <button
-                  type="button"
-                  key={key}
-                  aria-pressed={filter === key}
-                  onClick={() => {
-                    selectMotion.current = false;
-                    setFilter(key);
-                    setPage(0);
-                  }}>
-                  {name}
-                  {key === 'all' && data ? ` ${filtered.length}` : ''}
-                </button>
-              ))}
+              {filters.map(([key, name]) => {
+                const badgeCount =
+                  !data
+                    ? 0
+                    : key === 'all'
+                      ? sites.length
+                      : key === 'attention'
+                        ? attentionCount
+                        : pausedCount;
+                return (
+                  <button
+                    type="button"
+                    key={key}
+                    aria-pressed={filter === key}
+                    onClick={() => {
+                      selectMotion.current = false;
+                      setFilter(key);
+                      setPage(0);
+                    }}>
+                    {name}
+                    {badgeCount > 0 ? ` ${badgeCount}` : ''}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="ov-right-tools">
