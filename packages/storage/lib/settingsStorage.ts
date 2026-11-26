@@ -25,6 +25,8 @@ export interface ISettings {
   activeDeviceSync?: boolean;
   /** Pause idle single-session tabs (e.g. 115) when standby or after another PC takes over. On by default. */
   discardIdleSingleSessionTabs?: boolean;
+  /** UI language preference: follow browser locale ('auto'), Simplified Chinese ('zh'), or English ('en'). */
+  language?: 'auto' | 'zh' | 'en';
 }
 
 const key = 'settings-storage-key';
@@ -46,6 +48,7 @@ const storage = createStorage<ISettings>(
     autoUpdateDownload: true,
     activeDeviceSync: true,
     discardIdleSingleSessionTabs: true,
+    language: 'auto',
   },
   {
     storageType: StorageType.Sync,

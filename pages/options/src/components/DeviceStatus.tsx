@@ -1,5 +1,5 @@
 import { useGSAP } from '@gsap/react';
-import { RuntimeMessageType, useStorageSuspense } from '@sync-your-cookie/shared';
+import { RuntimeMessageType, useLocale, useStorageSuspense } from '@sync-your-cookie/shared';
 import { autoSyncStatusStorage } from '@sync-your-cookie/storage/lib/autoSyncStatusStorage';
 import { settingsStorage } from '@sync-your-cookie/storage/lib/settingsStorage';
 import { Button, Input } from '@sync-your-cookie/ui';
@@ -24,11 +24,12 @@ export function DeviceStatus({ connected, operation, busy, onSync }: Props) {
   const hero = useRef<HTMLElement>(null);
   const status = useStorageSuspense(autoSyncStatusStorage);
   const settings = useStorageSuspense(settingsStorage);
+  const { isEn, t } = useLocale();
   const [draft, setDraft] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
 
-  const localName = status.localDeviceName || '本机';
+  const localName = status.localDeviceName || t('本机', 'This PC');
   const handoverEnabled = settings.activeDeviceSync !== false;
   const standby = handoverEnabled && status.deviceRole === 'standby';
   const localActive = handoverEnabled && status.deviceRole === 'active';
@@ -53,30 +54,31 @@ export function DeviceStatus({ connected, operation, busy, onSync }: Props) {
             : undefined);
 
   const roleText = !connected
-    ? '未连接 WebDAV'
+    ? t('未连接 WebDAV', 'WebDAV not connected')
     : takingOver
-      ? '正在接班'
+      ? t('正在接班', 'Taking over')
       : flow === 'push'
-        ? '正在推送'
+        ? t('正在推送', 'Pushing')
         : flow === 'pull'
-          ? '正在拉取'
+          ? t('正在拉取', 'Pulling')
           : flow === 'check'
-            ? '正在检查'
+            ? t('正在检查', 'Checking')
             : standby
-              ? '本机待机'
+              ? t('本机待机', 'Standby')
               : localActive
                 ? status.lastTakeoverAt
-                  ? '本机已接班'
-                  : '本机活跃'
-                : '本机同步';
+                  ? t('本机已接班', 'Active (Handed over)')
+                  : t('本机活跃', 'Active device')
+                : t('本机同步', 'Sync ready');
 
   const lastSync = [status.lastSuccess, status.lastTakeoverAt].reduce<number>(
     (latest, time) => Math.max(latest, time || 0),
     0,
   );
-  const lastSyncText = lastSync
-    ? `最近同步 ${new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(lastSync)}`
-    : '尚无同步记录';
+  const formattedTime = lastSync
+    ? new Intl.DateTimeFormat(isEn ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit' }).format(lastSync)
+    : '';
+  const lastSyncText = lastSync ? t(`最近同步 ${formattedTime}`, `Last sync ${formattedTime}`) : t('尚无同步记录', 'No sync yet');
 
   useGSAP(
     () => {
@@ -152,10 +154,10 @@ export function DeviceStatus({ connected, operation, busy, onSync }: Props) {
           {mobileName ? (
             <span
               className="ml-2 inline-flex items-center gap-1 rounded-full border border-[var(--sbo-line)] px-2.5 py-0.5 text-[11.5px] text-[var(--sbo-ink)]"
-              title="手机端独立槽位在线，与主机并行同步互不干扰">
+              title={t('手机端独立槽位在线，与主机并行同步互不干扰', 'Mobile slot online in parallel with desktop')}>
               <Smartphone size={11} aria-hidden="true" />
               <span>{mobileName}</span>
-              <span className="text-[var(--sbo-ok)]">在线</span>
+              <span className="text-[var(--sbo-ok)]">{t('在线', 'Online')}</span>
             </span>
           ) : null}
         </div>
@@ -167,7 +169,7 @@ export function DeviceStatus({ connected, operation, busy, onSync }: Props) {
             type="button"
             className="ov-device-btn"
             onClick={() => setDraft(localName)}
-            aria-label={`修改设备名，当前为 ${localName}`}>
+            aria-label={t(`修改设备名，当前为 ${localName}`, `Rename device, currently ${localName}`)}>
             <span>{localName}</span>
             <Pencil size={12} aria-hidden="true" />
           </button>
@@ -183,7 +185,7 @@ export function DeviceStatus({ connected, operation, busy, onSync }: Props) {
             <i />
           </span>
           <span className="ov-peer-label" data-emphasis={!!peer || undefined} title={peer || undefined}>
-            {peer || '另一台设备'}
+            {peer || t('另一台设备', 'Peer device')}
           </span>
         </div>
 
@@ -193,17 +195,17 @@ export function DeviceStatus({ connected, operation, busy, onSync }: Props) {
             onClick={() => void takeOver()}
             disabled={takingOver || busy}>
             <RefreshCw size={14} className={takingOver ? 'overview-spinner' : undefined} aria-hidden="true" />
-            接班同步
+            {t('接班同步', 'Take Over & Sync')}
           </Button>
         ) : (
           <Button className="overview-takeover" asChild>
-            <a href="#connection">配置 WebDAV</a>
+            <a href="#connection">{t('配置 WebDAV', 'Set up WebDAV')}</a>
           </Button>
         )}
       </div>
 
       {draft !== undefined ? (
-        <OverviewDialog title="修改设备名" onClose={() => setDraft(undefined)}>
+        <OverviewDialog title={t('修改设备名', 'Rename Device')} onClose={() => setDraft(undefined)}>
           <form
             className="overview-rename-form"
             onSubmit={event => {
@@ -211,13 +213,13 @@ export function DeviceStatus({ connected, operation, busy, onSync }: Props) {
               void rename();
             }}>
             <Input
-              aria-label="本机名称"
+              aria-label={t('本机名称', 'Device name')}
               data-initial-focus
               value={draft}
               onChange={event => setDraft(event.target.value)}
             />
             <Button type="submit" className="ov-btn-primary" disabled={saving || !draft.trim()}>
-              {saving ? '保存中…' : '保存'}
+              {saving ? t('保存中…', 'Saving…') : t('保存', 'Save')}
             </Button>
           </form>
         </OverviewDialog>

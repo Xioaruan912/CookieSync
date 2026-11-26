@@ -28,9 +28,9 @@ const manifest = Object.assign(
      * if you want to support multiple languages, you can use the following reference
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Internationalization
      */
-    name: 'CookieSync · 登录状态同步',
+    name: '__MSG_extensionName__',
     version: packageJson.version,
-    description: '通过 WebDAV 同步 Cookie 与 LocalStorage；配置可随 Chrome 账号或 WebDAV 传递。',
+    description: '__MSG_extensionDescription__',
     permissions: ['cookies', 'activeTab', 'tabs', 'storage', 'alarms', 'downloads', 'idle', 'scripting'].concat(
       sidePanelConfig.permissions,
     ),

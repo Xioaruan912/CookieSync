@@ -1,6 +1,6 @@
-import { useTheme, withErrorBoundary, withSuspense } from '@sync-your-cookie/shared';
+import { useLocale, useTheme, withErrorBoundary, withSuspense } from '@sync-your-cookie/shared';
 import { Button, ThemeDropdown, Toaster } from '@sync-your-cookie/ui';
-import { Activity, Cable, Globe2, Info, LayoutDashboard, Puzzle, SlidersVertical } from 'lucide-react';
+import { Activity, Cable, Globe2, Info, Languages, LayoutDashboard, Puzzle, SlidersVertical } from 'lucide-react';
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { AboutSettings } from './components/AboutSettings';
 import { AutoSyncStatus } from './components/AutoSyncStatus';
@@ -11,12 +11,12 @@ import { SitePolicySettings } from './components/SitePolicySettings';
 import { WebdavSettings } from './components/WebdavSettings';
 
 const sections = {
-  overview: { label: '总览', title: '同步总览', icon: LayoutDashboard },
-  connection: { label: '同步连接', title: '同步连接', icon: Cable },
-  automation: { label: '自动', title: '自动同步', icon: Activity },
-  adaptations: { label: '适配', title: '网站适配', icon: Puzzle },
-  sites: { label: '网站名单', title: '网站名单', icon: Globe2 },
-  about: { label: '关于', title: '关于与更新', icon: Info },
+  overview: { label: '总览', enLabel: 'Overview', icon: LayoutDashboard },
+  connection: { label: '同步连接', enLabel: 'Connection', icon: Cable },
+  automation: { label: '自动', enLabel: 'Automation', icon: Activity },
+  adaptations: { label: '适配', enLabel: 'Adaptations', icon: Puzzle },
+  sites: { label: '网站名单', enLabel: 'Sites', icon: Globe2 },
+  about: { label: '关于', enLabel: 'About', icon: Info },
 } as const;
 
 type SectionKey = keyof typeof sections;
@@ -29,6 +29,7 @@ const currentSection = (): SectionKey => {
 const Options = () => {
   const [section, setSection] = useState<SectionKey>(currentSection);
   const { theme, setTheme } = useTheme();
+  const { isEn, t, toggleLanguage } = useLocale();
 
   useEffect(() => {
     const onHashChange = () => setSection(currentSection());
@@ -49,13 +50,13 @@ const Options = () => {
             <strong>CookieSync</strong>
           </a>
 
-          <nav className="titanium-segmented" aria-label="设置导航">
+          <nav className="titanium-segmented" aria-label={t('设置导航', 'Settings navigation')}>
             {(Object.keys(sections) as SectionKey[]).map(key => {
-              const { label, icon: Icon } = sections[key];
+              const { label, enLabel, icon: Icon } = sections[key];
               return (
                 <a key={key} href={`#${key}`} aria-current={section === key ? 'page' : undefined}>
                   <Icon size={16} aria-hidden="true" />
-                  {label}
+                  {isEn ? enLabel : label}
                 </a>
               );
             })}
@@ -66,10 +67,21 @@ const Options = () => {
               trigger={
                 <Button variant="outline" size="sm" className="rounded-full">
                   <SlidersVertical size={15} className="mr-1.5" aria-hidden="true" />
-                  高级设置
+                  {t('高级设置', 'Advanced')}
                 </Button>
               }
             />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full px-2.5 text-xs font-medium"
+              onClick={() => void toggleLanguage()}
+              aria-label={t('切换到英文', 'Switch to Chinese')}
+              title={t('切换语言 / Switch Language', 'Switch Language / 切换语言')}>
+              <Languages size={14} className="mr-1" aria-hidden="true" />
+              {isEn ? '中文' : 'EN'}
+            </Button>
             <ThemeDropdown setTheme={setTheme} />
           </div>
         </div>

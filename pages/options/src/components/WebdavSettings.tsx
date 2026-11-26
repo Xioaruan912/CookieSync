@@ -4,6 +4,7 @@ import {
   decodePairingCode,
   encodePairingCode,
   testWebdavConnection,
+  useLocale,
   useStorageSuspense,
 } from '@sync-your-cookie/shared';
 import { accountStorage, isLegacyProvider } from '@sync-your-cookie/storage/lib/accountStorage';
@@ -23,23 +24,29 @@ import { OverviewDialog } from './OverviewDialog';
 gsap.registerPlugin(useGSAP);
 
 const probeKey = 'cookiesync-webdav-probe-ok';
-const probeLabels = ['创建', '覆盖', '读取', '删除'] as const;
+const probeLabels = [
+  ['创建', 'Create'],
+  ['覆盖', 'Overwrite'],
+  ['读取', 'Read'],
+  ['删除', 'Delete'],
+] as const;
 
 const slides = [
-  { id: 'credentials', num: '01', label: '连接与凭据' },
-  { id: 'channel', num: '02', label: '同步通道' },
-  { id: 'options', num: '03', label: '高级选项' },
+  { id: 'credentials', num: '01', label: '连接与凭据', enLabel: 'Credentials' },
+  { id: 'channel', num: '02', label: '同步通道', enLabel: 'Sync Channel' },
+  { id: 'options', num: '03', label: '高级选项', enLabel: 'Options' },
 ] as const;
 
 const presets = [
-  { label: '坚果云', url: 'https://dav.jianguoyun.com/dav/', path: 'CookieSync/cookies.txt', unsafe: false },
+  { label: '坚果云', enLabel: 'Jianguoyun', url: 'https://dav.jianguoyun.com/dav/', path: 'CookieSync/cookies.txt', unsafe: false },
   {
     label: 'Nextcloud',
+    enLabel: 'Nextcloud',
     url: 'https://cloud.example.com/remote.php/dav/files/user/',
     path: 'CookieSync/cookies.txt',
     unsafe: false,
   },
-  { label: 'AList', url: 'https://alist.example.com/dav/', path: 'CookieSync/cookies.txt', unsafe: true },
+  { label: 'AList', enLabel: 'AList', url: 'https://alist.example.com/dav/', path: 'CookieSync/cookies.txt', unsafe: true },
 ] as const;
 
 type ProbePhase = 'idle' | 'running' | 'ok' | 'error';
@@ -53,6 +60,7 @@ function hostOf(rawUrl: string): string {
 }
 
 export function WebdavSettings() {
+  const { isEn, t } = useLocale();
   const rootRef = useRef<HTMLDivElement>(null);
   const slideDir = useRef(0);
   const account = useStorageSuspense(accountStorage);
@@ -226,14 +234,14 @@ export function WebdavSettings() {
             : 'muted';
 
   const statusText = legacy
-    ? '旧后端待迁移'
+    ? t('旧后端待迁移', 'Legacy backend needs migration')
     : busyMode === 'test'
-      ? '正在测试连接'
+      ? t('正在测试连接', 'Testing connection')
       : dirty
-        ? '有未保存的修改'
+        ? t('有未保存的修改', 'Unsaved changes')
         : connected
-          ? host || '已连接'
-          : '等待配置';
+          ? host || t('已连接', 'Connected')
+          : t('等待配置', 'Not configured');
 
   return (
     <div ref={rootRef} className="sbo-stage">
@@ -245,7 +253,7 @@ export function WebdavSettings() {
           </h1>
         </div>
 
-        <nav className="sbo-deck-nav" role="tablist" aria-label="同步连接分页">
+        <nav className="sbo-deck-nav" role="tablist" aria-label={t('同步连接分页', 'Connection tabs')}>
           {slides.map((slide, index) => (
             <button
               key={slide.id}
@@ -255,7 +263,7 @@ export function WebdavSettings() {
               className="sbo-deck-tab"
               onClick={() => goSlide(index)}>
               <em>{slide.num}</em>
-              <span>{slide.label}</span>
+              <span>{isEn ? slide.enLabel : slide.label}</span>
             </button>
           ))}
         </nav>
@@ -264,7 +272,7 @@ export function WebdavSettings() {
       {/* Zero-Scroll Horizontal Slide Viewport */}
       <div className="sbo-viewport">
         {slideIndex === 0 ? (
-          <section className="sbo-slide" role="tabpanel" aria-label="连接与凭据">
+          <section className="sbo-slide" role="tabpanel" aria-label={t('连接与凭据', 'Credentials')}>
             <div className="sbo-slide-split">
               <div className="sbo-col-left">
                 <span className="sbo-status-inline" role="status">
@@ -273,17 +281,22 @@ export function WebdavSettings() {
                 </span>
 
                 <p className="sbo-statement">
-                  {connected ? '私人云端已直连，双机登录态静默同步。' : '私人云端，直连同步。'}
+                  {connected
+                    ? t('私人云端已直连，双机登录态静默同步。', 'Direct private cloud link active across your devices.')
+                    : t('私人云端，直连同步。', 'Private cloud, direct sync.')}
                 </p>
 
                 <p className="sbo-lead">
                   {connected && host
-                    ? `${host} · ${settings.encryptionEnabled ? 'AES-256-GCM 端到端加密' : 'Protobuf 传输'}${
+                    ? `${host} · ${settings.encryptionEnabled ? t('AES-256-GCM 端到端加密', 'AES-256-GCM E2E Encrypted') : t('Protobuf 传输', 'Protobuf Sync')}${
                         probeAt > 0
-                          ? ` · 验证于 ${new Date(probeAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+                          ? ` · ${t('验证于', 'Verified at')} ${new Date(probeAt).toLocaleTimeString(isEn ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit' })}`
                           : ''
                       }`
-                    : 'Cookie 与页面存储仅在你的设备与私人 WebDAV 目录之间直传，不经任何第三方中转。'}
+                    : t(
+                        'Cookie 与页面存储仅在你的设备与私人 WebDAV 目录之间直传，不经任何第三方中转。',
+                        'Cookies and web storage sync directly between your browsers and private WebDAV directory with zero third-party relays.',
+                      )}
                 </p>
 
                 <div
@@ -305,7 +318,7 @@ export function WebdavSettings() {
                 <div className="sbo-actions">
                   <Button type="button" className="sbo-btn-primary" disabled={busy} onClick={() => void run(true)}>
                     {busyMode === 'save' ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
-                    {busyMode === 'save' ? '保存中…' : '保存并使用 WebDAV'}
+                    {busyMode === 'save' ? t('保存中…', 'Saving…') : t('保存并使用 WebDAV', 'Save & Use WebDAV')}
                   </Button>
                   <Button
                     type="button"
@@ -314,7 +327,7 @@ export function WebdavSettings() {
                     disabled={busy}
                     onClick={() => void run(false)}>
                     {busyMode === 'test' ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
-                    {busyMode === 'test' ? '测试中…' : '测试连接'}
+                    {busyMode === 'test' ? t('测试中…', 'Testing…') : t('测试连接', 'Test Connection')}
                   </Button>
                   <Button
                     type="button"
@@ -339,14 +352,14 @@ export function WebdavSettings() {
                       }
                     }}>
                     <QrCode size={14} aria-hidden="true" />
-                    跨机配对
+                    {t('跨机配对', 'Pair Device')}
                   </Button>
                 </div>
 
                 {probePhase !== 'idle' ? (
                   <>
-                    <div className="sbo-probe-line" aria-label="连接测试步骤">
-                      {probeLabels.map((label, index) => {
+                    <div className="sbo-probe-line" aria-label={t('连接测试步骤', 'Connection test steps')}>
+                      {probeLabels.map(([zhLabel, enLabel], index) => {
                         const state =
                           probePhase === 'running'
                             ? index === probeStep
@@ -362,9 +375,9 @@ export function WebdavSettings() {
                                   ? 'done'
                                   : 'idle';
                         return (
-                          <span key={label} className="sbo-probe-step" data-state={state}>
+                          <span key={zhLabel} className="sbo-probe-step" data-state={state}>
                             {state === 'done' ? <Check size={13} aria-hidden="true" /> : null}
-                            {label}
+                            {isEn ? enLabel : zhLabel}
                           </span>
                         );
                       })}
@@ -383,22 +396,22 @@ export function WebdavSettings() {
                 {legacy ? (
                   <div className="sbo-legacy" role="alert">
                     <TriangleAlert size={16} aria-hidden="true" />
-                    <span>旧后端已移除，填好右侧 WebDAV 即可完成迁移。</span>
+                    <span>{t('旧后端已移除，填好右侧 WebDAV 即可完成迁移。', 'Legacy backend removed. Fill in your WebDAV details on the right to migrate.')}</span>
                   </div>
                 ) : null}
               </div>
 
-              <div className="sbo-col-right" aria-label="WebDAV 配置">
+              <div className="sbo-col-right" aria-label={t('WebDAV 配置', 'WebDAV configuration')}>
                 <div className="sbo-form-head">
                   <span className="sbo-label">Credentials</span>
-                  <div className="sbo-presets" role="group" aria-label="快速填入常用网盘模板">
+                  <div className="sbo-presets" role="group" aria-label={t('快速填入常用网盘模板', 'Quick templates')}>
                     {presets.map(preset => (
                       <button
                         key={preset.label}
                         type="button"
                         className="sbo-preset-btn"
                         onClick={() => applyPreset(preset)}>
-                        {preset.label}
+                        {isEn ? preset.enLabel : preset.label}
                       </button>
                     ))}
                   </div>
@@ -412,7 +425,7 @@ export function WebdavSettings() {
                         <span className="sbo-proto">HTTPS</span>
                       ) : isHttp ? (
                         <span className="sbo-proto" data-tone="http">
-                          HTTP 明文
+                          {t('HTTP 明文', 'Plain HTTP')}
                         </span>
                       ) : null}
                     </div>
@@ -434,18 +447,18 @@ export function WebdavSettings() {
 
                   <div className="sbo-field-pair">
                     <div className="sbo-field">
-                      <Label htmlFor="webdav-username">用户名</Label>
+                      <Label htmlFor="webdav-username">{t('用户名', 'Username')}</Label>
                       <Input
                         id="webdav-username"
                         autoComplete="off"
                         value={config.username}
                         onChange={e => update('username', e.target.value)}
-                        placeholder="账号或邮箱"
+                        placeholder={t('账号或邮箱', 'Account or email')}
                       />
                     </div>
 
                     <div className="sbo-field">
-                      <Label htmlFor="webdav-password">密码／应用密码</Label>
+                      <Label htmlFor="webdav-password">{t('密码／应用密码', 'Password / App Password')}</Label>
                       <div className="sbo-pass-wrap">
                         <Input
                           id="webdav-password"
@@ -453,12 +466,12 @@ export function WebdavSettings() {
                           autoComplete="off"
                           value={config.password}
                           onChange={e => update('password', e.target.value)}
-                          placeholder="专用应用密码"
+                          placeholder={t('专用应用密码', 'Dedicated app password')}
                         />
                         <button
                           type="button"
                           className="sbo-eye"
-                          aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                          aria-label={showPassword ? t('隐藏密码', 'Hide password') : t('显示密码', 'Show password')}
                           aria-pressed={showPassword}
                           onClick={() => setShowPassword(value => !value)}>
                           {showPassword ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
@@ -468,25 +481,32 @@ export function WebdavSettings() {
                   </div>
 
                   <div className="sbo-field">
-                    <Label htmlFor="webdav-path">远程文件路径</Label>
+                    <Label htmlFor="webdav-path">{t('远程文件路径', 'Remote File Path')}</Label>
                     <Input
                       id="webdav-path"
                       value={config.path}
                       onChange={e => update('path', e.target.value)}
                       placeholder="CookieSync/cookies.txt"
                     />
-                    <p className="sbo-hint">两台电脑填写相同相对路径，父目录需提前创建。</p>
+                    <p className="sbo-hint">
+                      {t('两台电脑填写相同相对路径，父目录需提前创建。', 'Use the same relative path on all devices; create the parent folder first.')}
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
           </section>
         ) : slideIndex === 1 ? (
-          <section className="sbo-slide" role="tabpanel" aria-label="配置同步通道">
+          <section className="sbo-slide" role="tabpanel" aria-label={t('配置同步通道', 'Config sync channel')}>
             <div className="sbo-slide-band">
               <div className="sbo-label-col">
                 <h2 className="sbo-label">Sync Channel</h2>
-                <p className="sbo-label-sub">Cookie 始终只走 WebDAV；这里决定网站名单与同步偏好如何跨机传递。</p>
+                <p className="sbo-label-sub">
+                  {t(
+                    'Cookie 始终只走 WebDAV；这里决定网站名单与同步偏好如何跨机传递。',
+                    'Cookies always travel via WebDAV; choose how your site allowlist and preferences sync.',
+                  )}
+                </p>
               </div>
               <div>
                 <ConfigChannelSettings />
@@ -494,17 +514,27 @@ export function WebdavSettings() {
             </div>
           </section>
         ) : (
-          <section className="sbo-slide" role="tabpanel" aria-label="高级与兼容选项">
+          <section className="sbo-slide" role="tabpanel" aria-label={t('高级与兼容选项', 'Advanced options')}>
             <div className="sbo-slide-band">
               <div className="sbo-label-col">
                 <h2 className="sbo-label">Options</h2>
-                <p className="sbo-label-sub">凭据默认仅保留在本机；建议在右上角「高级设置」开启端到端 AES-256-GCM 加密。</p>
+                <p className="sbo-label-sub">
+                  {t(
+                    '凭据默认仅保留在本机；建议在右上角「高级设置」开启端到端 AES-256-GCM 加密。',
+                    'Credentials stay local by default; enable end-to-end AES-256-GCM encryption under Advanced.',
+                  )}
+                </p>
               </div>
               <div className="sbo-options-list">
                 <div className="sbo-switch-item">
                   <Label htmlFor="webdav-cloud-sync" className="sbo-switch-copy">
-                    <strong>随 Chrome 账号同步 WebDAV 凭据</strong>
-                    <span>包含应用密码，不同步 Cookie；关闭后移除云端记录并保留本机副本。</span>
+                    <strong>{t('随 Chrome 账号同步 WebDAV 凭据', 'Sync WebDAV Credentials via Chrome Sync')}</strong>
+                    <span>
+                      {t(
+                        '包含应用密码，不同步 Cookie；关闭后移除云端记录并保留本机副本。',
+                        'Includes app password (never Cookies); turning off clears Chrome Sync while keeping local copy.',
+                      )}
+                    </span>
                   </Label>
                   <Switch
                     id="webdav-cloud-sync"
@@ -518,8 +548,13 @@ export function WebdavSettings() {
 
                 <div className="sbo-switch-item">
                   <Label htmlFor="webdav-unsafe-writes" className="sbo-switch-copy">
-                    <strong>AList / OpenList 网关兼容模式</strong>
-                    <span>停用 If-Match 条件写入；无法阻止双端同时推送时的并发覆盖。</span>
+                    <strong>{t('AList / OpenList 网关兼容模式', 'AList / OpenList Compatibility Mode')}</strong>
+                    <span>
+                      {t(
+                        '停用 If-Match 条件写入；无法阻止双端同时推送时的并发覆盖。',
+                        'Disables If-Match conditional writes for gateways that do not support strong ETags.',
+                      )}
+                    </span>
                   </Label>
                   <Switch
                     id="webdav-unsafe-writes"

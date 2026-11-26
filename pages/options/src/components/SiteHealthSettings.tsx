@@ -4,6 +4,7 @@ import {
   pollQrStatus,
   requestQrToken,
   siteProfiles,
+  useLocale,
   useStorageSuspense,
   type SiteProfile,
 } from '@sync-your-cookie/shared';
@@ -26,22 +27,31 @@ type QrStage =
   | { stage: 'success' }
   | { stage: 'failed'; error: string };
 
-const stateText = (profile: SiteProfile, entry?: SiteHealthEntry) => {
+const stateText = (profile: SiteProfile, isEn: boolean, entry?: SiteHealthEntry) => {
   if (!profile.healthCheck) {
-    if (entry?.loginKeysMissing) return '缺少核心凭证';
-    if (entry?.checkedAt) return '本机凭证齐全';
-    return '防踢护盾已就绪';
+    if (entry?.loginKeysMissing) return isEn ? 'Missing Core Cookies' : '缺少核心凭证';
+    if (entry?.checkedAt) return isEn ? 'Local Cookies Complete' : '本机凭证齐全';
+    return isEn ? 'Anti-Kick Shield Ready' : '防踢护盾已就绪';
   }
   return entry?.state === 'ok'
-    ? '登录有效'
+    ? isEn
+      ? 'Session Valid'
+      : '登录有效'
     : entry?.state === 'invalid'
-      ? '登录已失效'
+      ? isEn
+        ? 'Session Expired'
+        : '登录已失效'
       : entry?.state === 'unknown'
-        ? '验证未完成'
-        : '尚未验证';
+        ? isEn
+          ? 'Check Incomplete'
+          : '验证未完成'
+        : isEn
+          ? 'Not Verified Yet'
+          : '尚未验证';
 };
 
 export function SiteHealthSettings() {
+  const { isEn, t } = useLocale();
   const rootRef = useRef<HTMLDivElement>(null);
   const slideDir = useRef(0);
   const health = useStorageSuspense(siteHealthStorage);
@@ -219,9 +229,9 @@ export function SiteHealthSettings() {
                     aria-hidden="true"
                   />
                   <span>
-                    {stateText(activeProfile, entry)}
-                    {entry?.userName ? `（${entry.userName}）` : ''}
-                    {entry?.checkedAt ? ` · ${new Date(entry.checkedAt).toLocaleString('zh-CN')}` : ''}
+                    {stateText(activeProfile, isEn, entry)}
+                    {entry?.userName ? (isEn ? ` (${entry.userName})` : `（${entry.userName}）`) : ''}
+                    {entry?.checkedAt ? ` · ${new Date(entry.checkedAt).toLocaleString(isEn ? 'en-US' : 'zh-CN')}` : ''}
                   </span>
                 </div>
 
@@ -229,18 +239,33 @@ export function SiteHealthSettings() {
 
                 <p className="adapt-desc">
                   {activeProfile.healthCheck && activeProfile.qrLogin
-                    ? '恢复后使用只读接口校验服务端登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，并支持内置扫码一键修复。'
+                    ? t(
+                        '恢复后使用只读接口校验服务端登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，并支持内置扫码一键修复。',
+                        'Verifies live server sessions via a read-only API, blocks incomplete local overwrites, and supports built-in QR re-login.',
+                      )
                     : activeProfile.healthCheck && activeProfile.singleSession
-                      ? '支持只读接口校验服务端登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，待机时自动休眠后台标签页防互踢。'
+                      ? t(
+                          '支持只读接口校验服务端登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，待机时自动休眠后台标签页防互踢。',
+                          'Verifies live server sessions via a read-only API, guards core cookies, and discards idle background tabs on standby PCs.',
+                        )
                       : activeProfile.healthCheck
-                        ? '支持只读接口校验服务端登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，登录变更后快速同步。'
+                        ? t(
+                            '支持只读接口校验服务端登录有效性，核心登录凭证不完整时自动拦截不覆盖云端，登录变更后快速同步。',
+                            'Verifies live server sessions via a read-only API, protects core cookies, and syncs login changes quickly.',
+                          )
                         : activeProfile.singleSession
-                          ? '核心登录凭证不完整时自动拦截不覆盖云端，待机时自动休眠后台标签页防止双机互踢。'
-                          : '核心登录凭证不完整时自动拦截不覆盖云端，登录态变化后快速同步并支持一键跳转重新登录。'}
+                          ? t(
+                              '核心登录凭证不完整时自动拦截不覆盖云端，待机时自动休眠后台标签页防止双机互踢。',
+                              'Blocks incomplete local cookie overwrites and discards idle background tabs on standby PCs to prevent session kicks.',
+                            )
+                          : t(
+                              '核心登录凭证不完整时自动拦截不覆盖云端，登录态变化后快速同步并支持一键跳转重新登录。',
+                              'Protects core login cookies from incomplete overwrites and supports one-click sign-in recovery.',
+                            )}
                 </p>
 
                 {activeProfile.loginKeys?.length ? (
-                  <div className="adapt-keys" aria-label="核心登录凭证">
+                  <div className="adapt-keys" aria-label={t('核心登录凭证', 'Core login cookies')}>
                     {activeProfile.loginKeys.map(key => (
                       <span
                         key={key}
@@ -263,7 +288,7 @@ export function SiteHealthSettings() {
                     ) : (
                       <RefreshCw size={14} aria-hidden="true" />
                     )}
-                    立即验证
+                    {t('立即验证', 'Verify Now')}
                   </Button>
 
                   {activeProfile.qrLogin ? (
@@ -274,7 +299,7 @@ export function SiteHealthSettings() {
                       disabled={qrProfile?.domain === activeProfile.domain && qrStage.stage !== 'failed'}
                       onClick={() => void startRepair(activeProfile)}>
                       <QrCode size={14} aria-hidden="true" />
-                      扫码重新登录
+                      {t('扫码重新登录', 'QR Re-login')}
                     </Button>
                   ) : activeProfile.loginPageUrl ? (
                     <Button
@@ -283,14 +308,17 @@ export function SiteHealthSettings() {
                       className="adapt-btn-outline"
                       onClick={() => void chrome.tabs.create({ url: activeProfile.loginPageUrl })}>
                       <QrCode size={14} aria-hidden="true" />
-                      扫码重新登录
+                      {t('扫码重新登录', 'Sign In / QR')}
                     </Button>
                   ) : null}
                 </div>
 
                 {entry?.loginKeysMissing ? (
                   <p className="adapt-msg" data-tone="error" role="status">
-                    本机缺少核心登录凭证，已自动拦截不上传，避免覆盖云端健康登录态。
+                    {t(
+                      '本机缺少核心登录凭证，已自动拦截不上传，避免覆盖云端健康登录态。',
+                      'Core login cookies are missing locally — upload is blocked to protect your healthy cloud session.',
+                    )}
                   </p>
                 ) : null}
 
@@ -310,9 +338,12 @@ export function SiteHealthSettings() {
                 {trackedProfiles.some(profile => profile.singleSession) ? (
                   <div className="adapt-switch-row">
                     <Label htmlFor="adaptations-idle-tabs" className="adapt-switch-copy">
-                      <strong>待机时休眠单会话网站</strong>
+                      <strong>{t('待机时休眠单会话网站', 'Discard Idle Single-Session Tabs')}</strong>
                       <span>
-                        离开 90 秒或另一台电脑接班时，自动休眠闲置机上的单会话网盘后台标签页防互踢；绝不关闭标签页，也不打扰正在使用的电脑。
+                        {t(
+                          '离开 90 秒或另一台电脑接班时，自动休眠闲置机上的单会话网盘后台标签页防互踢；绝不关闭标签页，也不打扰正在使用的电脑。',
+                          'Automatically discards background tabs of single-session drives after 90s idle or peer handover — never closes tabs.',
+                        )}
                       </span>
                     </Label>
                     <Switch
@@ -325,16 +356,20 @@ export function SiteHealthSettings() {
 
                 <dl className="adapt-specs">
                   <div>
-                    <dt>缺凭证防降级拦截</dt>
-                    <dd>已开启</dd>
+                    <dt>{t('缺凭证防降级拦截', 'Anti-Downgrade Guard')}</dt>
+                    <dd>{t('已开启', 'Enabled')}</dd>
                   </div>
                   <div>
-                    <dt>单会话待机休眠</dt>
-                    <dd>{activeProfile.singleSession ? '已开启' : '无需休眠'}</dd>
+                    <dt>{t('单会话待机休眠', 'Standby Tab Discard')}</dt>
+                    <dd>{activeProfile.singleSession ? t('已开启', 'Enabled') : t('无需休眠', 'Not needed')}</dd>
                   </div>
                   <div>
-                    <dt>健康巡检模式</dt>
-                    <dd>{activeProfile.healthCheck ? '只读接口 · 待机静默' : '本机凭证校验 · 待机静默'}</dd>
+                    <dt>{t('健康巡检模式', 'Health Probe Mode')}</dt>
+                    <dd>
+                      {activeProfile.healthCheck
+                        ? t('只读接口 · 待机静默', 'Read-only API · Silent on standby')
+                        : t('本机凭证校验 · 待机静默', 'Local Cookie Check · Silent on standby')}
+                    </dd>
                   </div>
                 </dl>
               </div>
@@ -344,7 +379,12 @@ export function SiteHealthSettings() {
       </div>
 
       <footer className="adapt-bottom-rail">
-        <span>服务端风控或会话撤销属目标站行为，扩展负责状态透明与防双端互踢。</span>
+        <span>
+          {t(
+            '服务端风控或会话撤销属目标站行为，扩展负责状态透明与防双端互踢。',
+            'Server-side risk control belongs to each target site; CookieSync ensures transparent status and anti-kick protection.',
+          )}
+        </span>
       </footer>
 
       {qrProfile ? (

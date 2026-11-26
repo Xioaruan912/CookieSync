@@ -4,6 +4,7 @@ import {
   isUpdateForInstalledRelease,
   RuntimeMessageType,
   siteProfileFor,
+  useLocale,
   useStorageSuspense,
   useTheme,
   withErrorBoundary,
@@ -40,6 +41,7 @@ gsap.registerPlugin(useGSAP);
 const Popup = () => {
   const rootRef = useRef<HTMLElement>(null);
   const { theme } = useTheme();
+  const { isEn, t, toggleLanguage } = useLocale();
   const status = useStorageSuspense(autoSyncStatusStorage);
   const settings = useStorageSuspense(settingsStorage);
   const account = useStorageSuspense(accountStorage);
@@ -85,17 +87,17 @@ const Popup = () => {
   const healthText = healthProfile
     ? healthProfile.healthCheck
       ? healthEntry?.state === 'ok'
-        ? '登录有效'
+        ? t('登录有效', 'Session Valid')
         : healthEntry?.state === 'invalid'
-          ? '登录已失效'
+          ? t('登录已失效', 'Session Expired')
           : healthEntry?.state === 'unknown'
-            ? '验证未完成'
-            : '尚未验证'
+            ? t('验证未完成', 'Check Incomplete')
+            : t('尚未验证', 'Not Verified')
       : healthEntry?.loginKeysMissing
-        ? '缺少登录凭证'
+        ? t('缺少登录凭证', 'Missing Cookies')
         : healthEntry
-          ? '登录要素齐全'
-          : '未检查'
+          ? t('登录要素齐全', 'Cookies OK')
+          : t('未检查', 'Unchecked')
     : '';
   const healthBad = healthEntry?.state === 'invalid' || healthEntry?.loginKeysMissing === true;
   const background = settings.backgroundSync !== false;
@@ -109,22 +111,22 @@ const Popup = () => {
   const isStandby = role === 'standby';
 
   const siteState = !listed
-    ? '未加入名单'
+    ? t('未加入名单', 'Not in allowlist')
     : !connected
-      ? '等待配置网盘'
+      ? t('等待配置网盘', 'WebDAV not set')
       : !background
-        ? '后台同步已关闭'
+        ? t('后台同步已关闭', 'Auto-sync paused')
         : !registered && settings.autoDiscoverSites === false
-          ? '等待手动登记'
+          ? t('等待手动登记', 'Manual sync only')
           : !autoPush && !autoPull
-            ? '此站已暂停'
+            ? t('此站已暂停', 'Paused')
             : !registered
-              ? '等待自动登记'
+              ? t('等待自动登记', 'Ready to auto-sync')
               : autoPush && autoPull
-                ? '双向无感同步'
+                ? t('双向无感同步', 'Two-way auto sync')
                 : autoPush
-                  ? '仅自动推送'
-                  : '仅自动拉取';
+                  ? t('仅自动推送', 'Auto-push only')
+                  : t('仅自动拉取', 'Auto-pull only');
 
   const transfer = async (direction: 'push' | 'pull') => {
     if (!tab?.url || busy) return;
@@ -208,7 +210,7 @@ const Popup = () => {
           />
           <div>
             <strong>CookieSync</strong>
-            <small>{status.localDeviceName || '双机无感同步'}</small>
+            <small>{status.localDeviceName || t('双机无感同步', 'WebDAV Session Sync')}</small>
           </div>
         </div>
         <div className="cc-header-right">
@@ -218,16 +220,24 @@ const Popup = () => {
               className="cc-role-pill"
               data-standby={isStandby}
               disabled={takingOver}
-              title="点击立即检查并接班同步"
+              title={t('点击立即检查并接班同步', 'Click to take over and sync now')}
               onClick={() => void takeoverNow()}>
               <span className="cc-dot" data-state={isStandby ? 'standby' : 'live'} aria-hidden="true" />
-              <span>{takingOver ? '接班中…' : isStandby ? '待机中' : '本机当家'}</span>
+              <span>{takingOver ? t('接班中…', 'Syncing…') : isStandby ? t('待机中', 'Standby') : t('本机当家', 'Active')}</span>
             </button>
           ) : null}
           <button
             type="button"
+            className="cc-icon-btn text-[11px] font-medium"
+            aria-label={t('切换到英文', 'Switch to Chinese')}
+            title={t('切换中/英', 'Switch EN/ZH')}
+            onClick={() => void toggleLanguage()}>
+            {isEn ? '中' : 'EN'}
+          </button>
+          <button
+            type="button"
             className="cc-icon-btn"
-            aria-label="打开设置"
+            aria-label={t('打开设置', 'Open settings')}
             onClick={() => void chrome.runtime.openOptionsPage()}>
             <Settings size={14} aria-hidden />
           </button>
@@ -242,15 +252,15 @@ const Popup = () => {
               data-state={!connected ? 'warn' : healthBad ? 'warn' : isStandby ? 'standby' : listed ? 'live' : 'idle'}
               aria-hidden="true"
             />
-            {domain ? (policy ? siteState : '正在读取名单…') : '当前页无需同步'}
+            {domain ? (policy ? siteState : t('正在读取名单…', 'Loading allowlist…')) : t('当前页无需同步', 'No sync needed')}
           </span>
-          <span className="cc-proto-tag">{legacy ? '待迁移' : connected ? 'WebDAV' : '未连接'}</span>
+          <span className="cc-proto-tag">{legacy ? t('待迁移', 'Legacy') : connected ? 'WebDAV' : t('未连接', 'Offline')}</span>
         </div>
 
-        <h1 id="current-site">{loading ? '正在识别网站…' : domain || '非普通网页'}</h1>
+        <h1 id="current-site">{loading ? t('正在识别网站…', 'Detecting site…') : domain || t('非普通网页', 'System page')}</h1>
 
         <div className="cc-bridge" data-active={routeActive} data-moving={action} aria-hidden="true">
-          <span>本机</span>
+          <span>{t('本机', 'Local')}</span>
           <div className="cc-bridge-dots">
             <span className="cc-bridge-dot" />
             <span className="cc-bridge-dot" />
@@ -260,24 +270,24 @@ const Popup = () => {
             <span className="cc-bridge-dot" />
             <span className="cc-bridge-dot" />
           </div>
-          <span>云端</span>
+          <span>{t('云端', 'Cloud')}</span>
         </div>
       </section>
 
       {domain && policy ? (
-        <section className="cc-controls" aria-label="当前网站操作">
+        <section className="cc-controls" aria-label={t('当前网站操作', 'Current site actions')}>
           {!listed ? (
             <div className="cc-note">
               <span className="flex min-w-0 items-center gap-1.5">
                 <Globe2 size={14} className="shrink-0" aria-hidden />
-                <span className="truncate">此站尚未加入自动同步名单</span>
+                <span className="truncate">{t('此站尚未加入自动同步名单', 'Not in auto-sync allowlist')}</span>
               </span>
               <button
                 type="button"
                 className="cc-note-btn"
                 disabled={saving}
                 onClick={() => void joinCurrentSite()}>
-                {saving ? '加入中…' : '一键加入'}
+                {saving ? t('加入中…', 'Adding…') : t('一键加入', 'Add Site')}
               </button>
             </div>
           ) : null}
@@ -286,29 +296,29 @@ const Popup = () => {
             <button
               type="button"
               className="cc-pill-primary"
-              aria-label="推送并合并 Cookie"
+              aria-label={t('推送并合并 Cookie', 'Push and merge cookies')}
               disabled={busy || !connected}
               onClick={() => void transfer('push')}>
               {action === 'push' ? <RefreshCw className="animate-spin" size={14} /> : <ArrowUpFromLine size={14} />}
-              {action === 'push' ? '推送中…' : '推送到云端'}
+              {action === 'push' ? t('推送中…', 'Pushing…') : t('推送到云端', 'Push to Cloud')}
             </button>
             <button
               type="button"
               className="cc-pill-ghost"
-              aria-label="拉取并应用 Cookie"
+              aria-label={t('拉取并应用 Cookie', 'Pull and apply cookies')}
               disabled={busy || !connected}
               onClick={() => void transfer('pull')}>
               {action === 'pull' ? <RefreshCw className="animate-spin" size={14} /> : <ArrowDownToLine size={14} />}
-              {action === 'pull' ? '拉取中…' : '拉取到本机'}
+              {action === 'pull' ? t('拉取中…', 'Pulling…') : t('拉取到本机', 'Pull to Device')}
             </button>
           </div>
 
           {listed ? (
             <div className="cc-switches">
               <label className="cc-switch-item">
-                <span>自动推送</span>
+                <span>{t('自动推送', 'Auto Push')}</span>
                 <Switch
-                  aria-label="自动推送"
+                  aria-label={t('自动推送', 'Auto Push')}
                   checked={autoPush}
                   disabled={saving || busy}
                   onCheckedChange={checked =>
@@ -317,9 +327,9 @@ const Popup = () => {
                 />
               </label>
               <label className="cc-switch-item">
-                <span>自动拉取</span>
+                <span>{t('自动拉取', 'Auto Pull')}</span>
                 <Switch
-                  aria-label="自动拉取"
+                  aria-label={t('自动拉取', 'Auto Pull')}
                   checked={autoPull}
                   disabled={saving || busy}
                   onCheckedChange={checked =>
@@ -332,7 +342,7 @@ const Popup = () => {
 
           {listed ? (
             <details className="cc-details">
-              <summary>方向与高级存储选项</summary>
+              <summary>{t('方向与高级存储选项', 'Direction & Storage Options')}</summary>
               <div className="cc-dir-pills">
                 <button
                   type="button"
@@ -341,7 +351,7 @@ const Popup = () => {
                   onClick={() =>
                     void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: true, autoPull: false }))
                   }>
-                  仅推送
+                  {t('仅推送', 'Push Only')}
                 </button>
                 <button
                   type="button"
@@ -350,7 +360,7 @@ const Popup = () => {
                   onClick={() =>
                     void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: false, autoPull: true }))
                   }>
-                  仅拉取
+                  {t('仅拉取', 'Pull Only')}
                 </button>
                 <button
                   type="button"
@@ -359,14 +369,14 @@ const Popup = () => {
                   onClick={() =>
                     void changeSite(() => domainConfigStorage.updateItem(domain, { autoPush: true, autoPull: true }))
                   }>
-                  双向同步
+                  {t('双向同步', 'Two-Way')}
                 </button>
               </div>
               <div className="cc-sub-switches">
                 <label>
-                  <span>同步 sessionStorage</span>
+                  <span>{t('同步 sessionStorage', 'Sync sessionStorage')}</span>
                   <Switch
-                    aria-label="同步此网站的 sessionStorage"
+                    aria-label={t('同步此网站的 sessionStorage', 'Sync sessionStorage for this site')}
                     checked={sessionStorageOn}
                     disabled={saving || busy}
                     onCheckedChange={checked =>
@@ -375,9 +385,9 @@ const Popup = () => {
                   />
                 </label>
                 <label>
-                  <span>同步 IndexedDB（实验）</span>
+                  <span>{t('同步 IndexedDB（实验）', 'Sync IndexedDB (Beta)')}</span>
                   <Switch
-                    aria-label="同步此网站的 IndexedDB"
+                    aria-label={t('同步此网站的 IndexedDB', 'Sync IndexedDB for this site')}
                     checked={indexedDbOn}
                     disabled={saving || busy}
                     onCheckedChange={checked =>
@@ -397,7 +407,7 @@ const Popup = () => {
             type="button"
             className="cc-pill-primary w-full"
             onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#connection') })}>
-            {legacy ? '旧后端已移除，前往配置 WebDAV' : '前往配置私人网盘连接'}
+            {legacy ? t('旧后端已移除，前往配置 WebDAV', 'Legacy backend removed — Set up WebDAV') : t('前往配置私人网盘连接', 'Connect Private WebDAV')}
           </button>
         </div>
       ) : null}
@@ -414,7 +424,7 @@ const Popup = () => {
               {healthProfile.domain} · {healthText}
             </span>
           </span>
-          {healthBad && healthProfile.qrLogin ? <strong>去修复 →</strong> : null}
+          {healthBad && healthProfile.qrLogin ? <strong>{t('去修复 →', 'Fix →')}</strong> : null}
         </button>
       ) : null}
 
@@ -428,10 +438,11 @@ const Popup = () => {
           <span className="flex items-center gap-2">
             <Download size={14} aria-hidden="true" />
             <span>
-              新版本 v{update.latestVersion} {update.state === 'ready' ? '已下载，待重载' : '可更新'}
+              {t(`新版本 v${update.latestVersion}`, `Update v${update.latestVersion}`)}{' '}
+              {update.state === 'ready' ? t('已下载，待重载', 'ready') : t('可更新', 'available')}
             </span>
           </span>
-          <span>查看 →</span>
+          <span>{t('查看 →', 'View →')}</span>
         </button>
       ) : null}
 
@@ -439,34 +450,34 @@ const Popup = () => {
         <div className="min-w-0 flex-1 overflow-hidden" role="status">
           <div className="cc-footer-title">
             {status.phase === 'taking-over'
-              ? '正在自动接班同步…'
+              ? t('正在自动接班同步…', 'Taking over & syncing…')
               : status.phase === 'uploading'
-                ? '正在上传改动…'
+                ? t('正在上传改动…', 'Uploading changes…')
                 : status.phase === 'comparing'
-                  ? '正在比对云端…'
+                  ? t('正在比对云端…', 'Comparing cloud…')
                   : status.phase === 'checking'
-                    ? '正在检查同步…'
+                    ? t('正在检查同步…', 'Checking sync…')
                     : status.error
-                      ? '后台同步待重试'
+                      ? t('后台同步待重试', 'Background retry pending')
                       : status.pendingCount
-                        ? `${status.pendingCount} 个网站待上传`
+                        ? t(`${status.pendingCount} 个网站待上传`, `${status.pendingCount} site(s) queued`)
                         : isStandby
-                          ? '待机护航中'
-                          : '全部同步就绪'}
+                          ? t('待机护航中', 'Standby guard active')
+                          : t('全部同步就绪', 'All synced & ready')}
           </div>
           <div className="cc-footer-sub">
             {status.error ||
               status.note ||
               (status.lastSuccess
-                ? `最近上传 ${new Date(status.lastSuccess).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+                ? `${t('最近上传', 'Last push')} ${new Date(status.lastSuccess).toLocaleTimeString(isEn ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit' })}`
                 : status.lastCheck
-                  ? `最近检查 ${new Date(status.lastCheck).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
-                  : '尚无同步记录')}
+                  ? `${t('最近检查', 'Last check')} ${new Date(status.lastCheck).toLocaleTimeString(isEn ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+                  : t('尚无同步记录', 'No sync yet'))}
           </div>
         </div>
-        <button type="button" className="cc-manage-btn" aria-label="打开同步管理" onClick={() => void openManager()}>
+        <button type="button" className="cc-manage-btn" aria-label={t('打开同步管理', 'Open side panel')} onClick={() => void openManager()}>
           <PanelRightOpen size={13} aria-hidden />
-          管理
+          {t('管理', 'Manage')}
         </button>
       </footer>
 
