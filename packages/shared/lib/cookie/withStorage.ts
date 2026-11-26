@@ -151,6 +151,27 @@ const applyStorageToTab = async (
   return { localChanged, sessionChanged, indexedDbChanged };
 };
 
+const STORAGE_WRITE_ERROR = '页面存储写入失败';
+
+async function ensureContentBridge(tabId: number): Promise<boolean> {
+  const scripting = (chrome as unknown as {
+    scripting?: {
+      executeScript?: (details: { target: { tabId: number }; files: string[] }) => Promise<unknown>;
+    };
+  }).scripting;
+  if (typeof scripting?.executeScript !== 'function') return false;
+  try {
+    await scripting.executeScript({
+      target: { tabId },
+      files: ['content/index.iife.js'],
+    });
+    await new Promise(resolve => setTimeout(resolve, 120));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const applyPageStorageToTabs = async (
   host: string,
   localItems: ILocalStorageItem[],
@@ -164,7 +185,7 @@ export const applyPageStorageToTabs = async (
 ) => {
   const tabs = await chrome.tabs.query({});
   const matching = tabs.filter(tab => {
-    if (!tab.id || tab.incognito || (options.targetTabId !== undefined && tab.id !== options.targetTabId))
+    if (!tab.id || tab.incognito || tab.discarded || (options.targetTabId !== undefined && tab.id !== options.targetTabId))
       return false;
     if (!tab.url?.startsWith('http')) return false;
     try {
@@ -176,8 +197,10 @@ export const applyPageStorageToTabs = async (
   let localChanged = false;
   let sessionChanged = false;
   let indexedDbChanged = false;
-  let failed = false;
+  let writeFailed = false;
   const changedTabIds: number[] = [];
+  const restoredOrigins = new Set<string>();
+
   for (const tab of matching) {
     const origin = pageOrigin(tab.url);
     if (!origin) continue;
@@ -188,17 +211,46 @@ export const applyPageStorageToTabs = async (
     const idb = options.includeIndexedDB
       ? (options.indexedDBRecords || []).filter(record => !record.origin || record.origin === origin)
       : [];
+
+    const runApply = () => applyStorageToTab(tab.id!, host, origin, local, session, idb);
     try {
-      const result = await applyStorageToTab(tab.id!, host, origin, local, session, idb);
+      const result = await runApply();
       localChanged = localChanged || result.localChanged;
       sessionChanged = sessionChanged || result.sessionChanged;
       indexedDbChanged = indexedDbChanged || result.indexedDbChanged;
+      restoredOrigins.add(origin);
       if (result.localChanged || result.sessionChanged || result.indexedDbChanged) changedTabIds.push(tab.id!);
-    } catch {
-      failed = true;
+    } catch (firstError) {
+      if (firstError instanceof Error && firstError.message === STORAGE_WRITE_ERROR) {
+        writeFailed = true;
+        continue;
+      }
+      // Content script likely disconnected after extension reload/update: auto-inject and retry once.
+      const injected = await ensureContentBridge(tab.id!);
+      if (injected) {
+        try {
+          const retried = await runApply();
+          localChanged = localChanged || retried.localChanged;
+          sessionChanged = sessionChanged || retried.sessionChanged;
+          indexedDbChanged = indexedDbChanged || retried.indexedDbChanged;
+          restoredOrigins.add(origin);
+          if (retried.localChanged || retried.sessionChanged || retried.indexedDbChanged) changedTabIds.push(tab.id!);
+          continue;
+        } catch (retryError) {
+          if (retryError instanceof Error && retryError.message === STORAGE_WRITE_ERROR) {
+            writeFailed = true;
+            continue;
+          }
+        }
+      }
+      // Still unreachable (e.g. restricted/loading/crashed tab): do not throw a vague error at the user.
+      // Cookies are already restored and PageReady will automatically apply LocalStorage on next load.
+      if (restoredOrigins.has(origin) && !session.length && !idb.length) continue;
     }
   }
-  if (failed) throw new Error('部分页面的 LocalStorage 未恢复，请刷新该网站后重试');
+  if (writeFailed) {
+    throw new Error(`${host} 的页面存储空间受限，未能写入 LocalStorage（Cookie 已恢复）`);
+  }
   return { localChanged, sessionChanged, indexedDbChanged, changedTabIds };
 };
 

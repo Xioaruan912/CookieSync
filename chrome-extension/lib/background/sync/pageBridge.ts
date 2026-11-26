@@ -46,10 +46,26 @@ export function readObserved(
   };
 }
 
+async function ensureTabBridge(tabId: number): Promise<boolean> {
+  const scripting = (chrome as unknown as {
+    scripting?: {
+      executeScript?: (details: { target: { tabId: number }; files: string[] }) => Promise<unknown>;
+    };
+  }).scripting;
+  if (typeof scripting?.executeScript !== 'function') return false;
+  try {
+    await scripting.executeScript({ target: { tabId }, files: ['content/index.iife.js'] });
+    await new Promise(resolve => setTimeout(resolve, 120));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Gently reads one matching open tab's origin-tagged page storage.
- * Falls back to the legacy GetLocalStorage message for tabs running older scripts.
- * Never opens new tabs or forces page reloads.
+ * Skips discarded tabs, auto-injects the content bridge if disconnected,
+ * and never opens new tabs or forces page reloads.
  */
 export async function readPageStorage(
   host: string,
@@ -63,7 +79,7 @@ export async function readPageStorage(
 
   const tabs = options.tabs || (await chrome.tabs.query({}));
   for (const tab of tabs) {
-    if (!tab.id || !tab.url?.startsWith('http') || tab.incognito) continue;
+    if (!tab.id || !tab.url?.startsWith('http') || tab.incognito || tab.discarded) continue;
     let hostname: string;
     try {
       hostname = new URL(tab.url).hostname;
@@ -73,8 +89,9 @@ export async function readPageStorage(
     if (!matchesSiteScope(host, hostname)) continue;
     const tabOrigin = pageOrigin(tab.url) || '';
     if (options.origin && options.origin !== tabOrigin) continue;
-    try {
-      const newer = await chrome.tabs.sendMessage(tab.id, {
+
+    const queryTab = async (): Promise<StorageSnapshot | undefined> => {
+      const newer = await chrome.tabs.sendMessage(tab.id!, {
         type: 'GetPageStorage',
         payload: { domain: host, includeSessionStorage: includeSession, includeIndexedDB: includeIndexedDb },
       });
@@ -86,10 +103,10 @@ export async function readPageStorage(
           indexedDBRecords?: StorageSnapshot['indexedDBRecords'];
           skippedIndexedDB?: string[];
         };
-        if (result.origin && result.origin !== tabOrigin) continue;
+        if (result.origin && result.origin !== tabOrigin) return undefined;
         const local = validStorageItems(result.localStorageItems);
         const session = validStorageItems(result.sessionStorageItems);
-        if (!includeLocal || local)
+        if (!includeLocal || local) {
           return {
             origin: tabOrigin,
             localStorageItems: includeLocal ? local || [] : [],
@@ -99,9 +116,23 @@ export async function readPageStorage(
               : {}),
             truncated: 0,
           };
+        }
       }
+      return undefined;
+    };
+
+    try {
+      const snapshot = await queryTab();
+      if (snapshot) return snapshot;
     } catch {
-      /* Older content script: fall through to legacy message below. */
+      if (await ensureTabBridge(tab.id)) {
+        try {
+          const snapshot = await queryTab();
+          if (snapshot) return snapshot;
+        } catch {
+          /* Fall through to legacy message below. */
+        }
+      }
     }
 
     const legacy = await chrome.tabs

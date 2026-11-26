@@ -357,6 +357,42 @@ test('normal-profile restoration never writes LocalStorage into matching incogni
   }
 });
 
+test('applyPageStorageToTabs skips discarded tabs and auto-injects content bridge on disconnected live tabs', async () => {
+  const { applyPageStorageToTabs } = require('../dist/index.js');
+  const originalSend = chrome.tabs.sendMessage;
+  const originalScripting = chrome.scripting;
+  const injectedTabs = [];
+  const liveReady = new Set();
+
+  openTabs.push(
+    { id: 70, url: 'https://self-heal.example/', incognito: false, discarded: true },
+    { id: 71, url: 'https://self-heal.example/', incognito: false, discarded: false },
+  );
+  chrome.scripting = {
+    executeScript: async ({ target, files }) => {
+      assert.deepEqual(files, ['content/index.iife.js']);
+      injectedTabs.push(target.tabId);
+      liveReady.add(target.tabId);
+      return [];
+    },
+  };
+  chrome.tabs.sendMessage = async (id, message) => {
+    if (id === 70) throw new Error('discarded tab must not be messaged');
+    if (!liveReady.has(id)) throw new Error('Could not establish connection. Receiving end does not exist.');
+    return { isOk: true, result: { origin: 'https://self-heal.example', localStorageItems: [], sessionStorageItems: [] } };
+  };
+  try {
+    const result = await applyPageStorageToTabs('self-heal.example', [{ key: 'token', value: 'fresh' }]);
+    assert.deepEqual(injectedTabs, [71]);
+    assert.equal(result.localChanged, true);
+    assert.deepEqual(result.changedTabIds, [71]);
+  } finally {
+    chrome.tabs.sendMessage = originalSend;
+    chrome.scripting = originalScripting;
+    openTabs.splice(0);
+  }
+});
+
 test('unlisted legacy sites stop automatic capture and upload without deleting their data', async () => {
   await domainConfigStorage.updateItem('legacy-unlisted.example', { autoPush: true, autoPull: true });
   await setSyncBaseline('legacy-unlisted.example', await domainContentHash());
