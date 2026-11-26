@@ -162,6 +162,25 @@ const Popup = () => {
     }
   };
 
+  const joinCurrentSite = async () => {
+    if (!domain || saving) return;
+    setSaving(true);
+    try {
+      await sitePolicyStorage.setRule(domain, true);
+      await domainConfigStorage.updateItem(domain, {
+        autoPush: true,
+        autoPull: true,
+        ...(tab?.url ? { sourceUrl: tab.url } : {}),
+        ...(tab?.favIconUrl ? { favIconUrl: tab.favIconUrl } : {}),
+      });
+      toast.success(`已将 ${domain} 加入同步名单`);
+    } catch {
+      toast.error('加入同步名单失败，请重试');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openManager = async () => {
     try {
       if (tab?.windowId !== undefined) await chrome.sidePanel.open({ windowId: tab.windowId });
@@ -247,6 +266,22 @@ const Popup = () => {
 
       {domain && policy ? (
         <section className="cc-controls" aria-label="当前网站操作">
+          {!listed ? (
+            <div className="cc-note">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Globe2 size={14} className="shrink-0" aria-hidden />
+                <span className="truncate">此站尚未加入自动同步名单</span>
+              </span>
+              <button
+                type="button"
+                className="cc-note-btn"
+                disabled={saving}
+                onClick={() => void joinCurrentSite()}>
+                {saving ? '加入中…' : '一键加入'}
+              </button>
+            </div>
+          ) : null}
+
           <div className="cc-actions">
             <button
               type="button"
@@ -268,21 +303,7 @@ const Popup = () => {
             </button>
           </div>
 
-          {!listed ? (
-            <div className="cc-note">
-              <span className="flex items-center gap-1.5">
-                <Globe2 size={14} aria-hidden />
-                加入名单后即可自动同步此站
-              </span>
-              <button
-                type="button"
-                className="cc-note-btn"
-                disabled={saving}
-                onClick={() => void changeSite(() => sitePolicyStorage.setRule(domain, true))}>
-                加入名单
-              </button>
-            </div>
-          ) : (
+          {listed ? (
             <div className="cc-switches">
               <label className="cc-switch-item">
                 <span>自动推送</span>
@@ -307,7 +328,7 @@ const Popup = () => {
                 />
               </label>
             </div>
-          )}
+          ) : null}
 
           {listed ? (
             <details className="cc-details">
