@@ -12,6 +12,33 @@ export interface WebdavSnapshot {
   etag?: string;
 }
 
+export interface WebdavCompatibilityResult {
+  compatibilityRequired: boolean;
+  reason?: 'url-pattern' | 'rejected-conditional-put' | 'missing-strong-etag';
+}
+
+type CompatibilityTaggedError = Error & { needsCompatibilityMode?: boolean };
+
+function compatibilityError(message: string): CompatibilityTaggedError {
+  const error = new Error(message) as CompatibilityTaggedError;
+  error.needsCompatibilityMode = true;
+  return error;
+}
+
+export function isNeedsCompatibilityError(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as CompatibilityTaggedError).needsCompatibilityMode);
+}
+
+/**
+ * Heuristic detection for OpenList / AList WebDAV endpoints (host/path contains
+ * `openlist` or `alist`, or uses the default 5244 port).
+ */
+export function isLikelyGatewayWebdavUrl(rawUrl: string): boolean {
+  const trimmed = (rawUrl || '').trim();
+  if (!trimmed) return false;
+  return /(?:openlist|alist)/i.test(trimmed) || /:5244(?:\/|$)/i.test(trimmed);
+}
+
 const backoffStepsMs = [30_000, 120_000, 300_000];
 const originBackoff = new Map<string, { until: number; step: number }>();
 
@@ -133,7 +160,7 @@ function checkStatus(response: Response, allowMissing = false, method = 'PUT') {
     403: '没有读写权限',
     404: '目录不存在，请先在服务器创建目录',
     409: '目录不存在或写入冲突',
-    412: '写入条件不满足：可能是版本冲突、文件锁或服务器条件写入不兼容，本次未上传',
+    412: '写入条件不满足（版本冲突）；若使用 OpenList / AList，请前往「同步连接 → 03 高级选项 → 开启 AList / OpenList 网关兼容模式」',
     423: '文件被锁定，请稍后重试',
     507: '服务器空间不足',
   };
@@ -152,7 +179,9 @@ export async function readWebdav(config: WebdavConfig): Promise<WebdavSnapshot> 
 
 export async function writeWebdav(config: WebdavConfig, content: string, previous: WebdavSnapshot) {
   if (previous.exists && (!previous.etag || previous.etag.startsWith('W/')) && !config.allowUnsafeWrites) {
-    throw new Error('WebDAV 服务器未提供强 ETag，已阻止覆盖；请更换服务器，或明确开启不安全兼容模式');
+    throw compatibilityError(
+      'WebDAV 服务器未提供强 ETag（常见于 OpenList / AList），已阻止覆盖；请前往「同步连接 → 03 高级选项 → 开启 AList / OpenList 网关兼容模式」',
+    );
   }
   const headers: Record<string, string> = { 'Content-Type': 'text/plain; charset=utf-8' };
   if (config.allowUnsafeWrites) {
@@ -165,8 +194,44 @@ export async function writeWebdav(config: WebdavConfig, content: string, previou
   } else if (!previous.exists) headers['If-None-Match'] = '*';
   else if (previous.etag && !previous.etag.startsWith('W/')) headers['If-Match'] = previous.etag;
   const { response } = await request(config, 'PUT', content, headers);
+  if (response.status === 412 && !config.allowUnsafeWrites) {
+    const latest = await readWebdav(config).catch(() => undefined);
+    if (
+      latest &&
+      latest.exists === previous.exists &&
+      latest.content === previous.content &&
+      (latest.etag || '') === (previous.etag || '')
+    ) {
+      throw compatibilityError(
+        'WebDAV PUT HTTP 412：检测到服务器不支持条件写入（常见于 OpenList / AList），请前往「同步连接 → 03 高级选项 → 开启 AList / OpenList 网关兼容模式」',
+      );
+    }
+  }
   checkStatus(response);
   return { success: true, errors: [] };
+}
+
+export async function probeWebdavCompatibility(config: WebdavConfig): Promise<WebdavCompatibilityResult> {
+  if (config.allowUnsafeWrites) {
+    await testWebdavConnection(config);
+    return { compatibilityRequired: true, reason: isLikelyGatewayWebdavUrl(config.url) ? 'url-pattern' : undefined };
+  }
+  if (isLikelyGatewayWebdavUrl(config.url)) {
+    await testWebdavConnection({ ...config, allowUnsafeWrites: true });
+    return { compatibilityRequired: true, reason: 'url-pattern' };
+  }
+  try {
+    await testWebdavConnection(config);
+    return { compatibilityRequired: false };
+  } catch (error) {
+    if (!isNeedsCompatibilityError(error)) throw error;
+    const message = error instanceof Error ? error.message : '';
+    await testWebdavConnection({ ...config, allowUnsafeWrites: true });
+    return {
+      compatibilityRequired: true,
+      reason: message.includes('ETag') ? 'missing-strong-etag' : 'rejected-conditional-put',
+    };
+  }
 }
 
 export async function testWebdavConnection(config: WebdavConfig): Promise<void> {

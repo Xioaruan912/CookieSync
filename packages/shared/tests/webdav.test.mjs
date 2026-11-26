@@ -1,8 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-const { buildWebdavUrl, readWebdav, writeWebdav, testWebdavConnection, resetWebdavBackoff, webdavBackoffRemainingMs } =
-  await import('../lib/webdav/api.ts');
+const {
+  buildWebdavUrl,
+  isLikelyGatewayWebdavUrl,
+  isNeedsCompatibilityError,
+  probeWebdavCompatibility,
+  readWebdav,
+  writeWebdav,
+  testWebdavConnection,
+  resetWebdavBackoff,
+  webdavBackoffRemainingMs,
+} = await import('../lib/webdav/api.ts');
 const { encodePairingCode, decodePairingCode } = await import('../lib/webdav/pairing.ts');
 
 test('rejects unsafe URLs and paths; preserves base folder and encodes Unicode', () => {
@@ -195,4 +204,62 @@ test('cross-device pairing code round trips WebDAV and encryption settings clean
   assert.equal(decoded.encryptionEnabled, true);
   assert.equal(decoded.encryptionPassword, 'e2e-password');
   assert.throws(() => decodePairingCode('invalid-garbage'), /配对口令格式无效/);
+});
+
+test('auto-detects OpenList / AList URLs and probes conditional-PUT incompatible gateways before sync fails', async () => {
+  assert.equal(isLikelyGatewayWebdavUrl('https://openlist.example.com/dav/'), true);
+  assert.equal(isLikelyGatewayWebdavUrl('https://alist.example.com/dav/'), true);
+  assert.equal(isLikelyGatewayWebdavUrl('https://nas.example.com:5244/dav/'), true);
+  assert.equal(isLikelyGatewayWebdavUrl('https://dav.jianguoyun.com/dav/'), false);
+
+  const files = new Map();
+  const server = createServer(async (req, res) => {
+    if (req.method === 'GET') {
+      if (!files.has(req.url)) {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200, { ETag: '"static-alist-etag"' }).end(files.get(req.url));
+      return;
+    }
+    if (req.method === 'DELETE') {
+      files.delete(req.url);
+      res.writeHead(204).end();
+      return;
+    }
+    if (req.headers['if-match'] || req.headers['if-none-match']) {
+      res.writeHead(412).end();
+      return;
+    }
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    files.set(req.url, body);
+    res.writeHead(201, { ETag: '"static-alist-etag"' }).end();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const config = {
+    url: `http://127.0.0.1:${server.address().port}/dav/`,
+    username: 'admin',
+    password: 'secret',
+    path: 'CookieSync/cookies.txt',
+    allowUnsafeWrites: false,
+  };
+  try {
+    await assert.rejects(
+      async () => {
+        await writeWebdav(config, 'hello', { content: '', exists: false });
+      },
+      err => {
+        assert.equal(isNeedsCompatibilityError(err), true);
+        assert.match(err.message, /同步连接 → 03 高级选项 → 开启 AList \/ OpenList 网关兼容模式/);
+        return true;
+      },
+    );
+    const probe = await probeWebdavCompatibility(config);
+    assert.equal(probe.compatibilityRequired, true);
+    assert.equal(probe.reason, 'rejected-conditional-put');
+    assert.equal(files.size, 0, 'temporary probe files must be cleaned up');
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 });

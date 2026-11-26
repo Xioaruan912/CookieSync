@@ -1,4 +1,4 @@
-import { readWebdav, writeWebdav, type WebdavConfig, type WebdavSnapshot } from './api';
+import { isNeedsCompatibilityError, readWebdav, writeWebdav, type WebdavConfig, type WebdavSnapshot } from './api';
 
 /**
  * Lightweight dual-slot active-device handover metadata stored beside the cookie file.
@@ -241,6 +241,10 @@ export async function writeWebdavLease(
       await writeWebdav(dest, encoded, targetSnapshot);
       return { claimed: true, lease: targetLease };
     } catch (error) {
+      if (!dest.allowUnsafeWrites && isNeedsCompatibilityError(error)) {
+        await writeWebdav({ ...dest, allowUnsafeWrites: true }, encoded, targetSnapshot);
+        return { claimed: true, lease: targetLease };
+      }
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes('HTTP 412') || attempt === maxConflictRetries - 1) {
         throw error;

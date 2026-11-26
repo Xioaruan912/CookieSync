@@ -1,4 +1,4 @@
-import { readWebdav, writeWebdav, type WebdavConfig, type WebdavSnapshot } from './api';
+import { isNeedsCompatibilityError, readWebdav, writeWebdav, type WebdavConfig, type WebdavSnapshot } from './api';
 import {
   adoptPreferences,
   mergePreferences,
@@ -77,7 +77,16 @@ export async function syncWebdavConfig(): Promise<void> {
       if (encoded.length > maxConfigSize) throw new Error('配置快照过大，已保留本机修改');
       return; // Local and remote already agree.
     }
-    await writeWebdav(config, encoded, snapshot);
+    try {
+      await writeWebdav(config, encoded, snapshot);
+    } catch (error) {
+      if (!config.allowUnsafeWrites && isNeedsCompatibilityError(error)) {
+        await webdavStorage.update({ ...base, allowUnsafeWrites: true });
+        await writeWebdav({ ...config, allowUnsafeWrites: true }, encoded, snapshot);
+      } else {
+        throw error;
+      }
+    }
   })()
     .catch(error => {
       throw new Error('WebDAV · 配置同步：' + (error instanceof Error ? error.message : '请求失败'));

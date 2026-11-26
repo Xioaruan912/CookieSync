@@ -1,6 +1,13 @@
 import { cookiesMapContentHash } from './fingerprint';
 import { webdavStorage } from '@sync-your-cookie/storage/lib/webdavStorage';
-import { buildWebdavUrl, readWebdav, writeWebdav, type WebdavSnapshot } from '../webdav/api';
+import {
+  buildWebdavUrl,
+  isLikelyGatewayWebdavUrl,
+  isNeedsCompatibilityError,
+  readWebdav,
+  writeWebdav,
+  type WebdavSnapshot,
+} from '../webdav/api';
 import { backupIfDue } from '../webdav/backup';
 import { accountStorage, isLegacyProvider, type AccountInfo } from '@sync-your-cookie/storage/lib/accountStorage';
 import { cookieStorage } from '@sync-your-cookie/storage/lib/cookieStorage';
@@ -193,7 +200,24 @@ export async function writeRemoteCookiesBundle(
     }
   }
 
-  const result = await writeWebdav(config, encoded, previousBundle.webdav.snapshot);
+  let effectiveConfig = config;
+  if (!effectiveConfig.allowUnsafeWrites && isLikelyGatewayWebdavUrl(effectiveConfig.url)) {
+    effectiveConfig = { ...effectiveConfig, allowUnsafeWrites: true };
+    await webdavStorage.update(effectiveConfig);
+  }
+
+  let result: WriteResponse;
+  try {
+    result = await writeWebdav(effectiveConfig, encoded, previousBundle.webdav.snapshot);
+  } catch (error) {
+    if (!effectiveConfig.allowUnsafeWrites && isNeedsCompatibilityError(error)) {
+      effectiveConfig = { ...effectiveConfig, allowUnsafeWrites: true };
+      await webdavStorage.update(effectiveConfig);
+      result = await writeWebdav(effectiveConfig, encoded, previousBundle.webdav.snapshot);
+    } else {
+      throw error;
+    }
+  }
   if (result.success) {
     await syncFeedbackStorage.update({ schemaWarning: undefined });
   }
