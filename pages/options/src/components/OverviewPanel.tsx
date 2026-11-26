@@ -20,7 +20,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { toast } from 'sonner';
 import { DeviceStatus, type TransferDirection } from './DeviceStatus';
 import { OverviewDialog } from './OverviewDialog';
-import { OverviewSiteDetails, SiteMark, SiteState, siteNeedsAttention } from './OverviewSiteDetails';
+import { OverviewSiteDetails, SiteState, siteNeedsAttention } from './OverviewSiteDetails';
 
 gsap.registerPlugin(useGSAP);
 
@@ -37,7 +37,7 @@ const filters = [
 type Filter = (typeof filters)[number][0];
 type Operation = { direction: TransferDirection; domain?: string };
 type Dialog = { kind: 'site'; domain: string } | { kind: 'bulk'; direction?: TransferDirection } | { kind: 'notice' };
-const narrowLayout = '(max-width: 820px), (max-height: 540px)';
+const narrowLayout = '(max-width: 820px), (max-height: 560px)';
 
 export function OverviewPanel() {
   const account = useStorageSuspense(accountStorage);
@@ -51,7 +51,7 @@ export function OverviewPanel() {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(5);
+  const [pageSize, setPageSize] = useState(6);
   const [selectedDomain, setSelectedDomain] = useState<string>();
   const [dialog, setDialog] = useState<Dialog>();
   const [operation, setOperation] = useState<Operation>();
@@ -111,8 +111,8 @@ export function OverviewPanel() {
     const element = viewport.current;
     if (!element) return;
     const measure = () => {
-      const rowHeight = Number.parseFloat(getComputedStyle(element).getPropertyValue('--overview-row-height')) || 48;
-      setPageSize(Math.max(1, Math.floor(element.clientHeight / rowHeight)));
+      const rowHeight = Number.parseFloat(getComputedStyle(element).getPropertyValue('--overview-row-height')) || 54;
+      setPageSize(Math.max(1, Math.floor((element.clientHeight - 2) / rowHeight)));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -142,6 +142,7 @@ export function OverviewPanel() {
     if (bulkDirection) bulkConfirmButton.current?.focus({ preventScroll: true });
   }, [bulkDirection]);
 
+  // Smooth horizontal slide when flipping pages
   useGSAP(
     () => {
       const direction = pageMotion.current;
@@ -149,11 +150,11 @@ export function OverviewPanel() {
       if (!direction || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       gsap.fromTo(
         '.overview-site-list',
-        { x: direction * 14, opacity: 0.65 },
+        { x: direction * 34, opacity: 0 },
         {
           x: 0,
           opacity: 1,
-          duration: 0.21,
+          duration: 0.28,
           ease: 'power3.out',
           clearProps: 'transform,opacity',
           overwrite: 'auto',
@@ -228,40 +229,9 @@ export function OverviewPanel() {
   return (
     <div className="overview-console">
       <DeviceStatus connected={connected} busy={!!operation} operation={operation?.direction} onSync={load} />
+
       <div className="overview-desk">
-        <section ref={listCard} className="overview-card overview-list-card" aria-label="网站列表">
-          <div className="overview-card-head">
-            <h2>
-              网站 <span className="overview-count">{data ? filtered.length : '—'}</span>
-            </h2>
-            <div className="overview-list-actions">
-              {notices.length > 0 ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="overview-control overview-notice"
-                  onClick={() => setDialog({ kind: 'notice' })}>
-                  <CircleAlert size={16} aria-hidden="true" /> <span>查看提示</span>
-                </Button>
-              ) : null}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="overview-control"
-                disabled={loading}
-                onClick={() => {
-                  setLoading(true);
-                  void load();
-                }}>
-                {loading ? (
-                  <Loader2 size={15} className="overview-spinner" aria-hidden="true" />
-                ) : (
-                  <RefreshCw size={15} aria-hidden="true" />
-                )}
-                刷新
-              </Button>
-            </div>
-          </div>
+        <section ref={listCard} className="overview-list-card" aria-label="网站列表">
           <div className="overview-list-controls">
             <div className="overview-segment" role="group" aria-label="筛选网站">
               {filters.map(([key, name]) => (
@@ -275,23 +245,54 @@ export function OverviewPanel() {
                     setPage(0);
                   }}>
                   {name}
+                  {key === 'all' && data ? ` ${filtered.length}` : ''}
                 </button>
               ))}
             </div>
-            <label className="overview-query">
-              <Search size={15} aria-hidden="true" />
-              <input
-                type="search"
-                aria-label="搜索网站"
-                placeholder="搜索网站"
-                value={query}
-                onChange={event => {
-                  selectMotion.current = false;
-                  setQuery(event.target.value);
-                  setPage(0);
-                }}
-              />
-            </label>
+
+            <div className="ov-right-tools">
+              <label className="overview-query">
+                <Search size={14} aria-hidden="true" />
+                <input
+                  type="search"
+                  aria-label="搜索网站"
+                  placeholder="搜索网站"
+                  value={query}
+                  onChange={event => {
+                    selectMotion.current = false;
+                    setQuery(event.target.value);
+                    setPage(0);
+                  }}
+                />
+              </label>
+
+              {notices.length > 0 ? (
+                <button
+                  type="button"
+                  className="ov-text-btn"
+                  data-tone="warn"
+                  onClick={() => setDialog({ kind: 'notice' })}>
+                  <CircleAlert size={14} aria-hidden="true" />
+                  <span>提示</span>
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                className="ov-text-btn"
+                disabled={loading}
+                onClick={() => {
+                  setLoading(true);
+                  void load();
+                }}>
+                {loading ? (
+                  <Loader2 size={14} className="overview-spinner" aria-hidden="true" />
+                ) : (
+                  <RefreshCw size={14} aria-hidden="true" />
+                )}
+                <span>刷新</span>
+              </button>
+            </div>
           </div>
 
           <div ref={viewport} className="overview-list-viewport" aria-busy={loading}>
@@ -308,7 +309,6 @@ export function OverviewPanel() {
                         setSelectedDomain(site.domain);
                         if (window.matchMedia(narrowLayout).matches) setDialog({ kind: 'site', domain: site.domain });
                       }}>
-                      <SiteMark domain={site.domain} />
                       <strong title={site.domain}>{site.domain}</strong>
                       <SiteState site={site} connected={connected} />
                       <ChevronRight size={15} className="overview-chevron" aria-hidden="true" />
@@ -330,38 +330,36 @@ export function OverviewPanel() {
           </div>
 
           <div className="overview-list-footer">
-            <Button size="sm" variant="ghost" className="overview-control" onClick={() => setDialog({ kind: 'bulk' })}>
-              <MoreHorizontal size={16} aria-hidden="true" />
-              批量操作
-            </Button>
+            <button type="button" className="ov-text-btn" onClick={() => setDialog({ kind: 'bulk' })}>
+              <MoreHorizontal size={15} aria-hidden="true" />
+              <span>批量操作</span>
+            </button>
+
             <div className="overview-pager" role="group" aria-label="网站分页">
-              <Button
+              <button
                 type="button"
-                size="icon"
-                variant="outline"
+                className="ov-arrow-btn"
                 aria-label="上一页"
                 disabled={activePage === 0}
                 onClick={event => changePage(-1, event.detail > 0)}>
-                <ChevronLeft size={16} aria-hidden="true" />
-              </Button>
+                <ChevronLeft size={15} aria-hidden="true" />
+              </button>
               <output aria-live="polite">
-                {activePage + 1} / {pages}
+                {String(activePage + 1).padStart(2, '0')} / {String(pages).padStart(2, '0')}
               </output>
-              <Button
+              <button
                 type="button"
-                size="icon"
-                variant="outline"
+                className="ov-arrow-btn"
                 aria-label="下一页"
                 disabled={activePage + 1 === pages}
                 onClick={event => changePage(1, event.detail > 0)}>
-                <ChevronRight size={16} aria-hidden="true" />
-              </Button>
+                <ChevronRight size={15} aria-hidden="true" />
+              </button>
             </div>
           </div>
         </section>
 
-        <aside className="overview-card overview-inspector" aria-label="站点详情">
-          <h2>站点详情</h2>
+        <aside className="overview-inspector" aria-label="站点详情">
           {selected ? (
             renderDetails(selected, selectMotion.current)
           ) : (
@@ -378,7 +376,7 @@ export function OverviewPanel() {
 
       {dialog?.kind === 'notice' ? (
         <OverviewDialog title="同步提示" onClose={() => setDialog(undefined)}>
-          <ul className="overview-dialog-copy overview-issues">
+          <ul className="overview-issues">
             {notices.length ? notices.map(notice => <li key={notice}>{notice}</li>) : <li>当前没有提示。</li>}
           </ul>
         </OverviewDialog>
@@ -401,15 +399,15 @@ export function OverviewPanel() {
                 <Button
                   ref={bulkConfirmButton}
                   size="sm"
-                  className="overview-control rounded-full"
+                  className="ov-btn-primary"
                   disabled={!connected || blocked}
                   onClick={() => void transfer({ direction: bulkDirection })}>
                   {operation ? '处理中…' : bulkDirection === 'push' ? '确认全部上传' : '确认拉取全部'}
                 </Button>
                 <Button
                   size="sm"
-                  variant="ghost"
-                  className="overview-control rounded-full"
+                  variant="outline"
+                  className="ov-btn-outline"
                   disabled={!!operation}
                   onClick={() => setDialog({ kind: 'bulk' })}>
                   返回
@@ -420,19 +418,18 @@ export function OverviewPanel() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="overview-control rounded-full"
+                  className="ov-btn-outline"
                   disabled={!connected || blocked}
                   onClick={() => setDialog({ kind: 'bulk', direction: 'pull' })}>
-                  <ArrowDownToLine size={15} aria-hidden="true" />
+                  <ArrowDownToLine size={14} aria-hidden="true" />
                   拉取全部
                 </Button>
                 <Button
                   size="sm"
-                  variant="outline"
-                  className="overview-control rounded-full"
+                  className="ov-btn-primary"
                   disabled={!connected || blocked}
                   onClick={() => setDialog({ kind: 'bulk', direction: 'push' })}>
-                  <ArrowUpFromLine size={15} aria-hidden="true" />
+                  <ArrowUpFromLine size={14} aria-hidden="true" />
                   全部上传
                 </Button>
               </>

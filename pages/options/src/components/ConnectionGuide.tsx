@@ -8,7 +8,8 @@ import { useEffect, useState } from 'react';
 const probeKey = 'cookiesync-webdav-probe-ok';
 
 /**
- * Editorial 3-step onboarding band. Retires automatically once all 3 steps complete.
+ * Compact 1-line inline onboarding progress in the bottom rail.
+ * Disappears automatically once all 3 steps complete.
  */
 export function ConnectionGuide() {
   const saved = useStorageSuspense(webdavStorage);
@@ -36,33 +37,22 @@ export function ConnectionGuide() {
     Object.values(activity).some(entry => entry.lastPushAt) ||
     Object.keys(cookies.domainCookieMap || {}).length > 0;
   const tested = probeAt > 0 || pushed;
-  if (filled && tested && pushed) return null;
+  if (filled && tested && pushed) return <span className="sbo-guide-inline">凭据仅存本机 · 建议开启 AES-256-GCM 加密</span>;
 
   const steps = [
-    { num: '01', title: '填写 WebDAV 凭据', done: filled },
-    { num: '02', title: '测试读写权限', done: tested },
-    { num: '03', title: '推送第一个网站', done: pushed },
+    { num: '01', title: '填写凭据', done: filled },
+    { num: '02', title: '测试权限', done: tested },
+    { num: '03', title: '推送首站', done: pushed },
   ];
 
   return (
-    <section className="sbo-band" aria-label="首次配置引导">
-      <div className="sbo-label-col">
-        <p className="sbo-label">Quick Start</p>
-        <p className="sbo-label-sub">完成后自动隐藏。</p>
-      </div>
-      <div className="sbo-content-col">
-        <div className="sbo-guide-list">
-          {steps.map(step => (
-            <div key={step.num} className="sbo-guide-item" data-done={step.done}>
-              <span className="sbo-guide-num">
-                {step.done ? <Check size={12} aria-hidden="true" /> : null}
-                {step.num}
-              </span>
-              <strong>{step.title}</strong>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
+    <div className="sbo-guide-inline" aria-label="首次配置引导">
+      {steps.map(step => (
+        <span key={step.num} className="sbo-guide-step" data-done={step.done}>
+          {step.done ? <Check size={12} aria-hidden="true" /> : <span>{step.num}</span>}
+          <span>{step.title}</span>
+        </span>
+      ))}
+    </div>
   );
 }
