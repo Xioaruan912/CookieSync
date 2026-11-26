@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      2.1.0
+// @version      2.2.0
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
@@ -28,9 +28,30 @@
 
   const fileName = 'CookieSync-config-v1.json';
   const leaseFileName = 'CookieSync-lease-v1.json';
+  const scriptDownloadUrl = 'https://raw.githubusercontent.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config.user.js';
   const connectionKey = 'webdav-connection';
   const deviceKey = 'cookiesync-device-identity';
   const intervalMs = 30 * 60 * 1000;
+  const presetSites = [
+    ['115.com', '115网盘'],
+    ['github.com', 'GitHub'],
+    ['bilibili.com', '哔哩哔哩'],
+    ['zhihu.com', '知乎'],
+    ['douyin.com', '抖音'],
+    ['xiaohongshu.com', '小红书'],
+    ['weibo.com', '微博'],
+    ['v2ex.com', 'V2EX'],
+    ['nodeseek.com', 'NodeSeek'],
+    ['linux.do', 'LINUX DO'],
+    ['baidu.com', '百度'],
+    ['taobao.com', '淘宝'],
+    ['jd.com', '京东'],
+    ['amap.com', '高德地图'],
+    ['chatgpt.com', 'ChatGPT'],
+    ['claude.ai', 'Claude'],
+    ['x.com', 'X'],
+    ['youtube.com', 'YouTube'],
+  ];
   const defaults = { theme: 'light', contextMenu: false, syncIntervalMinutes: 2 };
   const empty = () => ({ version: 1, rules: {}, preferences: {} });
   const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -300,6 +321,78 @@
     return message;
   }
 
+  function currentPageDomain() {
+    if (typeof location === 'undefined' || !location.hostname) return '';
+    try {
+      return normalizeDomain(location.hostname);
+    } catch {
+      return '';
+    }
+  }
+
+  function isNewerVersion(remoteVersion, localVersion) {
+    const parse = v => String(v || '').split('.').map(n => Number(n) || 0);
+    const a = parse(remoteVersion);
+    const b = parse(localVersion);
+    const len = Math.max(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      const left = a[i] || 0;
+      const right = b[i] || 0;
+      if (left !== right) return left > right;
+    }
+    return false;
+  }
+
+  async function checkScriptUpdate() {
+    const localVersion = (typeof GM_info !== 'undefined' && GM_info?.script?.version) || '2.2.0';
+    let timer;
+    try {
+      const pending = GM.xmlHttpRequest({
+        method: 'GET',
+        url: scriptDownloadUrl,
+        anonymous: true,
+        nocache: true,
+      });
+      const response = await Promise.race([
+        pending,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error('timeout'));
+            pending.abort?.();
+          }, 15000);
+        }),
+      ]);
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error('检查更新失败（HTTP ' + response.status + '）');
+      }
+      const match = /@version\s+(\d+(?:\.\d+){1,3})/.exec(response.responseText || '');
+      if (!match) throw new Error('无法解析远程版本号');
+      const remoteVersion = match[1];
+      return {
+        localVersion,
+        remoteVersion,
+        hasUpdate: isNewerVersion(remoteVersion, localVersion),
+        downloadUrl: scriptDownloadUrl,
+      };
+    } catch (error) {
+      throw new Error(error instanceof Error && error.message !== 'timeout' ? error.message : '无法连接 GitHub 检查更新');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function quickAddCurrentSite() {
+    const domain = currentPageDomain();
+    if (!domain) throw new Error('当前页面不是普通网站域名');
+    const connection = await GM.getValue(connectionKey, null);
+    if (!connection) throw new Error('请先打开「配置同步」保存 WebDAV 连接');
+    const effective = await readConfig(connection);
+    const updated = revision(true, effective.rules[domain], 'enabled');
+    merge(effective, { ...empty(), rules: { [domain]: updated } });
+    await GM.setValue(editKey(connection, 'rules', domain), updated);
+    return domain;
+  }
+
   function isExtensionActive() {
     return typeof document !== 'undefined' && Boolean(document.documentElement?.hasAttribute?.('data-cookiesync-ext'));
   }
@@ -483,6 +576,26 @@
         accent-color: var(--accent); cursor: pointer }
       .rule-editor { display: flex; gap: 10px; align-items: end; flex-wrap: wrap }
       .rule-editor label { flex: 1 1 200px }
+      .current-site-bar {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 12px 0; border-bottom: 1px solid var(--line);
+      }
+      .current-site-meta { min-width: 0; display: grid; gap: 2px }
+      .current-site-host { font-size: 14px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere }
+      .preset-block { display: grid; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--line) }
+      .preset-title { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint) }
+      .preset-grid { display: flex; flex-wrap: wrap; gap: 7px }
+      .preset-chip {
+        display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; min-height: 32px;
+        border: 1px solid var(--line); border-radius: 999px; background: transparent;
+        font-size: 12px; color: var(--muted); cursor: pointer;
+      }
+      .preset-chip[data-enabled="true"] {
+        border-color: var(--accent); color: var(--ink); font-weight: 500;
+      }
+      .preset-dot { width: 5px; height: 5px; border-radius: 999px; background: var(--faint) }
+      .preset-chip[data-enabled="true"] .preset-dot { background: var(--good) }
+      .overview-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
       .rule-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 110px; align-items: end; gap: 12px }
       .rules { list-style: none; padding: 0; margin: 0 }
       .rules li {
@@ -620,7 +733,10 @@
             detail('saved-host', 'WebDAV 服务器'), detail('auto-state', '自动同步'),
             detail('last-result', '上次同步', lastSync, noSyncTime),
           ),
-          button('edit-connection', '管理连接'),
+          element('div', { class: 'overview-actions' },
+            button('check-update', '检查更新'),
+            button('edit-connection', '管理连接'),
+          ),
         ),
       ),
       section('webdav', heading('webdav', 'WebDAV 连接', '两台设备填写同一个目录，即可共用网站名单和偏好。'),
@@ -640,7 +756,18 @@
         ),
         element('div', { class: 'actions' }, button('connect', '保存连接')),
       ),
-      section('sites', heading('sites', '网站名单', '按域名添加允许或暂停规则。'),
+      section('sites', heading('sites', '网站名单', '一键加入当前网站、从预设名单快速勾选，或手动添加域名。'),
+        element('div', { id: 'current-site-bar', class: 'current-site-bar', ...(currentPageDomain() ? {} : { hidden: '' }) },
+          element('div', { class: 'current-site-meta' },
+            element('span', { class: 'hint' }, '当前打开的网站'),
+            element('span', { id: 'current-site-host', class: 'current-site-host' }, currentPageDomain()),
+          ),
+          button('add-current-site', '一键加入'),
+        ),
+        element('div', { class: 'preset-block' },
+          element('span', { class: 'preset-title' }, '高频预设名单（点击快速切换）'),
+          element('div', { id: 'preset-grid', class: 'preset-grid', 'aria-label': '预设网站名单' }),
+        ),
         element('div', { class: 'rule-editor' },
           label('添加或更新域名', input('domain', { placeholder: 'nodeseek.com' })),
           button('allow', '允许'), button('pause', '暂停'),
@@ -742,12 +869,33 @@
       };
     }
     function renderRules() {
+      const ruleMap = new Map(rules);
+      const curHost = currentPageDomain();
+      if (curHost) {
+        const curRule = ruleMap.get(curHost);
+        const addBtn = get('add-current-site');
+        addBtn.className = curRule?.enabled ? '' : 'primary';
+        addBtn.textContent = curRule?.enabled ? '已在名单' : '一键加入';
+      }
+      const presetGrid = get('preset-grid');
+      presetGrid.replaceChildren(...presetSites.map(([host, name]) => {
+        const enabled = ruleMap.get(host)?.enabled === true;
+        const chip = element('button', {
+          type: 'button',
+          class: 'preset-chip',
+          'data-enabled': String(enabled),
+          'aria-pressed': String(enabled),
+        }, element('span', { class: 'preset-dot', 'aria-hidden': 'true' }), name);
+        chip.onclick = run(() => changeRuleForDomain(host, !enabled));
+        return chip;
+      }));
+
       const query = get('rule-search').value.trim().toLowerCase();
       const filter = get('rule-filter').value;
       const shown = rules.filter(([domain, rule]) =>
         domain.includes(query) && (filter === 'all' || rule.enabled === (filter === 'allow')),
       );
-      get('rule-count').textContent = !rules.length ? '还没有规则，可添加一个域名。'
+      get('rule-count').textContent = !rules.length ? '还没有规则，可点击上方预设或添加一个域名。'
         : !shown.length ? '没有匹配的规则。' : '显示 ' + shown.length + ' / ' + rules.length + ' 条规则';
       get('rules').replaceChildren(...shown.map(([domain, rule]) => element('li', {},
         element('span', {}, domain), element('span', { class: 'rule-state', 'data-enabled': String(rule.enabled) },
@@ -798,16 +946,20 @@
       if (!current) throw new Error('请先保存 WebDAV 连接');
       return current;
     }
-    async function changeRule(enabled) {
+    async function changeRuleForDomain(rawDomain, enabled) {
       const connection = active();
-      const domain = normalizeDomain(get('domain').value);
+      const domain = normalizeDomain(rawDomain);
       const effective = await readConfig(connection);
       const updated = revision(enabled, effective.rules[domain], 'enabled');
       merge(effective, { ...empty(), rules: { [domain]: updated } });
       await GM.setValue(editKey(connection, 'rules', domain), updated);
-      get('domain').value = '';
       await render({ refreshPreferences: false });
-      return '名单已保存到本机';
+      return enabled ? `已将 ${domain} 加入名单` : `已暂停 ${domain}`;
+    }
+    async function changeRule(enabled) {
+      const msg = await changeRuleForDomain(get('domain').value, enabled);
+      get('domain').value = '';
+      return msg;
     }
     dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
     dialog.addEventListener('close', () => {
@@ -867,6 +1019,21 @@
     });
     get('allow').onclick = run(() => changeRule(true));
     get('pause').onclick = run(() => changeRule(false));
+    get('add-current-site').onclick = run(async () => {
+      const host = currentPageDomain();
+      if (!host) throw new Error('当前页面不支持加入名单');
+      return changeRuleForDomain(host, true);
+    });
+    get('check-update').onclick = run(async () => {
+      const info = await checkScriptUpdate();
+      if (info.hasUpdate) {
+        if (window.confirm(`发现 CookieSync 油猴版新版本 v${info.remoteVersion}（当前 v${info.localVersion}），是否立即打开安装更新？`)) {
+          window.open(info.downloadUrl, '_blank', 'noopener');
+        }
+        return `发现新版本 v${info.remoteVersion}`;
+      }
+      return `已是最新版 v${info.localVersion}`;
+    });
     async function savePreferences() {
       const connection = active();
       const changes = {};
@@ -927,6 +1094,31 @@
     if (GM_info.isIncognito) return;
     const extRunning = isExtensionActive();
     GM.registerMenuCommand(extRunning ? 'CookieSync · 配置同步（已让位给扩展）' : 'CookieSync · 配置同步', openPanel);
+    const pageHost = currentPageDomain();
+    if (pageHost && !extRunning) {
+      GM.registerMenuCommand(`CookieSync · 一键加入 ${pageHost}`, async () => {
+        try {
+          const added = await quickAddCurrentSite();
+          alert(`已将 ${added} 加入 CookieSync 同步名单`);
+        } catch (error) {
+          alert(error instanceof Error ? error.message : '加入失败');
+        }
+      });
+    }
+    GM.registerMenuCommand('CookieSync · 检查脚本更新', async () => {
+      try {
+        const info = await checkScriptUpdate();
+        if (info.hasUpdate) {
+          if (confirm(`发现新版本 v${info.remoteVersion}（当前 v${info.localVersion}），是否打开安装页面？`)) {
+            window.open(info.downloadUrl, '_blank', 'noopener');
+          }
+        } else {
+          alert(`CookieSync 油猴版已是最新（v${info.localVersion}）`);
+        }
+      } catch (error) {
+        alert(error instanceof Error ? error.message : '检查更新失败');
+      }
+    });
     GM.registerMenuCommand('CookieSync · 查看同步状态', async () => {
       if (isExtensionActive()) {
         alert('已检测到 CookieSync Chrome 扩展正在运行，油猴版已自动静默让位。');

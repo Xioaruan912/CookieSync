@@ -246,3 +246,40 @@ test('publishSlotLease updates mobile slot while preserving existing desktop slo
   assert.equal(writtenLease.slots.mobile.deviceName, 'iPhone Safari', 'mobile slot must record phone name');
   assert.equal(writtenLease.slots.mobile.epoch, 1);
 });
+
+test('quickAddCurrentSite adds normalized page domain and checkScriptUpdate compares semver', async () => {
+  const sharedData = new Map([['webdav-connection', connection]]);
+  const exports = {};
+  const gm = {
+    listValues: async () => [...sharedData.keys()],
+    getValues: async keys => Object.fromEntries(keys.filter(key => sharedData.has(key)).map(key => [key, structuredClone(sharedData.get(key))])),
+    getValue: async (key, fallback) => structuredClone(sharedData.get(key) ?? fallback),
+    setValue: async (key, value) => sharedData.set(key, structuredClone(value)),
+    xmlHttpRequest: async () => ({
+      status: 200,
+      responseText: '// ==UserScript==\n// @version      2.3.0\n// ==/UserScript==',
+    }),
+    registerMenuCommand: () => {},
+  };
+  vm.runInNewContext(source.replace("  start();", 'Object.assign(exports, { quickAddCurrentSite, checkScriptUpdate, dataKey });'), {
+    exports,
+    GM: gm,
+    GM_info: { script: { version: '2.2.0' } },
+    URL,
+    TextEncoder,
+    btoa,
+    clearTimeout,
+    setTimeout,
+    crypto,
+    location: { hostname: 'www.v2ex.com' },
+  });
+  const added = await exports.quickAddCurrentSite();
+  assert.equal(added, 'v2ex.com');
+  const savedEdit = sharedData.get(exports.dataKey(connection) + ':edit:rules:v2ex.com');
+  assert.equal(savedEdit?.enabled, true);
+
+  const upd = await exports.checkScriptUpdate();
+  assert.equal(upd.hasUpdate, true);
+  assert.equal(upd.remoteVersion, '2.3.0');
+  assert.equal(upd.localVersion, '2.2.0');
+});
