@@ -21,10 +21,18 @@ function area() {
     setAccessLevel: async () => {},
   };
 }
-const manifest = { version: '1.13.0', version_name: '1.13.0 (build 24)' };
+const manifest = { version: '2.0.0' };
+const shownDownloads = [];
+let openedDefaultFolder = 0;
 globalThis.chrome = {
   storage: { local: area(), sync: area(), session: area() },
   runtime: { getManifest: () => manifest },
+  downloads: {
+    show: id => shownDownloads.push(id),
+    showDefaultFolder: () => {
+      openedDefaultFolder += 1;
+    },
+  },
 };
 
 const update = require('../lib/update/index.ts');
@@ -32,120 +40,105 @@ const { updateStatusStorage } = require('@sync-your-cookie/storage/lib/updateSta
 
 const statusKey = 'cookiesync-update-status';
 const readStatus = async () => (await chrome.storage.local.get(statusKey))[statusKey];
-const release = (tag, assets = true) => ({
+const release = (tag, assets = true, zipVersion = '2.0.1') => ({
   tag_name: tag,
   assets: assets
     ? [
         {
-          name: 'CookieSync-chrome-1.13.0.zip',
-          browser_download_url: 'https://example.test/CookieSync-chrome-1.13.0.zip',
+          name: `CookieSync-chrome-${zipVersion}.zip`,
+          browser_download_url: `https://example.test/CookieSync-chrome-${zipVersion}.zip`,
         },
         { name: 'SHA256SUMS.txt', browser_download_url: 'https://example.test/SHA256SUMS.txt' },
       ]
     : [],
 });
-const mockRelease = tag => {
+const mockRelease = (tag, zipVersion = '2.0.1') => {
   globalThis.fetch = async () =>
-    new Response(JSON.stringify(release(tag)), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    new Response(JSON.stringify(release(tag, true, zipVersion)), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
 };
 
-test('release comparison: semver first, then the build of the same version', () => {
-  assert.equal(update.isNewerRelease({ version: '1.14.0' }, '1.13.0', 29), true);
-  assert.equal(update.isNewerRelease({ version: '1.13.1' }, '1.13.0', 29), true);
-  assert.equal(
-    update.isNewerRelease({ version: '1.13.0', build: 30 }, '1.13.0', 29),
-    true,
-    'a newer build is newer code',
-  );
-  assert.equal(update.isNewerRelease({ version: '1.13.0', build: 29 }, '1.13.0', 29), false);
-  assert.equal(update.isNewerRelease({ version: '1.13.0', build: 28 }, '1.13.0', 29), false);
-  assert.equal(
-    update.isNewerRelease({ version: '1.13.0', build: 30 }, '1.13.0', undefined),
-    false,
-    'an unknown installed build cannot prove a same-version update',
-  );
-  assert.equal(update.isNewerRelease({ version: '1.13.0' }, '1.13.0', 29), false, 'no build info cannot be newer');
-  assert.equal(update.isNewerRelease({ version: '1.12.0', build: 99 }, '1.13.0', 29), false, 'older semver never wins');
+test('release comparison uses clean semantic versions and ignores build numbers', () => {
+  assert.equal(update.isNewerRelease({ version: '2.1.0' }, '2.0.0'), true);
+  assert.equal(update.isNewerRelease({ version: '2.0.1' }, '2.0.0'), true);
+  assert.equal(update.isNewerRelease({ version: '2.0.0', build: 99 }, '2.0.0'), false);
+  assert.equal(update.isNewerRelease({ version: '2.0.0' }, '2.0.0'), false);
+  assert.equal(update.isNewerRelease({ version: '1.13.9', build: 99 }, '2.0.0'), false);
+  assert.deepEqual(update.parseReleaseTag('v2.0.1'), { version: '2.0.1', build: undefined });
+  assert.deepEqual(update.parseReleaseTag('v2.0.0-build.42'), { version: '2.0.0', build: 42 });
 });
 
-test('an unnumbered local build clears a stale same-version download offer', async () => {
-  const original = manifest.version_name;
-  delete manifest.version_name;
-  try {
-    await updateStatusStorage.update({
-      state: 'ready',
-      latestVersion: '1.13.0',
-      latestBuild: 30,
-      downloadedAt: 123,
-      downloadName: 'CookieSync-chrome-1.13.0.zip',
-      zipUrl: 'https://example.test/stale.zip',
-    });
-    mockRelease('v1.13.0-build.30');
-    await update.checkLatestRelease();
-    const status = await readStatus();
-    assert.equal(status.state, 'idle');
-    assert.equal(status.latestBuild, 30);
-    assert.equal(status.downloadName, undefined);
-    assert.equal(status.zipUrl, undefined);
-  } finally {
-    manifest.version_name = original;
-  }
-});
-
-test('installed build number comes from the manifest version_name', () => {
-  assert.equal(update.installedBuildNumber(), 24);
-  const original = manifest.version_name;
-  delete manifest.version_name;
-  assert.equal(update.installedBuildNumber(), undefined);
-  manifest.version_name = '1.13.0 (build 123)';
-  assert.equal(update.installedBuildNumber(), 123);
-  manifest.version_name = original;
-});
-
-test('checkLatestRelease marks same-version build bumps as available', async () => {
-  mockRelease('v1.13.0-build.30');
-  await update.checkLatestRelease();
-  const status = await readStatus();
-  assert.equal(status.state, 'available');
-  assert.equal(status.latestVersion, '1.13.0');
-  assert.equal(status.latestBuild, 30);
-  assert.match(status.zipUrl, /CookieSync-chrome-1\.13\.0\.zip$/);
-});
-
-test('the installed build stays idle and a ready download survives a re-check', async () => {
-  mockRelease('v1.13.0-build.24');
-  await update.checkLatestRelease();
-  assert.equal((await readStatus()).state, 'idle', 'released build equal to the installed build must not prompt');
-
+test('same-version releases stay idle and clear stale download offers', async () => {
   await updateStatusStorage.update({
     state: 'ready',
-    latestVersion: '1.13.0',
-    latestBuild: 30,
+    latestVersion: '2.0.0',
     downloadedAt: 123,
-    downloadName: 'CookieSync-chrome-1.13.0.zip',
+    downloadName: 'CookieSync-chrome-2.0.0.zip',
+    downloadId: 7,
+    zipUrl: 'https://example.test/stale.zip',
   });
-  mockRelease('v1.13.0-build.30');
-  await update.checkLatestRelease();
-  const status = await readStatus();
-  assert.equal(status.state, 'ready', 'a downloaded build must not be invalidated by re-checks');
-  assert.equal(status.downloadedAt, 123);
-});
-
-test('updating past the release clears the guided-download state', async () => {
-  await updateStatusStorage.update({ state: 'ready', latestVersion: '1.13.0', latestBuild: 30, downloadedAt: 1 });
-  const original = manifest.version_name;
-  manifest.version_name = '1.13.0 (build 30)';
-  mockRelease('v1.13.0-build.30');
+  mockRelease('v2.0.0', '2.0.0');
   await update.checkLatestRelease();
   const status = await readStatus();
   assert.equal(status.state, 'idle');
-  assert.equal(status.downloadedAt, undefined);
-  manifest.version_name = original;
+  assert.equal(status.latestVersion, '2.0.0');
+  assert.equal(status.latestBuild, undefined);
+  assert.equal(status.downloadName, undefined);
+  assert.equal(status.downloadId, undefined);
+  assert.equal(status.zipUrl, undefined);
+});
+
+test('checkLatestRelease marks newer semantic versions as available', async () => {
+  mockRelease('v2.0.1', '2.0.1');
+  await update.checkLatestRelease();
+  const status = await readStatus();
+  assert.equal(status.state, 'available');
+  assert.equal(status.latestVersion, '2.0.1');
+  assert.equal(status.latestBuild, undefined);
+  assert.match(status.zipUrl, /CookieSync-chrome-2\.0\.1\.zip$/);
+});
+
+test('a ready download for the latest version survives a re-check and clears once upgraded', async () => {
+  await updateStatusStorage.update({
+    state: 'ready',
+    latestVersion: '2.0.1',
+    downloadedAt: 123,
+    downloadName: 'CookieSync-chrome-2.0.1.zip',
+    downloadId: 42,
+  });
+  mockRelease('v2.0.1', '2.0.1');
+  await update.checkLatestRelease();
+  let status = await readStatus();
+  assert.equal(status.state, 'ready');
+  assert.equal(status.downloadedAt, 123);
+
+  manifest.version = '2.0.1';
+  try {
+    await update.checkLatestRelease();
+    status = await readStatus();
+    assert.equal(status.state, 'idle');
+    assert.equal(status.downloadedAt, undefined);
+    assert.equal(status.downloadId, undefined);
+  } finally {
+    manifest.version = '2.0.0';
+  }
+});
+
+test('showDownloadedRelease reveals the specific download or falls back to Downloads folder', () => {
+  shownDownloads.length = 0;
+  openedDefaultFolder = 0;
+  update.showDownloadedRelease(88);
+  assert.deepEqual(shownDownloads, [88]);
+  assert.equal(openedDefaultFolder, 0);
+  update.showDownloadedRelease(undefined);
+  assert.equal(openedDefaultFolder, 1);
 });
 
 test('a missing release ZIP and unparsable tags surface as errors, not updates', async () => {
   globalThis.fetch = async () =>
-    new Response(JSON.stringify(release('v1.13.0-build.40', false)), {
+    new Response(JSON.stringify(release('v2.0.2', false)), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -167,21 +160,20 @@ test('a blocked API falls back to the releases page redirect and rebuilds asset 
     return {
       ok: true,
       status: 200,
-      url: 'https://github.com/Xioaruan912/CookieSync/releases/tag/v1.13.0-build.40',
+      url: 'https://github.com/Xioaruan912/CookieSync/releases/tag/v2.1.0',
     };
   };
   await update.checkLatestRelease();
   const status = await readStatus();
   assert.equal(status.state, 'available');
-  assert.equal(status.latestVersion, '1.13.0');
-  assert.equal(status.latestBuild, 40);
+  assert.equal(status.latestVersion, '2.1.0');
   assert.equal(
     status.zipUrl,
-    'https://github.com/Xioaruan912/CookieSync/releases/download/v1.13.0-build.40/CookieSync-chrome-1.13.0.zip',
+    'https://github.com/Xioaruan912/CookieSync/releases/download/v2.1.0/CookieSync-chrome-2.1.0.zip',
   );
   assert.equal(
     status.shaUrl,
-    'https://github.com/Xioaruan912/CookieSync/releases/download/v1.13.0-build.40/SHA256SUMS.txt',
+    'https://github.com/Xioaruan912/CookieSync/releases/download/v2.1.0/SHA256SUMS.txt',
   );
 });
 

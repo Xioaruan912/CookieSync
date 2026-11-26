@@ -12,6 +12,7 @@ export interface IUpdateStatus {
   sha256?: string;
   downloadedAt?: number;
   downloadName?: string;
+  downloadId?: number;
   error?: string;
 }
 

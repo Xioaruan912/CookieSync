@@ -31,32 +31,23 @@ export function isNewerVersion(candidate: string, current: string): boolean {
 }
 
 /**
- * The build number embedded in the manifest at CI time. Local builds may not
- * have one, so their build order within the same version is unknown.
+ * Legacy helper retained for compatibility; releases are now compared purely by
+ * semantic version (e.g. v2.0.0 → v2.0.1) without noisy CI build numbers.
  */
 export function installedBuildNumber(): number | undefined {
-  const versionName = chrome.runtime.getManifest().version_name as string | undefined;
-  const match = /build[.\s]*(\d+)/i.exec(versionName || '');
-  return match ? Number(match[1]) : undefined;
+  return undefined;
 }
 
 /**
- * A release is newer when the semantic version increased, or when the version
- * matches but the build number is newer. Every main push publishes a build, so
- * same-version build bumps are real code changes and must be offered.
+ * A release is newer strictly when its semantic version is greater than the
+ * installed manifest version. Legacy `-build.N` tags are still parsed safely.
  */
-export function isNewerRelease(
-  latest: { version: string; build?: number },
-  currentVersion: string,
-  currentBuild?: number,
-): boolean {
-  if (isNewerVersion(latest.version, currentVersion)) return true;
-  if (isNewerVersion(currentVersion, latest.version)) return false;
-  return latest.build !== undefined && currentBuild !== undefined && latest.build > currentBuild;
+export function isNewerRelease(latest: { version: string; build?: number }, currentVersion: string): boolean {
+  return isNewerVersion(latest.version, currentVersion);
 }
 
-export function isUpdateForInstalledRelease(version?: string, build?: number): boolean {
-  return !!version && isNewerRelease({ version, build }, chrome.runtime.getManifest().version, installedBuildNumber());
+export function isUpdateForInstalledRelease(version?: string): boolean {
+  return !!version && isNewerRelease({ version }, chrome.runtime.getManifest().version);
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -139,22 +130,19 @@ async function fetchLatestRelease(): Promise<ReleaseInfo> {
 }
 
 /**
- * Queries the latest release and records it. A newer semantic version OR a
- * newer build number of the same version counts as an update; the installed
- * build comes from the manifest's version_name embedded at CI time.
+ * Queries the latest GitHub Release and records it when its semantic version
+ * is newer than the installed extension version.
  */
 export async function checkLatestRelease(): Promise<void> {
   const current = chrome.runtime.getManifest().version;
-  const currentBuild = installedBuildNumber();
   try {
     const release = await fetchLatestRelease();
     const status = await updateStatusStorage.get();
-    if (!isNewerRelease(release, current, currentBuild)) {
-      // Nothing newer than what is installed; any guided-download state is moot.
+    if (!isNewerRelease(release, current)) {
       await updateStatusStorage.update({
         state: 'idle',
         latestVersion: release.version,
-        latestBuild: release.build,
+        latestBuild: undefined,
         checkedAt: Date.now(),
         error: '',
         zipUrl: undefined,
@@ -162,26 +150,26 @@ export async function checkLatestRelease(): Promise<void> {
         sha256: undefined,
         downloadedAt: undefined,
         downloadName: undefined,
+        downloadId: undefined,
       });
       return;
     }
-    // Already downloaded this exact release: keep the guided update state.
-    if (status.state === 'ready' && status.latestVersion === release.version && status.latestBuild === release.build) {
+    if (status.state === 'ready' && status.latestVersion === release.version) {
       await updateStatusStorage.update({ checkedAt: Date.now(), error: '' });
       return;
     }
     await updateStatusStorage.update({
       state: 'available',
       latestVersion: release.version,
-      latestBuild: release.build,
+      latestBuild: undefined,
       zipUrl: release.zipUrl,
       shaUrl: release.shaUrl,
       checkedAt: Date.now(),
       error: '',
-      // A newer release invalidates any previous guided download.
       sha256: undefined,
       downloadedAt: undefined,
       downloadName: undefined,
+      downloadId: undefined,
     });
   } catch (error) {
     const message =
@@ -197,15 +185,11 @@ export async function checkLatestRelease(): Promise<void> {
 /**
  * Downloads the release ZIP after verifying its SHA-256 in memory, then hands
  * the same URL to Chrome's download manager so the file lands in the Downloads
- * folder with the browser's own progress UI.
+ * folder and can be revealed directly in the OS file manager.
  */
 export async function downloadRelease(): Promise<void> {
   const status = await updateStatusStorage.get();
-  if (
-    status.state !== 'available' ||
-    !status.zipUrl ||
-    !isUpdateForInstalledRelease(status.latestVersion, status.latestBuild)
-  )
+  if (status.state !== 'available' || !status.zipUrl || !isUpdateForInstalledRelease(status.latestVersion))
     throw new Error('没有可下载的更新');
   await updateStatusStorage.update({ state: 'downloading', error: '' });
   try {
@@ -232,11 +216,12 @@ export async function downloadRelease(): Promise<void> {
     const digest = await sha256Hex(bytes);
     if (expected && digest !== expected) throw new Error('SHA-256 校验失败，未保存下载文件');
     const name = `${zipPrefix}${status.latestVersion}.zip`;
-    await chrome.downloads.download({ url: status.zipUrl, filename: name, saveAs: false });
+    const downloadId = await chrome.downloads.download({ url: status.zipUrl, filename: name, saveAs: false });
     await updateStatusStorage.update({
       state: 'ready',
       downloadedAt: Date.now(),
       downloadName: name,
+      downloadId: typeof downloadId === 'number' ? downloadId : undefined,
       sha256: expected || digest,
       error: '',
     });
@@ -249,6 +234,17 @@ export async function downloadRelease(): Promise<void> {
           : '下载更新失败';
     await updateStatusStorage.update({ state: 'available', error: message });
     throw new Error(message);
+  }
+}
+
+/** Reveals the downloaded ZIP directly in the OS file manager (Explorer / Finder). */
+export function showDownloadedRelease(downloadId?: number): void {
+  if (typeof downloadId === 'number' && typeof chrome.downloads?.show === 'function') {
+    chrome.downloads.show(downloadId);
+    return;
+  }
+  if (typeof chrome.downloads?.showDefaultFolder === 'function') {
+    chrome.downloads.showDefaultFolder();
   }
 }
 

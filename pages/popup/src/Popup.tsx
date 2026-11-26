@@ -421,16 +421,14 @@ const Popup = () => {
       ) : null}
 
       {(update.state === 'available' || update.state === 'ready') &&
-      isUpdateForInstalledRelease(update.latestVersion, update.latestBuild) ? (
+      isUpdateForInstalledRelease(update.latestVersion) ? (
         <button
           type="button"
           className="cc-tile cc-update-row"
           onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html#about') })}>
           <Download size={14} aria-hidden="true" />
           <span>
-            新版本 {update.latestVersion}
-            {update.latestBuild ? ` (build ${update.latestBuild})` : ''}
-            {update.state === 'ready' ? '已下载，待重载' : '可更新'}
+            新版本 v{update.latestVersion} {update.state === 'ready' ? '已下载，待重载' : '可更新'}
           </span>
         </button>
       ) : null}

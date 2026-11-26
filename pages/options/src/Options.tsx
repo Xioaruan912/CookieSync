@@ -76,11 +76,6 @@ const Options = () => {
       </header>
 
       <main className="titanium-container titanium-workspace" aria-labelledby="settings-title">
-        {section !== 'automation' && section !== 'connection' && section !== 'overview' && section !== 'adaptations' && (
-          <h1 id="settings-title" className="workspace-title">
-            {sections[section].title}
-          </h1>
-        )}
         {section === 'overview' ? <OverviewPanel /> : null}
 
         {section === 'connection' ? <WebdavSettings /> : null}
@@ -89,29 +84,10 @@ const Options = () => {
 
         {section === 'adaptations' ? <SiteHealthSettings /> : null}
 
-        {section === 'sites' ? (
-          <div className="titanium-panel-card">
-            <SitePolicySettings />
-          </div>
-        ) : null}
+        {section === 'sites' ? <SitePolicySettings /> : null}
 
-        {section === 'about' ? (
-          <div className="titanium-panel-card">
-            <AboutSettings />
-          </div>
-        ) : null}
+        {section === 'about' ? <AboutSettings /> : null}
       </main>
-
-      {section === 'about' ? (
-        <footer className="titanium-footer">
-          <a href="https://github.com/Xioaruan912/CookieSync" target="_blank" rel="noreferrer">
-            项目仓库
-          </a>
-          <a href="https://github.com/jackluson/sync-your-cookie" target="_blank" rel="noreferrer">
-            原项目 · jackluson
-          </a>
-        </footer>
-      ) : null}
       <Toaster theme={theme} position="top-center" richColors visibleToasts={1} toastOptions={{ duration: 2200 }} />
     </div>
   );
