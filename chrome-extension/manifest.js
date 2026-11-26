@@ -4,6 +4,7 @@ const packageJson = JSON.parse(fs.readFileSync('../package.json', 'utf8'));
 const google = JSON.parse(fs.readFileSync('./google-config.json', 'utf8'));
 
 const isFirefox = process.env.__FIREFOX__ === 'true';
+const isWebStore = process.env.__WEBSTORE__ === 'true';
 
 const sidePanelConfig = {
   side_panel: {
@@ -19,9 +20,9 @@ const sidePanelConfig = {
 const manifest = Object.assign(
   {
     manifest_version: 3,
-    // The public key keeps the extension ID stable so Chrome Sync data (settings,
-    // site rules, WebDAV configuration) keeps working across updates.
-    key: google.publicKey,
+    // The public key keeps the extension ID stable for sideloaded installs;
+    // Chrome Web Store forbids `key` and manages signing automatically.
+    ...(!isWebStore ? { key: google.publicKey } : {}),
     default_locale: 'zh_CN',
     /**
      * if you want to support multiple languages, you can use the following reference

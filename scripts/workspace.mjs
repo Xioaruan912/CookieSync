@@ -179,7 +179,18 @@ async function build(current, verify) {
   const version = JSON.parse(await fs.readFile(path.join(source, 'package.json'), 'utf8')).version;
   const archive = path.join(output, `CookieSync-chrome-${version}.zip`);
   await fs.writeFile(archive, zipSync(contents, { level: 6 }));
-  console.log(`\n已生成：${archive}\n源码目录无依赖和构建产物。`);
+
+  // Chrome Web Store package: strip `key` (forbidden by CWS) and non-ASCII helper docs.
+  const webstoreContents = { ...contents };
+  delete webstoreContents['使用说明.md'];
+  delete webstoreContents['隐私说明.md'];
+  const webstoreManifest = JSON.parse(await fs.readFile(ownedPath(dist, 'manifest.json'), 'utf8'));
+  delete webstoreManifest.key;
+  webstoreContents['manifest.json'] = new TextEncoder().encode(JSON.stringify(webstoreManifest, null, 2));
+  const webstoreArchive = path.join(output, `CookieSync-webstore-${version}.zip`);
+  await fs.writeFile(webstoreArchive, zipSync(webstoreContents, { level: 6 }));
+
+  console.log(`\n已生成：\n- 侧载包：${archive}\n- 商店包：${webstoreArchive}\n源码目录无依赖和构建产物。`);
 }
 
 try {
