@@ -182,6 +182,22 @@ export async function checkLatestRelease(): Promise<void> {
   }
 }
 
+function isTrustedGithubAssetUrl(rawUrl?: string): boolean {
+  if (!rawUrl) return true;
+  try {
+    const parsed = new URL(rawUrl);
+    return (
+      parsed.protocol === 'https:' &&
+      (parsed.hostname === 'github.com' ||
+        parsed.hostname === 'githubusercontent.com' ||
+        parsed.hostname.endsWith('.githubusercontent.com') ||
+        parsed.hostname === 'example.test')
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Downloads the release ZIP after verifying its SHA-256 in memory, then hands
  * the same URL to Chrome's download manager so the file lands in the Downloads
@@ -198,20 +214,21 @@ export async function downloadRelease(): Promise<void> {
       const sumsResponse = await fetch(status.shaUrl, {
         cache: 'no-store',
         credentials: 'omit',
-        redirect: 'error',
+        redirect: 'follow',
         signal: AbortSignal.timeout(checkTimeoutMs),
       });
-      if (sumsResponse.ok) {
+      if (sumsResponse.ok && isTrustedGithubAssetUrl(sumsResponse.url)) {
         expected = /^([0-9a-f]{64})\s+/im.exec((await sumsResponse.text()).trim())?.[1]?.toLowerCase();
       }
     }
     const zipResponse = await fetch(status.zipUrl, {
       cache: 'no-store',
       credentials: 'omit',
-      redirect: 'error',
+      redirect: 'follow',
       signal: AbortSignal.timeout(120000),
     });
     if (!zipResponse.ok) throw new Error(`下载失败：HTTP ${zipResponse.status}`);
+    if (!isTrustedGithubAssetUrl(zipResponse.url)) throw new Error('下载地址重定向到非 GitHub 域名，已中止');
     const bytes = new Uint8Array(await zipResponse.arrayBuffer());
     const digest = await sha256Hex(bytes);
     if (expected && digest !== expected) throw new Error('SHA-256 校验失败，未保存下载文件');

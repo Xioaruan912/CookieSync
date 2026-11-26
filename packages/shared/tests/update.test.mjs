@@ -184,3 +184,43 @@ test('both channels failing leaves an actionable network message', async () => {
   await update.checkLatestRelease();
   assert.match((await readStatus()).error || '', /无法连接 GitHub/);
 });
+
+test('downloadRelease follows GitHub 302 asset redirects and saves downloadId', async () => {
+  const payloadBytes = new TextEncoder().encode('fake-zip-bytes');
+  const digestBuf = await crypto.subtle.digest('SHA-256', payloadBytes);
+  const digestHex = Array.from(new Uint8Array(digestBuf), b => b.toString(16).padStart(2, '0')).join('');
+
+  await updateStatusStorage.update({
+    state: 'available',
+    latestVersion: '2.3.1',
+    zipUrl: 'https://github.com/Xioaruan912/CookieSync/releases/download/v2.3.1/CookieSync-chrome-2.3.1.zip',
+    shaUrl: 'https://github.com/Xioaruan912/CookieSync/releases/download/v2.3.1/SHA256SUMS.txt',
+  });
+
+  const redirectModes = [];
+  globalThis.fetch = async (url, init) => {
+    redirectModes.push(init?.redirect);
+    if (String(url).endsWith('SHA256SUMS.txt')) {
+      return {
+        ok: true,
+        status: 200,
+        url: 'https://release-assets.githubusercontent.com/SHA256SUMS.txt',
+        text: async () => `${digestHex}  CookieSync-chrome-2.3.1.zip\n`,
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      url: 'https://release-assets.githubusercontent.com/CookieSync-chrome-2.3.1.zip',
+      arrayBuffer: async () => payloadBytes.buffer,
+    };
+  };
+  chrome.downloads.download = async () => 99;
+
+  await update.downloadRelease();
+  const status = await readStatus();
+  assert.deepEqual(redirectModes, ['follow', 'follow']);
+  assert.equal(status.state, 'ready');
+  assert.equal(status.downloadId, 99);
+  assert.equal(status.sha256, digestHex);
+});
