@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CookieSync 配置同步
 // @namespace    https://github.com/Xioaruan912/CookieSync
-// @version      2.2.1
+// @version      2.3.0
 // @description  通过 WebDAV 同步网站名单和普通偏好
 // @author       Xioaruan912
 // @license      MIT
@@ -379,6 +379,36 @@
     await GM.setValue(statusKey(connection), { at: Date.now(), message, ok: true });
     await publishSlotLease(connection);
     return message;
+  }
+
+  function decodePairingCode(raw) {
+    const prefix = 'cookiesync://pair#v1.';
+    const trimmed = String(raw || '').trim();
+    const body = trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : trimmed;
+    if (!body) throw new Error('请粘贴有效的 CookieSync 配对口令');
+    let parsed;
+    try {
+      const norm = body.replace(/-/g, '+').replace(/_/g, '/');
+      const pad = norm.length % 4 === 0 ? '' : '='.repeat(4 - (norm.length % 4));
+      const bin = atob(norm + pad);
+      const bytes = Uint8Array.from(bin, ch => ch.charCodeAt(0));
+      parsed = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      throw new Error('配对口令格式无效，请确认已完整复制');
+    }
+    const baseUrl = typeof parsed?.u === 'string' ? parsed.u.trim() : '';
+    const username = typeof parsed?.n === 'string' ? parsed.n.trim() : '';
+    const password = typeof parsed?.p === 'string' ? parsed.p : '';
+    const filePath = typeof parsed?.f === 'string' ? parsed.f.trim().replace(/^\/+/, '') : '';
+    if (!baseUrl || !username || !password) throw new Error('配对口令缺少连接凭据');
+    const dir = webdavDirectory(baseUrl);
+    const segments = filePath.split('/').filter(Boolean);
+    if (segments.length > 1) {
+      dir.pathname = dir.pathname.replace(/\/?$/, '/') + segments.slice(0, -1).map(encodeURIComponent).join('/') + '/';
+    } else {
+      dir.pathname = dir.pathname.replace(/\/?$/, '/');
+    }
+    return { url: dir.href, username, password };
   }
 
   function currentPageDomain() {
@@ -805,7 +835,10 @@
           element('span', {}, '打开网页时自动同步', element('small', {}, '每 30 分钟最多尝试一次')),
           input('automatic', { type: 'checkbox' }),
         ),
-        element('div', { class: 'actions' }, button('connect', '保存连接')),
+        element('div', { class: 'actions' },
+          button('connect', '保存连接'),
+          button('import-pair', '粘贴配对码导入'),
+        ),
       ),
       section('sites', heading('sites', '网站名单', '一键加入当前网站、从预设名单快速勾选，或手动添加域名。'),
         element('div', { id: 'current-site-bar', class: 'current-site-bar', ...(currentPageDomain() ? {} : { hidden: '' }) },
@@ -1067,6 +1100,22 @@
       showView('overview');
       get('overview-title').focus();
       return '连接已保存';
+    });
+    get('import-pair').onclick = run(async () => {
+      const raw = window.prompt('粘贴从 PC 端 CookieSync 复制的配对口令（cookiesync://pair#v1.…）');
+      if (!raw) return '已取消导入';
+      const parsed = decodePairingCode(raw);
+      const next = { ...parsed, automatic: get('automatic').checked };
+      destination(next);
+      await GM.setValue(connectionKey, next);
+      get('url').value = next.url;
+      get('username').value = next.username;
+      pendingPassword = undefined;
+      get('password-status').textContent = '已通过配对口令导入并保存应用密码';
+      current = next;
+      await render();
+      showView('overview');
+      return '已一键导入配对连接';
     });
     get('allow').onclick = run(() => changeRule(true));
     get('pause').onclick = run(() => changeRule(false));

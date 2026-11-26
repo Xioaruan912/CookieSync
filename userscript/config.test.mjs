@@ -319,3 +319,30 @@ test('iOS Stay compatibility: works without GM.getValues/GM.setValues and with c
   const msg = await exports.syncConfig(connection);
   assert.match(msg, /已合并并同步/);
 });
+
+test('decodePairingCode parses PC extension pairing code into mobile WebDAV directory', () => {
+  const exports = {};
+  vm.runInNewContext(source.replace("  start();", 'Object.assign(exports, { decodePairingCode });'), {
+    exports,
+    GM: { registerMenuCommand: () => {} },
+    URL,
+    TextEncoder,
+    TextDecoder,
+    atob,
+    btoa,
+    clearTimeout,
+    setTimeout,
+    crypto,
+  });
+  const payloadJson = JSON.stringify({
+    u: 'https://dav.jianguoyun.com/dav/',
+    n: 'demo@example.com',
+    p: 'app-pass-123',
+    f: 'CookieSync/cookies.txt',
+  });
+  const b64 = Buffer.from(payloadJson, 'utf8').toString('base64url');
+  const decoded = exports.decodePairingCode('cookiesync://pair#v1.' + b64);
+  assert.equal(decoded.url, 'https://dav.jianguoyun.com/dav/CookieSync/');
+  assert.equal(decoded.username, 'demo@example.com');
+  assert.equal(decoded.password, 'app-pass-123');
+});
