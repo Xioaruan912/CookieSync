@@ -13,7 +13,8 @@
   <a href="#界面动效预览">界面预览</a> &nbsp;·&nbsp;
   <a href="#3-步上手">3 步上手</a> &nbsp;·&nbsp;
   <a href="#为什么好用">为什么好用</a> &nbsp;·&nbsp;
-  <a href="#开发者与-ai-二次开发">开发者 / AI 提示词</a>
+  <a href="#开发者与-ai-二次开发">开发者 / AI 提示词</a> &nbsp;·&nbsp;
+  <a href="https://ifdian.net/a/ppeea"><strong>⚡ 爱发电赞助</strong></a>
 </p>
 
 </div>
@@ -181,6 +182,18 @@ node scripts/workspace.mjs build
 - **更新检查**：每日及启动时自动检查 GitHub Releases，发现新版本或新构建后自动下载并校验安装包；受浏览器安全机制限制，仍需按指引覆盖原目录并刷新扩展。
 
 </details>
+
+---
+
+## 赞助支持
+
+如果 CookieSync 帮你省下了反复扫码登录的时间，欢迎通过爱发电请作者喝杯咖啡，支持项目持续维护与免费开源：
+
+<a href="https://ifdian.net/a/ppeea" target="_blank" rel="noreferrer">
+  <img src="https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%B5%9E%E5%8A%A9%E6%94%AF%E6%8C%81-946ce6?style=for-the-badge" alt="爱发电赞助支持" />
+</a>
+
+> 所有赞助均为自愿支持，CookieSync 全部功能保持完全开源免费。
 
 ---
 
