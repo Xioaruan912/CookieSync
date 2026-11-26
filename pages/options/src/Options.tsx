@@ -76,7 +76,7 @@ const Options = () => {
       </header>
 
       <main className="titanium-container titanium-workspace" aria-labelledby="settings-title">
-        {section !== 'automation' && section !== 'connection' && (
+        {section !== 'automation' && section !== 'connection' && section !== 'overview' && (
           <h1 id="settings-title" className="workspace-title">
             {sections[section].title}
           </h1>

@@ -10,15 +10,6 @@ gsap.registerPlugin(useGSAP);
 
 export const siteNeedsAttention = (site: OverviewRow) => site.attention.some(hint => hint !== 'paused') || !!site.error;
 
-export function SiteMark({ domain }: { domain: string }) {
-  const initial = domain.replace(/^www\./i, '')[0]?.toUpperCase() || '·';
-  return (
-    <span aria-hidden="true" className="overview-site-mark" data-hue={domain.charCodeAt(0) % 5}>
-      {initial}
-    </span>
-  );
-}
-
 const rulesLabel = (site: OverviewRow) => {
   if (!site.listed) return '名单外';
   if (site.paused) return '已暂停';
@@ -75,7 +66,7 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
   const section = useRef<HTMLDivElement>(null);
   const confirmButton = useRef<HTMLButtonElement>(null);
   const lastAction = useRef<TransferDirection>();
-  const fromPointer = useRef(animate);
+  const slideDir = useRef(animate ? 1 : 0);
   const [tab, setTab] = useState<DetailTab>('state');
   const [confirm, setConfirm] = useState<TransferDirection>();
   const issues = [
@@ -97,16 +88,19 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
     }
   }, [confirm]);
 
+  // Smooth horizontal slide when switching detail sub-tabs
   useGSAP(
     () => {
-      if (!fromPointer.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const dir = slideDir.current;
+      slideDir.current = 0;
+      if (!dir || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       gsap.fromTo(
         '.overview-inspector-body',
-        { y: 6, opacity: 0.66 },
+        { x: dir * 24, opacity: 0 },
         {
-          y: 0,
+          x: 0,
           opacity: 1,
-          duration: 0.19,
+          duration: 0.24,
           ease: 'power3.out',
           clearProps: 'transform,opacity',
           overwrite: 'auto',
@@ -121,6 +115,7 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
     await onTransfer(confirm);
     setConfirm(undefined);
   };
+
   const healthLabel = site.health?.state === 'ok' ? '有效' : site.health?.state === 'invalid' ? '失效' : '未验证';
   const rows =
     tab === 'storage'
@@ -142,29 +137,32 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
             ...(site.health ? [['登录状态', healthLabel]] : []),
           ];
 
+  const visibleTabs = detailTabs.filter(([key]) => key !== 'issues' || hasIssues);
+
   return (
     <div ref={section} className="overview-inspector-inner">
       <div className="overview-inspector-site">
-        <SiteMark domain={site.domain} />
+        <span className="ov-inspector-eyebrow">Inspector</span>
         <strong title={site.domain}>{site.domain}</strong>
       </div>
-      <div className="overview-segment overview-detail-tabs" role="group" aria-label="详情分组">
-        {detailTabs
-          .filter(([key]) => key !== 'issues' || hasIssues)
-          .map(([key, label]) => (
-            <button
-              type="button"
-              key={key}
-              aria-pressed={tab === key}
-              onClick={event => {
-                fromPointer.current = event.detail > 0;
-                setTab(key);
-                setConfirm(undefined);
-              }}>
-              {label}
-            </button>
-          ))}
+
+      <div className="overview-segment" role="group" aria-label="详情分组">
+        {visibleTabs.map(([key, label], index) => (
+          <button
+            type="button"
+            key={key}
+            aria-pressed={tab === key}
+            onClick={event => {
+              const curIdx = visibleTabs.findIndex(([k]) => k === tab);
+              slideDir.current = event.detail > 0 ? (index >= curIdx ? 1 : -1) : 0;
+              setTab(key);
+              setConfirm(undefined);
+            }}>
+            {label}
+          </button>
+        ))}
       </div>
+
       <div className="overview-inspector-body">
         {confirm ? (
           <p role="status" className="overview-confirm-text">
@@ -177,7 +175,7 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
             ))}
           </ul>
         ) : (
-          <dl className="overview-detail-list" data-columns={tab === 'storage' ? 'dense' : undefined}>
+          <dl className="overview-detail-list">
             {rows.map(([label, value]) => (
               <div key={String(label)}>
                 <dt>{label}</dt>
@@ -187,22 +185,23 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
           </dl>
         )}
       </div>
+
       <div className="overview-inspector-actions">
         {confirm ? (
           <>
             <Button
               ref={confirmButton}
               size="sm"
-              className="overview-control rounded-full"
+              className="ov-btn-primary"
               disabled={disabled}
               onClick={() => void complete()}>
-              {working ? <Loader2 className="overview-spinner" size={15} aria-hidden="true" /> : null}
+              {working ? <Loader2 className="overview-spinner" size={14} aria-hidden="true" /> : null}
               {working ? '处理中…' : confirm === 'push' ? '确认推送' : '确认拉取'}
             </Button>
             <Button
               size="sm"
-              variant="ghost"
-              className="overview-control rounded-full"
+              variant="outline"
+              className="ov-btn-outline"
               disabled={!!working}
               onClick={() => setConfirm(undefined)}>
               取消
@@ -212,28 +211,27 @@ export function OverviewSiteDetails({ site, connected, blocked, working, animate
           <>
             <Button
               size="sm"
-              variant="outline"
-              className="overview-control rounded-full"
+              className="ov-btn-primary"
               disabled={disabled}
               data-action="push"
               onClick={() => {
                 lastAction.current = 'push';
                 setConfirm('push');
               }}>
-              <ArrowUpFromLine size={15} aria-hidden="true" />
+              <ArrowUpFromLine size={14} aria-hidden="true" />
               推送到云端
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className="overview-control rounded-full"
+              className="ov-btn-outline"
               disabled={disabled}
               data-action="pull"
               onClick={() => {
                 lastAction.current = 'pull';
                 setConfirm('pull');
               }}>
-              <ArrowDownToLine size={15} aria-hidden="true" />
+              <ArrowDownToLine size={14} aria-hidden="true" />
               拉取到本机
             </Button>
           </>
