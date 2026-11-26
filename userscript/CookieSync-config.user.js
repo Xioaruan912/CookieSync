@@ -1227,6 +1227,9 @@
       const connection = await GM.getValue(connectionKey, null);
       alert(connection ? statusText(await GM.getValue(statusKey(connection), null)) : '请先保存 WebDAV 连接');
     });
+    GM.registerMenuCommand('CookieSync · 爱发电赞助支持', () => {
+      window.open('https://ifdian.net/a/ppeea', '_blank', 'noopener,noreferrer');
+    });
     if (extRunning) return;
     const trigger = () => {
       if (!document.hidden && !isExtensionActive()) void maybeSync().catch(() => {});

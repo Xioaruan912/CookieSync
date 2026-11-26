@@ -8,7 +8,8 @@
   <a href="https://raw.githubusercontent.com/Xioaruan912/CookieSync/tampermonkey/userscript/CookieSync-config.user.js"><strong>一键安装油猴脚本</strong></a> &nbsp;·&nbsp;
   <a href="https://github.com/Xioaruan912/CookieSync">Chrome 扩展主分支（登录态同步）</a> &nbsp;·&nbsp;
   <a href="#3-步上手">3 步上手</a> &nbsp;·&nbsp;
-  <a href="#能力边界说明必读">能力边界说明</a>
+  <a href="#能力边界说明必读">能力边界说明</a> &nbsp;·&nbsp;
+  <a href="https://ifdian.net/a/ppeea"><strong>⚡ 爱发电赞助</strong></a>
 </p>
 
 </div>
@@ -67,6 +68,18 @@
   ```
 
 </details>
+
+---
+
+## 赞助支持
+
+如果 CookieSync 帮你省下了跨设备折腾的时间，欢迎通过爱发电请作者喝杯咖啡，支持项目持续维护与免费开源：
+
+<a href="https://ifdian.net/a/ppeea" target="_blank" rel="noreferrer">
+  <img src="https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E8%B5%9E%E5%8A%A9%E6%94%AF%E6%8C%81-946ce6?style=for-the-badge" alt="爱发电赞助支持" />
+</a>
+
+> 所有赞助均为自愿支持，CookieSync 全部功能保持完全开源免费。
 
 ---
 
